@@ -133,12 +133,13 @@ export default function Inputs() {
         actions={
           <button className="ghost" onClick={() =>
             up({ expense_streams: [...s.expense_streams, {
-              name: "New stream", annual: 0, inflates: true, extra_inflation: 0, is_medical: false,
+              name: "New stream", annual: 0, inflates: true, extra_inflation: 0,
+              is_medical: false, essential: false,
             }] })}>+ add stream</button>
         }>
         <table className="table">
           <thead>
-            <tr><th>Name</th><th>$/yr</th><th>Ages</th><th>CPI+</th><th>Inflates</th><th>Medical</th><th /></tr>
+            <tr><th>Name</th><th>$/yr</th><th>Ages</th><th>CPI+</th><th>Inflates</th><th>Medical</th><th>Essential</th><th /></tr>
           </thead>
           <tbody>
             {s.expense_streams.map((e, i) => (
@@ -158,6 +159,8 @@ export default function Inputs() {
                   onChange={(ev) => upStream(i, { inflates: ev.target.checked })} /></td>
                 <td><input type="checkbox" checked={e.is_medical}
                   onChange={(ev) => upStream(i, { is_medical: ev.target.checked })} /></td>
+                <td><input type="checkbox" checked={e.essential}
+                  onChange={(ev) => upStream(i, { essential: ev.target.checked })} /></td>
                 <td><button className="ghost" onClick={() =>
                   up({ expense_streams: s.expense_streams.filter((_, j) => j !== i) })}>✕</button></td>
               </tr>
@@ -313,6 +316,34 @@ export default function Inputs() {
               onChange={(e) => up({ withdrawal_policy: { ...s.withdrawal_policy, allow_early_trad_with_penalty: e.target.checked } })} />
           </Field>
         </div>
+      </Section>
+
+      <Section title="Spending guardrails" info={A.guardrails}>
+        <div className="fields">
+          <Field label="Enabled">
+            <input type="checkbox" checked={s.guardrails.enabled}
+              onChange={(e) => up({ guardrails: { ...s.guardrails, enabled: e.target.checked } })} />
+          </Field>
+          <Field label="Guard band (± around initial rate)">
+            <PercentInput value={s.guardrails.band} step={5}
+              onChange={(v) => up({ guardrails: { ...s.guardrails, band: v } })} />
+          </Field>
+          <Field label="Cut step">
+            <PercentInput value={s.guardrails.cut} step={2.5}
+              onChange={(v) => up({ guardrails: { ...s.guardrails, cut: v } })} />
+          </Field>
+          <Field label="Restore step">
+            <PercentInput value={s.guardrails.boost} step={2.5}
+              onChange={(v) => up({ guardrails: { ...s.guardrails, boost: v } })} />
+          </Field>
+          <Field label="Floor (min % of planned discretionary)">
+            <PercentInput value={s.guardrails.floor_mult} step={5}
+              onChange={(v) => up({ guardrails: { ...s.guardrails, floor_mult: v } })} />
+          </Field>
+        </div>
+        <p className="hint">
+          Cuts apply only to streams not marked Essential in the Expenses table.
+        </p>
       </Section>
 
       <Section title="Roth conversion ladder" info={A.ladder}>

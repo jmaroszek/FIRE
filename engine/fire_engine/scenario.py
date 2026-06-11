@@ -99,6 +99,24 @@ class ExpenseStream(BaseModel):
     inflates: bool = True
     extra_inflation: float = 0.0  # e.g. healthcare +1.5% over CPI
     is_medical: bool = False  # eligible for HSA utilization
+    essential: bool = False  # essential streams are exempt from guardrail cuts
+
+
+class GuardrailRule(BaseModel):
+    """Guyton-Klinger-style withdrawal-rate guardrails, applied in retirement.
+
+    The initial withdrawal rate w0 is recorded per path in the retirement year.
+    Each year, if planned spending / portfolio drifts outside w0 * (1 +/- band),
+    discretionary (non-essential) spending is cut or restored by a step,
+    bounded by [floor_mult, cap_mult] of the planned amount.
+    """
+
+    enabled: bool = False
+    band: float = 0.20  # guardrails at w0 * (1 +/- band)
+    cut: float = 0.10  # cut discretionary spending 10% when above the upper rail
+    boost: float = 0.10  # restore 10% when below the lower rail
+    floor_mult: float = 0.70  # never cut below 70% of planned discretionary
+    cap_mult: float = 1.0  # never spend above plan (no lifestyle inflation)
 
 
 class WaterfallStep(BaseModel):
@@ -233,6 +251,7 @@ class Scenario(BaseModel):
     conversion_rule: ConversionRule = ConversionRule()
     social_security: SocialSecurity = SocialSecurity()
     hsa: HSARule = HSARule()
+    guardrails: GuardrailRule = GuardrailRule()
     events: list[Event] = Field(default_factory=list)
     sim: SimSettings = SimSettings()
 
@@ -272,8 +291,10 @@ def example_scenario() -> Scenario:
         expense_streams=[
             ExpenseStream(name="Living expenses", annual=45000),
             ExpenseStream(name="Healthcare (pre-65)", annual=6000, start_age=45,
-                          end_age=64, extra_inflation=0.015, is_medical=True),
-            ExpenseStream(name="Medical out-of-pocket", annual=1500, is_medical=True),
+                          end_age=64, extra_inflation=0.015, is_medical=True,
+                          essential=True),
+            ExpenseStream(name="Medical out-of-pocket", annual=1500, is_medical=True,
+                          essential=True),
         ],
         conversion_rule=ConversionRule(kind="fill_bracket", bracket_top="12"),
         social_security=SocialSecurity(monthly_at_fra=2800, claiming_age=67, haircut=0.75),

@@ -10,6 +10,8 @@ export interface CompareSlot {
   name: string;
   scenario: Scenario;
   result: SimulateResult;
+  sweep: SweepResult | null;
+  sweepPending?: boolean;
 }
 
 interface AppState {
@@ -177,11 +179,30 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     addToCompare: () => {
-      const { scenario, result, compare } = get();
+      const { scenario, result, compare, sweep } = get();
       if (!scenario || !result) return;
-      const name = scenario.name + (get().dirty ? " (edited)" : "");
-      const slot = { name, scenario: structuredClone(scenario), result };
-      set({ compare: [...compare.filter((c) => c.name !== name), slot] });
+      let name = scenario.name + (get().dirty ? " (edited)" : "");
+      let n = 2;
+      while (compare.some((c) => c.name === name)) name = `${scenario.name} (${n++})`;
+      const snapshot = structuredClone(scenario);
+      const slot: CompareSlot = {
+        name, scenario: snapshot, result, sweep, sweepPending: !sweep,
+      };
+      set({ compare: [...compare, slot] });
+      if (!sweep) {
+        // compute the success curve for this pinned scenario in the background
+        api.sweep(snapshot).then((computed) => {
+          set({
+            compare: get().compare.map((c) =>
+              c.name === name ? { ...c, sweep: computed, sweepPending: false } : c),
+          });
+        }).catch(() => {
+          set({
+            compare: get().compare.map((c) =>
+              c.name === name ? { ...c, sweepPending: false } : c),
+          });
+        });
+      }
     },
 
     removeFromCompare: (name) =>

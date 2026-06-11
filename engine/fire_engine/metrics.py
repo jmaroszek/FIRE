@@ -168,6 +168,7 @@ def summarize(result: SimResult) -> dict:
             result.taxes_paid / result.cum_inflation[:, 1:], axis=0).tolist(),
         "expenses_median_real": np.median(
             result.expenses / result.cum_inflation[:, 1:], axis=0).tolist(),
+        "spending_mult_median": np.median(result.spending_mult, axis=0).tolist(),
         "ages": result.ages.tolist(),
         "years": result.years.tolist(),
         "sweep": sweep,

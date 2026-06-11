@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { A } from "../assumptions";
-import { FanChart, SweepChart, Timeline } from "../components/charts";
+import { FanChart, SweepChart } from "../components/charts";
+import TimelineEditor from "../components/TimelineEditor";
 import { Field, NumberInput, PercentInput, Section, fmtPct } from "../components/ui";
 import { useStore } from "../store";
 import type { AccountType, EventKind, FireEvent } from "../types";
@@ -124,14 +125,19 @@ export default function Simulate() {
               })}>+ add event</button>
           </span>
         }>
-        <Timeline
-          result={result}
+        <TimelineEditor
           axisMode={axisMode}
           birthYear={scenario.profile.birth_year}
           startYear={scenario.sim.start_year}
           horizonAge={scenario.profile.horizon_age}
           retirementAge={scenario.retirement_age}
           events={scenario.events}
+          onRetirementAge={(age) => setScenario({ ...scenario, retirement_age: age })}
+          onEventAge={(index, age) => {
+            const events = scenario.events.map((e, j) =>
+              j === index ? { ...e, age, year: null } : e);
+            setScenario({ ...scenario, events });
+          }}
         />
         <div className="event-list">
           {scenario.events.map((ev, i) => <EventRow key={i} ev={ev} index={i} />)}
@@ -147,6 +153,11 @@ export default function Simulate() {
         actions={
           <span className="pair">
             {simulating && <span className="badge">simulating…</span>}
+            {scenario.guardrails.enabled && (
+              <span className="badge" title="Spending guardrails active — discretionary spending flexes with market performance">
+                guardrails on
+              </span>
+            )}
             {result && (
               <span className="badge success">
                 success {fmtPct(result.success_rate)}

@@ -40,6 +40,16 @@ export interface ExpenseStream {
   inflates: boolean;
   extra_inflation: number;
   is_medical: boolean;
+  essential: boolean;
+}
+
+export interface GuardrailRule {
+  enabled: boolean;
+  band: number;
+  cut: number;
+  boost: number;
+  floor_mult: number;
+  cap_mult: number;
 }
 
 export interface WaterfallStep {
@@ -119,6 +129,7 @@ export interface Scenario {
   conversion_rule: ConversionRule;
   social_security: SocialSecurity;
   hsa: HSARule;
+  guardrails: GuardrailRule;
   events: FireEvent[];
   sim: SimSettings;
 }
@@ -136,6 +147,7 @@ export interface SimulateResult {
   ladder_schedule: { year: number; age: number; amount_real: number; matures: number }[];
   taxes_median_real: number[];
   expenses_median_real: number[];
+  spending_mult_median: number[];
   ages: number[];
   years: number[];
   scenario_name: string;

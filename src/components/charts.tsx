@@ -211,63 +211,42 @@ export function CompareChart(props: {
   );
 }
 
-export function Timeline(props: {
-  result: SimulateResult | null;
-  axisMode: "age" | "year";
-  birthYear: number;
-  startYear: number;
-  horizonAge: number;
-  retirementAge: number;
-  events: { kind: string; name: string; year?: number | null; age?: number | null; amount?: number }[];
-  height?: number;
+export function CompareSweepChart(props: {
+  slots: CompareSlot[]; axisMode: "age" | "year"; height?: number;
 }) {
-  const toX = (ev: { year?: number | null; age?: number | null }) => {
-    const year = ev.age != null ? props.birthYear + ev.age : ev.year ?? props.startYear;
-    return props.axisMode === "age" ? year - props.birthYear : year;
-  };
-  const startX = props.axisMode === "age" ? props.startYear - props.birthYear : props.startYear;
-  const endX = props.axisMode === "age" ? props.horizonAge : props.birthYear + props.horizonAge;
-  const retX = props.axisMode === "age" ? props.retirementAge : props.birthYear + props.retirementAge;
-
-  const kindColor: Record<string, string> = {
-    one_time_flow: "#f0883e", regime_change: "#58a6ff", crash: "#ff7b72",
-  };
-  const kindRow: Record<string, number> = { one_time_flow: 2, regime_change: 1, crash: 0 };
-
-  const data: Data[] = Object.keys(kindColor).map((kind) => {
-    const evs = props.events.filter((e) => e.kind === kind);
-    return {
-      x: evs.map(toX),
-      y: evs.map(() => kindRow[kind]),
-      text: evs.map((e) => e.name || kind),
-      type: "scatter" as const,
-      mode: "text+markers" as const,
-      textposition: "top center" as const,
-      marker: { size: 13, color: kindColor[kind], symbol: "diamond" },
-      name: kind.replace(/_/g, " "),
-      hovertemplate: "%{text}<extra></extra>",
-    };
+  const palette = ["#58a6ff", "#3fb950", "#d29922", "#bc8cff", "#f0883e", "#ff7b72"];
+  const data: Data[] = [];
+  let threshold: number | null = null;
+  props.slots.forEach((slot, i) => {
+    if (!slot.sweep) return;
+    threshold = threshold ?? slot.sweep.threshold;
+    const ages = Object.keys(slot.sweep.sweep).map(Number).sort((a, b) => a - b);
+    const x = props.axisMode === "age"
+      ? ages : ages.map((a) => a + slot.scenario.profile.birth_year);
+    data.push({
+      x,
+      y: ages.map((a) => slot.sweep!.sweep[String(a)]),
+      type: "scatter", mode: "lines",
+      name: slot.name,
+      line: { color: palette[i % palette.length], width: 2.5 },
+      hovertemplate: "%{y:.1%}",
+    });
   });
-
+  if (data.length === 0) return null;
   return (
     <Plot
       data={data}
       layout={{
         ...baseLayout,
-        height: props.height ?? 170,
-        margin: { l: 70, r: 20, t: 10, b: 35 },
-        yaxis: { visible: false, range: [-0.6, 3.0] },
-        xaxis: { ...baseLayout.xaxis, range: [startX - 1, endX + 1],
-                 title: { text: props.axisMode === "age" ? "Age" : "Year" } },
-        showlegend: false,
-        shapes: [
-          { type: "line", x0: retX, x1: retX, y0: 0, y1: 1, yref: "paper",
-            line: { color: "#d29922", width: 1.5, dash: "dash" } },
-        ],
-        annotations: [{
-          x: retX, y: 1, yref: "paper", text: "retire", showarrow: false,
-          yanchor: "bottom", font: { color: "#d29922", size: 11 },
-        }],
+        height: props.height ?? 340,
+        yaxis: { ...baseLayout.yaxis, tickformat: ".0%", range: [0, 1.02] },
+        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Retirement age" : "Retirement year" } },
+        shapes: threshold != null ? [{
+          type: "line", xref: "paper", x0: 0, x1: 1,
+          y0: threshold, y1: threshold,
+          line: { color: "#d29922", width: 1, dash: "dot" },
+        }] : [],
+        title: { text: "Success probability vs retirement age", font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}

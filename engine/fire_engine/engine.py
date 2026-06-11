@@ -85,6 +85,7 @@ class SimResult:
     pools: dict[str, np.ndarray]  # name -> (P, T+1) nominal
     fail: np.ndarray  # (P, T) bool
     taxes_paid: np.ndarray  # (P, T) nominal
+    spending_mult: np.ndarray  # (P, T) guardrail multiplier on discretionary spend
     conversions: np.ndarray  # (P, T) nominal Roth conversions
     accessible: dict[str, np.ndarray]  # source -> (P, T) nominal, end of year
     ss_income: np.ndarray  # (P, T) nominal
@@ -142,10 +143,13 @@ def _precompute_regimes(scenario: Scenario, retirement_age: int) -> list[YearReg
 
 
 def _expenses_for_year(scenario: Scenario, t: int, age: int,
-                       cum_infl: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """(total_nominal, medical_nominal), each (P,)."""
-    total = np.zeros_like(cum_infl)
-    medical = np.zeros_like(cum_infl)
+                       cum_infl: np.ndarray) -> tuple[np.ndarray, ...]:
+    """(essential, discretionary, essential_medical, discretionary_medical),
+    each (P,) nominal. Discretionary streams are subject to guardrail cuts."""
+    ess = np.zeros_like(cum_infl)
+    disc = np.zeros_like(cum_infl)
+    ess_med = np.zeros_like(cum_infl)
+    disc_med = np.zeros_like(cum_infl)
     for s in scenario.expense_streams:
         if s.start_age is not None and age < s.start_age:
             continue
@@ -153,10 +157,15 @@ def _expenses_for_year(scenario: Scenario, t: int, age: int,
             continue
         amount = s.annual * (1 + s.extra_inflation) ** t
         nominal = amount * cum_infl if s.inflates else np.full_like(cum_infl, amount)
-        total = total + nominal
-        if s.is_medical:
-            medical = medical + nominal
-    return total, medical
+        if s.essential:
+            ess = ess + nominal
+            if s.is_medical:
+                ess_med = ess_med + nominal
+        else:
+            disc = disc + nominal
+            if s.is_medical:
+                disc_med = disc_med + nominal
+    return ess, disc, ess_med, disc_med
 
 
 def _contribution_limits(age: int, infl: np.ndarray, coverage: str) -> dict[str, np.ndarray]:
@@ -273,6 +282,7 @@ def run(
         pools[n][:, 0] = getattr(state, n)
     fail = np.zeros((P, T), dtype=bool)
     taxes_paid = np.zeros((P, T))
+    spending_mult_out = np.ones((P, T))
     conversions_out = np.zeros((P, T))
     ss_out = np.zeros((P, T))
     expenses_out = np.zeros((P, T))
@@ -281,11 +291,19 @@ def run(
 
     zeros = np.zeros(P)
 
+    # guardrails: per-path discretionary spending multiplier and the initial
+    # withdrawal rate recorded in the retirement year
+    guard = scenario.guardrails
+    t_retire = max(retirement_age - start_age, 0)
+    spend_mult = np.ones(P)
+    w0: np.ndarray | None = None
+
     for t in range(T):
         age = start_age + t
         regime = regimes[t]
         infl = paths.cum_inflation[:, t]
         state.season_conversions(t)
+        portfolio_start = state.total_net_worth()
 
         wages = regime.salary_real * infl
         ss_nom = ss_annual_real * infl if age >= ss.claiming_age else zeros
@@ -298,7 +316,22 @@ def run(
         else:
             rmd = zeros
 
-        expenses_nom, medical_nom = _expenses_for_year(scenario, t, age, infl)
+        ess_nom, disc_nom, ess_med, disc_med = _expenses_for_year(scenario, t, age, infl)
+
+        if guard.enabled and t >= t_retire:
+            planned = ess_nom + disc_nom
+            w = planned / np.maximum(portfolio_start, 1.0)
+            if w0 is None:
+                w0 = w.copy()
+            spend_mult = np.where(w > w0 * (1 + guard.band),
+                                  np.maximum(spend_mult * (1 - guard.cut), guard.floor_mult),
+                                  spend_mult)
+            spend_mult = np.where(w < w0 * (1 - guard.band),
+                                  np.minimum(spend_mult * (1 + guard.boost), guard.cap_mult),
+                                  spend_mult)
+
+        expenses_nom = ess_nom + disc_nom * spend_mult
+        medical_nom = ess_med + disc_med * spend_mult
         hsa_med = np.minimum(scenario.hsa.utilization * medical_nom, state.hsa)
         state.hsa = state.hsa - hsa_med
         oop_expenses = expenses_nom - hsa_med
@@ -430,6 +463,7 @@ def run(
         for n in pool_names:
             pools[n][:, t + 1] = getattr(state, n)
         taxes_paid[:, t] = total_tax
+        spending_mult_out[:, t] = spend_mult
         ss_out[:, t] = ss_nom
         expenses_out[:, t] = expenses_nom
         contributions_out[:, t] = sum(contrib.values(), start=zeros) + match
@@ -445,6 +479,7 @@ def run(
         pools=pools,
         fail=fail,
         taxes_paid=taxes_paid,
+        spending_mult=spending_mult_out,
         conversions=conversions_out,
         accessible=accessible_out,
         ss_income=ss_out,
