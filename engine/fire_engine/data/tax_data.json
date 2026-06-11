@@ -1,0 +1,28 @@
+{
+  "_comment": "2026 federal tax parameters, single filer (verified against IRS Rev. Proc. / Tax Foundation, June 2026). All thresholds in nominal base_year dollars; the engine scales them by each path's cumulative simulated inflation. Refresh annually.",
+  "base_year": 2026,
+  "single": {
+    "standard_deduction": 16100,
+    "ordinary_brackets": [
+      { "rate": 0.10, "up_to": 12400 },
+      { "rate": 0.12, "up_to": 50400 },
+      { "rate": 0.22, "up_to": 105700 },
+      { "rate": 0.24, "up_to": 201775 },
+      { "rate": 0.32, "up_to": 256225 },
+      { "rate": 0.35, "up_to": 640600 },
+      { "rate": 0.37, "up_to": null }
+    ],
+    "ltcg_brackets": [
+      { "rate": 0.0, "up_to": 49450 },
+      { "rate": 0.15, "up_to": 545500 },
+      { "rate": 0.20, "up_to": null }
+    ]
+  },
+  "fica": {
+    "social_security_rate": 0.062,
+    "social_security_wage_base": 184500,
+    "medicare_rate": 0.0145
+  },
+  "early_withdrawal_penalty": 0.10,
+  "ss_taxable_fraction": 0.85
+}

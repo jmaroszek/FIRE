@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Node
+node_modules/
+
+# Tauri / Rust
+src-tauri/target/
+
+# Local
+.env
+*.local
+ie_data.xls

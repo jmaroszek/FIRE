@@ -1,0 +1,19 @@
+[project]
+name = "fire-engine"
+version = "0.1.0"
+description = "Simulation engine for the FIRE projection app"
+requires-python = ">=3.12"
+dependencies = ["numpy>=1.26", "pydantic>=2.5"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["fire_engine*"]
+
+[tool.setuptools.package-data]
+fire_engine = ["data/*.json", "data/*.csv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

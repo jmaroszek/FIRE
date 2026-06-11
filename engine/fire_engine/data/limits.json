@@ -1,0 +1,15 @@
+{
+  "_comment": "2026 contribution limits (IRS Notice 2025-67). Nominal base_year dollars; engine scales by simulated inflation (assumption: linear growth, no $500-step rounding). Refresh annually.",
+  "base_year": 2026,
+  "limits": {
+    "employee_401k": 24500,
+    "employee_401k_catchup_50": 8000,
+    "employee_401k_catchup_60_63": 11250,
+    "total_401k_415c": 72000,
+    "ira": 7500,
+    "ira_catchup_50": 1100,
+    "hsa_self_only": 4400,
+    "hsa_family": 8750,
+    "hsa_catchup_55": 1000
+  }
+}
