@@ -57,6 +57,9 @@ pub fn run() {
                 if let Some(child) = engine.lock().unwrap().as_mut() {
                     kill_engine(child);
                 }
+                // WebView2 teardown can leave the process lingering for many
+                // seconds after the window closes; exit deterministically.
+                std::process::exit(0);
             }
         });
 }
