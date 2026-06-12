@@ -81,11 +81,18 @@ main { padding: 18px; max-width: 1500px; width: 100%; margin: 0 auto; }
   padding-bottom: 6px;
   margin: 4px 0 12px;
 }
+/* cards take their natural content width and pack left; leftover space
+   pools at the end of the row instead of stretching tiles */
 .group-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(560px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 16px;
-  align-items: start;
+  align-items: flex-start;
+}
+.group-grid .card {
+  flex: 0 1 auto;
+  min-width: 340px;
+  max-width: 100%;
 }
 
 .card {
@@ -131,12 +138,18 @@ input[type="checkbox"] { max-width: none; }
 input[type="range"] { max-width: 220px; accent-color: var(--accent); padding: 0; }
 input:focus, select:focus { outline: 1px solid var(--accent); }
 
-.fields { display: flex; flex-wrap: wrap; gap: 12px 22px; }
+.fields { display: flex; flex-wrap: wrap; gap: 12px 26px; align-items: flex-end; }
 .field { display: flex; flex-direction: column; gap: 3px; }
-.field-label { color: var(--muted); font-size: 12px; }
+.field-label { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .pair { display: inline-flex; gap: 6px; align-items: center; }
 .numwrap { display: inline-flex; align-items: center; gap: 4px; }
 .suffix { color: var(--muted); font-size: 12px; }
+/* size inputs to their content type: percents are short, money is medium */
+.fields input[type="number"] { width: 110px; }
+.fields .numwrap:has(.suffix) input[type="number"] { width: 72px; }
+
+.policy-row { display: flex; flex-wrap: wrap; gap: 12px 40px; align-items: flex-start; }
+.policy-row .fields { flex-direction: column; align-items: flex-start; gap: 12px; }
 
 .table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .table th {
@@ -193,20 +206,23 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
   color: var(--fg);
 }
 
-.infotip { position: relative; color: var(--muted); margin-left: 6px; cursor: help; font-size: 12px; }
+.infotip { color: var(--muted); margin-left: 6px; cursor: help; font-size: 12px; }
 .infotip-body {
-  position: absolute;
-  left: 0;
-  top: 130%;
-  z-index: 30;
-  width: 290px;
+  position: fixed;
+  z-index: 100;
+  width: 300px;
   background: #1c2128;
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 10px;
   font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
   color: var(--fg);
   box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+  pointer-events: none;
+  white-space: normal; /* labels set nowrap; the tooltip must always wrap */
+  text-align: left;
 }
 
 .event-details {

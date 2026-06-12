@@ -164,11 +164,12 @@ export default function Inputs() {
 
         <Section title="HSA Settings" info={A.hsa}>
           <div className="fields">
-            <Field label="Utilization (Share Of HSA-Eligible Expenses Paid From HSA)" info={A.hsaEligible}>
+            <Field label="Utilization"
+              info={"The share of HSA-eligible expenses paid from the HSA each year (tax-free); the rest is paid out of pocket. " + A.hsaEligible}>
               <PercentInput value={s.hsa.utilization} step={5}
                 onChange={(v) => up({ hsa: { ...s.hsa, utilization: v } })} />
             </Field>
-            <Field label="Cash Buffer (Kept Uninvested)" info={A.hsaBuffer}>
+            <Field label="Cash Buffer" info={A.hsaBuffer}>
               <NumberInput value={s.hsa.cash_buffer} step={500}
                 onChange={(v) => up({ hsa: { ...s.hsa, cash_buffer: v } })} />
             </Field>
@@ -185,6 +186,7 @@ export default function Inputs() {
 
       <Group title="Spending">
         <Section
+          wide
           title="Expenses"
           info="Streams in today's dollars. Mortgages and car loans belong here too: give them an end age and uncheck Inflates (fixed payments don't rise with CPI)."
           actions={
@@ -352,28 +354,32 @@ export default function Inputs() {
                       ))}
                     </select>
                   </td>
-                  <td className="pair">
-                    <select value={w.kind} onChange={(e) => {
-                      const waterfall = s.waterfall.map((x, j) =>
-                        j === i ? { ...x, kind: e.target.value as WaterfallStep["kind"] } : x);
-                      up({ waterfall });
-                    }}>
-                      <option value="to_match">To Employer Match</option>
-                      <option value="max">Max (IRS Limit)</option>
-                      <option value="fixed">Fixed $</option>
-                    </select>
-                    {w.kind === "fixed" && (
-                      <NumberInput value={w.amount ?? 0} step={500} onChange={(v) => {
-                        const waterfall = s.waterfall.map((x, j) => (j === i ? { ...x, amount: v } : x));
+                  <td>
+                    <span className="pair">
+                      <select value={w.kind} onChange={(e) => {
+                        const waterfall = s.waterfall.map((x, j) =>
+                          j === i ? { ...x, kind: e.target.value as WaterfallStep["kind"] } : x);
                         up({ waterfall });
-                      }} />
-                    )}
+                      }}>
+                        <option value="to_match">To Employer Match</option>
+                        <option value="max">Max (IRS Limit)</option>
+                        <option value="fixed">Fixed $</option>
+                      </select>
+                      {w.kind === "fixed" && (
+                        <NumberInput value={w.amount ?? 0} step={500} onChange={(v) => {
+                          const waterfall = s.waterfall.map((x, j) => (j === i ? { ...x, amount: v } : x));
+                          up({ waterfall });
+                        }} />
+                      )}
+                    </span>
                   </td>
-                  <td className="pair">
-                    <button className="ghost" disabled={i === 0}
-                      onClick={() => moveWaterfall(i, -1)}>↑</button>
-                    <button className="ghost" disabled={i === s.waterfall.length - 1}
-                      onClick={() => moveWaterfall(i, 1)}>↓</button>
+                  <td>
+                    <span className="pair">
+                      <button className="ghost" disabled={i === 0}
+                        onClick={() => moveWaterfall(i, -1)}>↑</button>
+                      <button className="ghost" disabled={i === s.waterfall.length - 1}
+                        onClick={() => moveWaterfall(i, 1)}>↓</button>
+                    </span>
                   </td>
                   <td><button className="ghost" onClick={() =>
                     up({ waterfall: s.waterfall.filter((_, j) => j !== i) })}>✕</button></td>
@@ -384,35 +390,39 @@ export default function Inputs() {
         </Section>
 
         <Section title="Withdrawal Policy" info={A.policy}>
-          <ol className="policy-list">
-            {s.withdrawal_policy.order.map((src, i) => (
-              <li key={src}>
-                {SOURCE_LABELS[src]}
-                <span>
-                  <button className="ghost" disabled={i === 0} onClick={() => {
-                    const order = [...s.withdrawal_policy.order];
-                    [order[i - 1], order[i]] = [order[i], order[i - 1]];
-                    up({ withdrawal_policy: { ...s.withdrawal_policy, order } });
-                  }}>↑</button>
-                  <button className="ghost" disabled={i === s.withdrawal_policy.order.length - 1}
-                    onClick={() => {
+          <div className="policy-row">
+            <ol className="policy-list">
+              {s.withdrawal_policy.order.map((src, i) => (
+                <li key={src}>
+                  {SOURCE_LABELS[src]}
+                  <span>
+                    <button className="ghost" disabled={i === 0} onClick={() => {
                       const order = [...s.withdrawal_policy.order];
-                      [order[i + 1], order[i]] = [order[i], order[i + 1]];
+                      [order[i - 1], order[i]] = [order[i], order[i - 1]];
                       up({ withdrawal_policy: { ...s.withdrawal_policy, order } });
-                    }}>↓</button>
-                </span>
-              </li>
-            ))}
-          </ol>
-          <div className="fields">
-            <Field label="Cash Buffer (Keep Untouched)">
-              <NumberInput value={s.withdrawal_policy.cash_buffer} step={1000}
-                onChange={(v) => up({ withdrawal_policy: { ...s.withdrawal_policy, cash_buffer: v } })} />
-            </Field>
-            <Field label="Last Resort: Early Traditional W/ 10% Penalty">
-              <input type="checkbox" checked={s.withdrawal_policy.allow_early_trad_with_penalty}
-                onChange={(e) => up({ withdrawal_policy: { ...s.withdrawal_policy, allow_early_trad_with_penalty: e.target.checked } })} />
-            </Field>
+                    }}>↑</button>
+                    <button className="ghost" disabled={i === s.withdrawal_policy.order.length - 1}
+                      onClick={() => {
+                        const order = [...s.withdrawal_policy.order];
+                        [order[i + 1], order[i]] = [order[i], order[i + 1]];
+                        up({ withdrawal_policy: { ...s.withdrawal_policy, order } });
+                      }}>↓</button>
+                  </span>
+                </li>
+              ))}
+            </ol>
+            <div className="fields">
+              <Field label="Cash Buffer"
+                info="The withdrawal policy never draws the cash pool below this amount (today's dollars) — it's your untouchable emergency reserve.">
+                <NumberInput value={s.withdrawal_policy.cash_buffer} step={1000}
+                  onChange={(v) => up({ withdrawal_policy: { ...s.withdrawal_policy, cash_buffer: v } })} />
+              </Field>
+              <Field label="Last Resort: Early Traditional W/ 10% Penalty"
+                info="If every other source is empty before 59½, tap traditional accounts and pay the 10% penalty rather than fail. Withdrawals that needed this are still counted, penalty and all.">
+                <input type="checkbox" checked={s.withdrawal_policy.allow_early_trad_with_penalty}
+                  onChange={(e) => up({ withdrawal_policy: { ...s.withdrawal_policy, allow_early_trad_with_penalty: e.target.checked } })} />
+              </Field>
+            </div>
           </div>
         </Section>
 

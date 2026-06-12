@@ -23,7 +23,8 @@ function poolBalances(accounts: { type: string; balance: number }[]) {
 }
 
 export default function Dashboard() {
-  const { scenario, result, freedom, snapshots, addSnapshot, axisMode, display } = useStore();
+  const { scenario, result, freedom, snapshots, addSnapshot, deleteSnapshot,
+          axisMode, display } = useStore();
   const [snapDraft, setSnapDraft] = useState<Record<string, number> | null>(null);
   if (!scenario) return null;
 
@@ -56,7 +57,7 @@ export default function Dashboard() {
         <Section title="Headline">
           {result && (
             <Stat label="Plan Success Probability" value={fmtPct(result.success_rate)}
-              sub={`Retire At ${scenario.retirement_age}, Horizon ${scenario.profile.horizon_age}`}
+              sub={`Retire at ${scenario.retirement_age}, horizon ${scenario.profile.horizon_age}, guardrails ${scenario.guardrails.enabled ? "on" : "off"}`}
               info={A.successRate} />
           )}
           {freedom && (
@@ -90,14 +91,33 @@ export default function Dashboard() {
             </>
           ) : (
             <>
-              <p className="hint">{snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"} recorded.</p>
+              {snapshots.length > 0 ? (
+                <table className="table">
+                  <tbody>
+                    {snapshots.map((snap) => (
+                      <tr key={snap.date}>
+                        <td>{snap.date}</td>
+                        <td style={{ textAlign: "right" }}>
+                          {fmtMoney(Object.values(snap.balances).reduce((a, b) => a + b, 0))}
+                        </td>
+                        <td>
+                          <button className="ghost" title="Delete Snapshot"
+                            onClick={() => deleteSnapshot(snap.date)}>✕</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="hint">No snapshots recorded yet.</p>
+              )}
               <button onClick={() => setSnapDraft(pools)}>+ Snapshot Today</button>
             </>
           )}
         </Section>
       </div>
 
-      <Section title="Actuals vs Projection" info={A.snapshots}>
+      <Section title="Actuals vs Projection" info={A.actualsVsProjection}>
         {result ? (
           <FanChart
             result={result}

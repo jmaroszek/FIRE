@@ -13,9 +13,10 @@ export const fmtPct = (v: number | null | undefined, digits = 1): string =>
 
 export function Section(props: {
   title: string; info?: string; children: React.ReactNode; actions?: React.ReactNode;
+  wide?: boolean;
 }) {
   return (
-    <section className="card">
+    <section className={props.wide ? "card wide" : "card"}>
       <div className="card-head">
         <h3>
           {props.title}
@@ -29,10 +30,38 @@ export function Section(props: {
 }
 
 export function InfoTip({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
+  // fixed positioning escapes any scrollable card, so tooltips never create
+  // or require scrollbars
+  const [pos, setPos] = useState<{ x: number; y: number; above: boolean } | null>(null);
+  const ref = React.useRef<HTMLSpanElement>(null);
   return (
-    <span className="infotip" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      ⓘ{open && <span className="infotip-body">{text}</span>}
+    <span
+      ref={ref}
+      className="infotip"
+      onMouseEnter={() => {
+        const r = ref.current!.getBoundingClientRect();
+        const above = r.bottom > window.innerHeight - 190;
+        setPos({
+          x: Math.max(8, Math.min(r.left - 20, window.innerWidth - 320)),
+          y: above ? r.top - 8 : r.bottom + 8,
+          above,
+        });
+      }}
+      onMouseLeave={() => setPos(null)}
+    >
+      ⓘ
+      {pos && (
+        <span
+          className="infotip-body"
+          style={{
+            left: pos.x,
+            top: pos.above ? undefined : pos.y,
+            bottom: pos.above ? window.innerHeight - pos.y : undefined,
+          }}
+        >
+          {text}
+        </span>
+      )}
     </span>
   );
 }

@@ -48,11 +48,13 @@ export const A = {
   accessibility:
     "Median accessible (penalty-free) dollars by source. The early-retirement bridge: cash + taxable + Roth contributions + matured ladder rungs must cover spending until 59½.",
   successRate:
-    "Share of Monte Carlo paths that never fail to fund spending through the horizon. With guardrails off, this assumes you'd march off a cliff at fixed spending — pessimistic. Turn on spending guardrails (Inputs) for a more realistic picture.",
+    "Share of Monte Carlo paths that never fail to fund spending through the horizon.",
   guardrails:
     "Guyton-Klinger-style rules: if planned spending / portfolio drifts 20% above the rate at retirement, discretionary spending is cut 10% (floored); if it drifts 20% below, spending is restored (capped at plan). Typically worth +5 to +15pp of success at marginal withdrawal rates.",
   events:
     "Events change the simulation from their date forward: one-time flows (positive = expense, negative = windfall), regime changes (salary/allocation), and market crashes.",
   snapshots:
-    "Record your actual balances over time and watch reality thread through the projection cone — the best calibration check on your assumptions.",
+    "Record your actual balances over time.",
+  actualsVsProjection:
+    "Your recorded snapshots plotted over the projection cone — watch reality thread through the bands.",
 };

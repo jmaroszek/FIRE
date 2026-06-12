@@ -69,18 +69,24 @@ export function FanChart(props: {
     });
   }
   const shapes: Partial<Shape>[] = [];
+  const annotations: Partial<Layout["annotations"][number]>[] = [];
   if (props.retirementMarker != null) {
     shapes.push({
       type: "line", x0: props.retirementMarker, x1: props.retirementMarker,
       y0: 0, y1: 1, yref: "paper",
       line: { color: "#d29922", width: 1.5, dash: "dash" },
     });
+    annotations.push({
+      x: props.retirementMarker, y: 1, yref: "paper",
+      text: `Retire ${props.retirementMarker}`, showarrow: false,
+      yanchor: "bottom", font: { color: "#d29922", size: 11 },
+    });
   }
   return (
     <Plot
       data={data}
       layout={{
-        ...baseLayout, shapes,
+        ...baseLayout, shapes, annotations: annotations as Layout["annotations"],
         height: props.height ?? 420,
         yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero" },
         xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },

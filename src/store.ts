@@ -47,6 +47,7 @@ interface AppState {
   removeFromCompare: (name: string) => void;
   refreshSnapshots: () => Promise<void>;
   addSnapshot: (snap: Snapshot) => Promise<void>;
+  deleteSnapshot: (date: string) => Promise<void>;
   setAxisMode: (m: "age" | "year") => void;
   setDisplay: (d: "real" | "nominal") => void;
 }
@@ -226,6 +227,11 @@ export const useStore = create<AppState>((set, get) => {
 
     addSnapshot: async (snap) => {
       await api.addSnapshot(snap);
+      await get().refreshSnapshots();
+    },
+
+    deleteSnapshot: async (date) => {
+      await api.deleteSnapshot(date);
       await get().refreshSnapshots();
     },
 

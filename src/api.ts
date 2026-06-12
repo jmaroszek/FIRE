@@ -46,4 +46,6 @@ export const api = {
   snapshots: () => req<Snapshot[]>("/snapshots"),
   addSnapshot: (snap: Snapshot) =>
     req<{ count: number }>("/snapshots", { method: "POST", body: JSON.stringify(snap) }),
+  deleteSnapshot: (date: string) =>
+    req<{ count: number }>(`/snapshots/${date}`, { method: "DELETE" }),
 };
