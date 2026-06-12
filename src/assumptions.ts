@@ -1,6 +1,22 @@
 // Short in-app versions of docs/ASSUMPTIONS.md, surfaced as ⓘ tips.
 
 export const A = {
+  costBasis:
+    "What you originally paid for the holdings in your brokerage account. When you sell, only the gain (value − basis) is taxed. Your brokerage reports this number — look for 'cost basis' on the positions page. If unsure, a lower basis is the conservative guess (more taxable gain).",
+  rothBasis:
+    "The total you've directly CONTRIBUTED to your Roth IRA over the years (not growth, not conversions). You can withdraw contributions at any age, tax- and penalty-free — which makes this number a key part of your early-retirement bridge. Your IRA provider can report lifetime contributions.",
+  vol:
+    "Volatility: the standard deviation of annual returns — how wildly the return swings year to year (historically ~17% for stocks, ~7% for bonds). Only used in Parametric mode; Bootstrap mode gets its variability from actual history.",
+  cpiPlus:
+    "Extra inflation on top of CPI for this stream. Healthcare costs historically grow ~1–2% faster than general inflation, so a healthcare stream might be CPI + 1.5%. Leave 0 for normal expenses.",
+  inflatesFlag:
+    "Checked: the amount rises with inflation (most living costs). Unchecked: fixed in nominal dollars forever — right for a fixed-rate mortgage or loan payment, which inflation slowly erodes.",
+  hsaEligible:
+    "Marks this stream as payable from your HSA. The HSA Utilization setting then decides what share actually comes out of the HSA (tax-free) vs out of pocket — no double counting either way.",
+  growthMode:
+    "Nominal: the raise number on your review letter (e.g. 3%) — the engine subtracts expected inflation to get real growth. Real: growth above inflation, used as-is.",
+  hsaBuffer:
+    "Dollars kept uninvested in the HSA (earning the cash rate) for near-term medical bills; everything above the buffer is invested at your allocation.",
   realDollars:
     "All inputs are in today's dollars. The engine simulates in nominal dollars (taxes and limits are nominal) and converts back for 'real' views.",
   cagr:

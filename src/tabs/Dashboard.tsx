@@ -36,8 +36,8 @@ export default function Dashboard() {
   return (
     <div className="stack">
       <div className="stat-grid">
-        <Section title="Net worth">
-          <Stat label="Total across all pools" value={fmtMoney(total)} />
+        <Section title="Net Worth">
+          <Stat label="Total Across All Pools" value={fmtMoney(total)} />
           <table className="table">
             <tbody>
               {POOLS.map((p) => (
@@ -55,20 +55,20 @@ export default function Dashboard() {
 
         <Section title="Headline">
           {result && (
-            <Stat label="Plan success probability" value={fmtPct(result.success_rate)}
-              sub={`retire at ${scenario.retirement_age}, horizon ${scenario.profile.horizon_age}`}
+            <Stat label="Plan Success Probability" value={fmtPct(result.success_rate)}
+              sub={`Retire At ${scenario.retirement_age}, Horizon ${scenario.profile.horizon_age}`}
               info={A.successRate} />
           )}
           {freedom && (
             <>
-              <Stat label="FIRE progress (MC)" value={fmtPct(freedom.fire_progress_mc)} />
-              <Stat label="Coast progress" value={fmtPct(freedom.coast.progress)} />
+              <Stat label="FIRE Progress (MC)" value={fmtPct(freedom.fire_progress_mc)} />
+              <Stat label="Coast Progress" value={fmtPct(freedom.coast.progress)} />
             </>
           )}
           {!result && <p className="hint">Simulation pending…</p>}
         </Section>
 
-        <Section title="Record a snapshot" info={A.snapshots}>
+        <Section title="Record A Snapshot" info={A.snapshots}>
           {snapDraft ? (
             <>
               {POOLS.map((p) => (
@@ -84,20 +84,20 @@ export default function Dashboard() {
                     balances: snapDraft,
                   });
                   setSnapDraft(null);
-                }}>save</button>
-                <button className="ghost" onClick={() => setSnapDraft(null)}>cancel</button>
+                }}>Save</button>
+                <button className="ghost" onClick={() => setSnapDraft(null)}>Cancel</button>
               </div>
             </>
           ) : (
             <>
               <p className="hint">{snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"} recorded.</p>
-              <button onClick={() => setSnapDraft(pools)}>+ snapshot today</button>
+              <button onClick={() => setSnapDraft(pools)}>+ Snapshot Today</button>
             </>
           )}
         </Section>
       </div>
 
-      <Section title="Actuals vs projection" info={A.snapshots}>
+      <Section title="Actuals vs Projection" info={A.snapshots}>
         {result ? (
           <FanChart
             result={result}

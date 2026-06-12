@@ -29,7 +29,10 @@ export interface InflationModel {
 }
 
 export interface Income {
-  gross_salary: number; real_growth: number; employer_match_pct: number;
+  gross_salary: number;
+  real_growth: number;
+  growth_mode: "nominal" | "real";
+  employer_match_pct: number;
 }
 
 export interface ExpenseStream {
@@ -80,7 +83,11 @@ export interface SocialSecurity {
   monthly_at_fra: number; claiming_age: number; haircut: number;
 }
 
-export interface HSARule { utilization: number; coverage: "self_only" | "family" }
+export interface HSARule {
+  utilization: number;
+  coverage: "self_only" | "family";
+  cash_buffer: number;
+}
 
 export type EventKind = "one_time_flow" | "regime_change" | "crash";
 

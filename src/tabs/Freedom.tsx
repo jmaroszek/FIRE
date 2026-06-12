@@ -18,19 +18,19 @@ export default function Freedom() {
   return (
     <div className="stack">
       <div className="stat-grid">
-        <Section title="FIRE number" info={A.fireMc}>
+        <Section title="FIRE Number" info={A.fireMc}>
           {freedom ? (
             <>
-              <Stat label={`MC-derived (≥${fmtPct(freedom.success_threshold, 0)} success, retire today)`}
+              <Stat label={`MC-derived (≥${fmtPct(freedom.success_threshold, 0)} Success, Retire Today)`}
                 value={fmtMoney(freedom.fire_number_mc)} info={A.fireMc} />
               <ProgressBar fraction={freedom.fire_progress_mc ?? 0} />
-              <Stat label="Classic 25× expenses" value={fmtMoney(freedom.fire_number_simple)}
+              <Stat label="Classic 25× Expenses" value={fmtMoney(freedom.fire_number_simple)}
                 sub={`${fmtMoney(freedom.annual_retirement_expenses)}/yr at retirement age`}
                 info={A.fireSimple} />
               <ProgressBar fraction={freedom.fire_progress_simple ?? 0} />
             </>
           ) : (
-            <p className="hint">{freedomLoading ? "computing…" : "—"}</p>
+            <p className="hint">{freedomLoading ? "Computing…" : "—"}</p>
           )}
         </Section>
 
@@ -38,33 +38,33 @@ export default function Freedom() {
           {freedom ? (
             <>
               <Stat
-                label={`Needed today to coast to ${scenario.sim.coast_target_age}`}
+                label={`Needed Today To Coast To ${scenario.sim.coast_target_age}`}
                 value={fmtMoney(freedom.coast.coast_number)}
                 sub={`assumes ${fmtPct(freedom.coast.assumed_real_return)} real return for ${freedom.coast.years_to_target} years`} />
               <ProgressBar fraction={freedom.coast.progress} />
-              <Stat label="Current invested total" value={fmtMoney(freedom.current_total)} />
+              <Stat label="Current Invested Total" value={fmtMoney(freedom.current_total)} />
             </>
           ) : (
-            <p className="hint">{freedomLoading ? "computing…" : "—"}</p>
+            <p className="hint">{freedomLoading ? "Computing…" : "—"}</p>
           )}
         </Section>
 
-        <Section title="Years to retirement"
+        <Section title="Years To Retirement"
           info="From the retirement-age sweep: the earliest age whose success probability meets your threshold.">
           {sweep ? (
             <Stat
-              label={`At ≥${fmtPct(sweep.threshold, 0)} success`}
-              value={sweep.years_to_fi != null ? `${sweep.years_to_fi} years` : "> age 70"}
-              sub={sweep.years_to_fi != null ? `retire at ${startAge + sweep.years_to_fi}` : undefined} />
+              label={`At ≥${fmtPct(sweep.threshold, 0)} Success`}
+              value={sweep.years_to_fi != null ? `${sweep.years_to_fi} years` : "> Age 70"}
+              sub={sweep.years_to_fi != null ? `Retire At ${startAge + sweep.years_to_fi}` : undefined} />
           ) : (
             <button onClick={runSweep} disabled={sweeping}>
-              {sweeping ? "computing…" : "compute sweep"}
+              {sweeping ? "Computing…" : "Compute Sweep"}
             </button>
           )}
         </Section>
       </div>
 
-      <Section title="Liquidity: can you bridge to 59½?" info={A.accessibility}>
+      <Section title="Liquidity: Can You Bridge To 59½?" info={A.accessibility}>
         {result ? (
           <AccessibilityChart result={result} axisMode={axisMode} />
         ) : (
@@ -72,11 +72,11 @@ export default function Freedom() {
         )}
       </Section>
 
-      <Section title="Roth conversion ladder schedule" info={A.ladder}>
+      <Section title="Roth Conversion Ladder Schedule" info={A.ladder}>
         {result && result.ladder_schedule.length > 0 ? (
           <table className="table">
             <thead>
-              <tr><th>Year</th><th>Age</th><th>Convert (today's $)</th><th>Penalty-free in</th></tr>
+              <tr><th>Year</th><th>Age</th><th>Convert (Today's $)</th><th>Penalty-Free In</th></tr>
             </thead>
             <tbody>
               {result.ladder_schedule.map((r) => (

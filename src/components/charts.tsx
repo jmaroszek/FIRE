@@ -39,6 +39,7 @@ export function FanChart(props: {
   startYear?: number;
   birthYear?: number;
   height?: number;
+  showTails?: boolean;
 }) {
   const fan = props.result.fan[props.display];
   const x = xValues(props.result, props.axisMode);
@@ -49,7 +50,7 @@ export function FanChart(props: {
       fillcolor: color, line: { width: 0 }, name: label, hovertemplate: "%{y:$,.0f}" },
   ];
   const data: Data[] = [
-    ...band("p5", "p95", "rgba(88,166,255,0.13)", "5–95%"),
+    ...(props.showTails ? band("p5", "p95", "rgba(88,166,255,0.13)", "5–95%") : []),
     ...band("p25", "p75", "rgba(88,166,255,0.22)", "25–75%"),
     { x, y: fan.p50, type: "scatter", mode: "lines", name: "Median",
       line: { color: ACCENT, width: 2.5 }, hovertemplate: "%{y:$,.0f}" },
@@ -83,7 +84,7 @@ export function FanChart(props: {
         height: props.height ?? 420,
         yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero" },
         xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
-        title: { text: `Net worth (${props.display} $)`, font: { size: 14 } },
+        title: { text: `Net Worth (${props.display === "real" ? "Today's" : "Nominal"} $)`, font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}
@@ -108,13 +109,13 @@ export function SweepChart(props: {
         ...baseLayout,
         height: props.height ?? 320,
         yaxis: { ...baseLayout.yaxis, tickformat: ".0%", range: [0, 1.02] },
-        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Retirement age" : "Retirement year" } },
+        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Retirement Age" : "Retirement Year" } },
         shapes: [{
           type: "line", x0: x[0], x1: x[x.length - 1],
           y0: props.sweep.threshold, y1: props.sweep.threshold,
           line: { color: "#d29922", width: 1, dash: "dot" },
         }],
-        title: { text: "Success probability vs retirement age", font: { size: 14 } },
+        title: { text: "Success Probability vs Retirement Age", font: { size: 14 } },
         showlegend: false,
       }}
       config={config}
@@ -169,7 +170,7 @@ export function AccessibilityChart(props: {
         height: props.height ?? 400,
         yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s" },
         xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
-        title: { text: "Accessible (penalty-free) assets by source — median path, today's $", font: { size: 14 } },
+        title: { text: "Accessible (Penalty-Free) Assets By Source — Median Path, Today's $", font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}
@@ -203,7 +204,7 @@ export function CompareChart(props: {
         height: props.height ?? 460,
         yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero" },
         xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
-        title: { text: `Median net worth with 25–75% bands (${props.display} $)`, font: { size: 14 } },
+        title: { text: `Median Net Worth With 25–75% Bands (${props.display === "real" ? "Today's" : "Nominal"} $)`, font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}
@@ -240,13 +241,13 @@ export function CompareSweepChart(props: {
         ...baseLayout,
         height: props.height ?? 340,
         yaxis: { ...baseLayout.yaxis, tickformat: ".0%", range: [0, 1.02] },
-        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Retirement age" : "Retirement year" } },
+        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Retirement Age" : "Retirement Year" } },
         shapes: threshold != null ? [{
           type: "line", xref: "paper", x0: 0, x1: 1,
           y0: threshold, y1: threshold,
           line: { color: "#d29922", width: 1, dash: "dot" },
         }] : [],
-        title: { text: "Success probability vs retirement age", font: { size: 14 } },
+        title: { text: "Success Probability vs Retirement Age", font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}

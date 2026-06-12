@@ -27,7 +27,7 @@ function ScenarioBar() {
       <select
         value={savedAs}
         onChange={(e) => e.target.value && load(e.target.value)}>
-        <option value="">{savedAs ? "— switch scenario —" : "(unsaved scenario)"}</option>
+        <option value="">{savedAs ? "— Switch Scenario —" : "(Unsaved Scenario)"}</option>
         {savedScenarios.map((n) => <option key={n} value={n}>{n}</option>)}
       </select>
       <span className="scenario-name">
@@ -35,22 +35,22 @@ function ScenarioBar() {
       </span>
       {naming ? (
         <span className="pair">
-          <input autoFocus value={name} placeholder="scenario name"
+          <input autoFocus value={name} placeholder="Scenario Name"
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && name && (saveAs(name), setNaming(false))} />
-          <button onClick={() => name && (saveAs(name), setNaming(false))}>save</button>
+          <button onClick={() => name && (saveAs(name), setNaming(false))}>Save</button>
           <button className="ghost" onClick={() => setNaming(false)}>✕</button>
         </span>
       ) : (
         <span className="pair">
           <button onClick={() => (savedAs ? saveAs(savedAs) : (setName(scenario.name), setNaming(true)))}>
-            save
+            Save
           </button>
           <button className="ghost" onClick={() => { setName(`${scenario.name} copy`); setNaming(true); }}>
-            save as…
+            Save As…
           </button>
           {savedAs && (
-            <button className="ghost" title="delete saved scenario"
+            <button className="ghost" title="Delete Saved Scenario"
               onClick={() => { if (confirm(`Delete saved scenario "${savedAs}"?`)) void remove(savedAs); }}>
               🗑
             </button>
@@ -69,13 +69,13 @@ export default function App() {
   if (engineUp === false) {
     return (
       <div className="offline">
-        <h2>Engine not running</h2>
+        <h2>Engine Not Running</h2>
         <p>
           Start the Python sidecar first:
           <code>conda activate fire && python server/main.py</code>
           then reload this window.
         </p>
-        <button onClick={() => location.reload()}>retry</button>
+        <button onClick={() => location.reload()}>Retry</button>
       </div>
     );
   }

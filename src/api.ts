@@ -31,6 +31,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ scenario, n_paths: nPaths }),
     }),
+  getWorkspace: () => req<Scenario>("/workspace"),
+  saveWorkspace: (scenario: Scenario) =>
+    req<{ saved: boolean }>("/workspace", { method: "PUT", body: JSON.stringify(scenario) }),
   listScenarios: () => req<{ name: string }[]>("/scenarios"),
   loadScenario: (name: string) => req<Scenario>(`/scenarios/${encodeURIComponent(name)}`),
   saveScenario: (name: string, scenario: Scenario) =>

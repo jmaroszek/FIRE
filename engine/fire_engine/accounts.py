@@ -94,15 +94,19 @@ class PortfolioState:
     def total_net_worth(self) -> np.ndarray:
         return self.taxable + self.trad + self.roth + self.hsa + self.cash
 
-    def grow(self, blended_return: np.ndarray, cash_return: np.ndarray) -> None:
+    def grow(self, blended_return: np.ndarray, cash_return: np.ndarray,
+             hsa_cash_buffer: np.ndarray | float = 0.0) -> None:
         """Apply end-of-year returns. Invested pools earn the allocation-blended
-        return; the cash pool earns the cash return. Basis amounts are nominal
-        and do not grow."""
+        return; the cash pool earns the cash return. The first `hsa_cash_buffer`
+        nominal dollars of the HSA stay uninvested at the cash return. Basis
+        amounts are nominal and do not grow."""
         factor = 1.0 + blended_return
         self.taxable *= factor
         self.trad *= factor
         self.roth *= factor
-        self.hsa *= factor
+        hsa_invested = np.maximum(self.hsa - hsa_cash_buffer, 0.0)
+        hsa_parked = self.hsa - hsa_invested
+        self.hsa = hsa_parked * (1.0 + cash_return) + hsa_invested * factor
         self.cash *= 1.0 + cash_return
 
     def accessible(self, age: int) -> dict[str, np.ndarray]:

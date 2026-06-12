@@ -25,6 +25,7 @@ APP_DATA = Path(os.environ.get("FIRE_DATA_DIR",
                                Path(os.environ.get("APPDATA", Path.home())) / "fire-app"))
 SCENARIO_DIR = APP_DATA / "scenarios"
 SNAPSHOT_FILE = APP_DATA / "snapshots.json"
+WORKSPACE_FILE = APP_DATA / "workspace.json"
 
 app = FastAPI(title="fire-engine", version="0.1.0")
 app.add_middleware(
@@ -100,6 +101,27 @@ def freedom(req: FreedomRequest) -> dict:
         "coast": coast,
         "annual_retirement_expenses": m.annual_retirement_expenses(s, s.retirement_age),
     }
+
+
+# ---------------------------------------------------------------- workspace
+# The working scenario, autosaved on every edit so the app reopens exactly
+# where you left off — independent of named "saved scenarios".
+
+@app.get("/workspace")
+def get_workspace() -> Scenario:
+    if not WORKSPACE_FILE.exists():
+        raise HTTPException(404, "no workspace yet")
+    raw = json.loads(WORKSPACE_FILE.read_text())
+    if raw.get("schema_version", 0) > SCHEMA_VERSION:
+        raise HTTPException(409, "workspace was saved by a newer app version")
+    return Scenario.model_validate(raw)
+
+
+@app.put("/workspace")
+def save_workspace(scenario: Scenario) -> dict:
+    APP_DATA.mkdir(parents=True, exist_ok=True)
+    WORKSPACE_FILE.write_text(scenario.model_dump_json(indent=2))
+    return {"saved": True}
 
 
 # ---------------------------------------------------------------- scenarios

@@ -85,10 +85,19 @@ class InflationModel(BaseModel):
 
 class Income(BaseModel):
     gross_salary: float = 0.0
-    real_growth: float = 0.01
+    # Annual raise. "nominal" (default) is the number on your review letter
+    # (e.g. 3%); the engine converts to real growth using expected inflation:
+    # real = (1+nominal)/(1+mean_inflation) - 1. "real" uses the value as-is.
+    real_growth: float = 0.005
+    growth_mode: Literal["nominal", "real"] = "nominal"
     # Employer match as a fraction of gross salary (e.g. 0.04 = 4% of salary),
     # contributed to trad_401k whenever the employee contributes anything to a 401k.
     employer_match_pct: float = 0.0
+
+    def effective_real_growth(self, mean_inflation: float) -> float:
+        if self.growth_mode == "nominal":
+            return (1 + self.real_growth) / (1 + mean_inflation) - 1
+        return self.real_growth
 
 
 class ExpenseStream(BaseModel):
@@ -186,9 +195,13 @@ SS_CLAIMING_FACTORS = {62: 0.70, 63: 0.75, 64: 0.80, 65: 0.8667, 66: 0.9333,
 
 
 class HSARule(BaseModel):
-    # Fraction of medical expenses paid tax-free from the HSA (rest from cash flow).
+    # Fraction of HSA-eligible expenses paid tax-free from the HSA (rest from
+    # cash flow).
     utilization: float = 1.0
     coverage: Literal["self_only", "family"] = "self_only"
+    # Keep this much of the HSA (today's dollars) uninvested, earning the cash
+    # return, for near-term medical liquidity; the rest is invested.
+    cash_buffer: float = 0.0
 
 
 class EventKind(str, Enum):
@@ -286,7 +299,8 @@ def example_scenario() -> Scenario:
             Account(type=AccountType.hsa, balance=12000),
             Account(type=AccountType.cash, balance=15000),
         ],
-        income=Income(gross_salary=110000, real_growth=0.015, employer_match_pct=0.04),
+        income=Income(gross_salary=110000, real_growth=0.03, growth_mode="nominal",
+                      employer_match_pct=0.04),
         retirement_age=45,
         expense_streams=[
             ExpenseStream(name="Living expenses", annual=45000),

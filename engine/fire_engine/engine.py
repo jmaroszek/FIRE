@@ -108,8 +108,16 @@ def _precompute_regimes(scenario: Scenario, retirement_age: int) -> list[YearReg
                 regime_events.setdefault(t, []).append(ev.overrides)
 
     out: list[YearRegime] = []
+    mean_infl = scenario.inflation.mean
+
+    def to_real(g: float) -> float:
+        # growth inputs are nominal by default; convert at expected inflation
+        if scenario.income.growth_mode == "nominal":
+            return (1 + g) / (1 + mean_infl) - 1
+        return g
+
     salary = scenario.income.gross_salary
-    growth = scenario.income.real_growth
+    growth = scenario.income.effective_real_growth(mean_infl)
     match = scenario.income.employer_match_pct
     alloc = scenario.allocation
     segment_start = 0
@@ -125,7 +133,7 @@ def _precompute_regimes(scenario: Scenario, retirement_age: int) -> list[YearReg
                     salary = ov.gross_salary
                     salary_set_at = t
                 if ov.salary_real_growth is not None:
-                    growth = ov.salary_real_growth
+                    growth = to_real(ov.salary_real_growth)
                 if ov.employer_match_pct is not None:
                     match = ov.employer_match_pct
                 if ov.allocation is not None:
@@ -457,7 +465,8 @@ def run(
         weights = regime.weights
         blended = (weights[0] * paths.stock[:, t] + weights[1] * paths.bond[:, t]
                    + weights[2] * paths.cash[:, t])
-        state.grow(blended, paths.cash[:, t])
+        state.grow(blended, paths.cash[:, t],
+                   hsa_cash_buffer=scenario.hsa.cash_buffer * infl)
 
         nw[:, t + 1] = state.total_net_worth()
         for n in pool_names:

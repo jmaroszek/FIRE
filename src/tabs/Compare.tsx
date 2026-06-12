@@ -23,11 +23,11 @@ export default function Compare() {
   return (
     <div className="stack">
       <Section
-        title="Scenario comparison"
+        title="Scenario Comparison"
         info="Pin the current scenario's results, tweak inputs, pin again — overlay as many as you like. Success curves compute in the background for each pin."
         actions={
           <button onClick={addToCompare} disabled={!result}>
-            + pin current scenario
+            + Pin Current Scenario
           </button>
         }>
         {compare.length === 0 ? (
@@ -41,8 +41,8 @@ export default function Compare() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Scenario</th><th>Success</th><th>Retire @</th><th>Years to FI</th>
-                  <th>Median end (real)</th><th>5th pctile end (real)</th><th />
+                  <th>Scenario</th><th>Success</th><th>Retire @</th><th>Years To FI</th>
+                  <th>Median End (Real)</th><th>5th Pctile End (Real)</th><th />
                 </tr>
               </thead>
               <tbody>
@@ -71,7 +71,7 @@ export default function Compare() {
 
       {anySweep && (
         <Section
-          title="When can each scenario retire?"
+          title="When Can Each Scenario Retire?"
           info="The success-probability curves of every pinned scenario, overlaid. Where a curve crosses your threshold is that scenario's earliest safe retirement age.">
           <CompareSweepChart slots={compare} axisMode={axisMode} />
         </Section>

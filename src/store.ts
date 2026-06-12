@@ -53,6 +53,7 @@ interface AppState {
 
 let simTimer: ReturnType<typeof setTimeout> | null = null;
 let simSeq = 0;
+let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useStore = create<AppState>((set, get) => {
   const scheduleSimulate = () => {
@@ -112,21 +113,27 @@ export const useStore = create<AppState>((set, get) => {
         api.listScenarios().then((l) => l.map((x) => x.name)).catch(() => []),
         api.snapshots().catch(() => []),
       ]);
+      // the autosaved workspace is the persistent baseline; named scenarios
+      // are explicit snapshots on top of it
       let scenario: Scenario;
-      let savedAs = "";
-      if (names.length > 0) {
-        scenario = await api.loadScenario(names[0]);
-        savedAs = names[0];
-      } else {
-        scenario = await api.defaults();
+      try {
+        scenario = await api.getWorkspace();
+      } catch {
+        scenario = names.length > 0
+          ? await api.loadScenario(names[0])
+          : await api.defaults();
       }
-      set({ savedScenarios: names, snapshots, scenario, savedAs, dirty: false });
+      set({ savedScenarios: names, snapshots, scenario, savedAs: "", dirty: false });
       scheduleSimulate();
     },
 
     setScenario: (scenario) => {
       set({ scenario, dirty: true });
       scheduleSimulate();
+      if (autosaveTimer) clearTimeout(autosaveTimer);
+      autosaveTimer = setTimeout(() => {
+        void api.saveWorkspace(scenario).catch(() => {});
+      }, 800);
     },
 
     patchScenario: (patch) => {
@@ -176,6 +183,7 @@ export const useStore = create<AppState>((set, get) => {
       const scenario = await api.loadScenario(name);
       set({ scenario, savedAs: name, dirty: false, result: null, sweep: null, freedom: null });
       scheduleSimulate();
+      void api.saveWorkspace(scenario).catch(() => {});
     },
 
     remove: async (name) => {
