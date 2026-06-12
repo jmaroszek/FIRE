@@ -95,13 +95,19 @@ export const useStore = create<AppState>((set, get) => {
     setTab: (tab) => set({ tab }),
 
     init: async () => {
-      try {
-        await api.health();
-        set({ engineUp: true });
-      } catch {
-        set({ engineUp: false });
-        return;
+      // the bundled engine exe takes a few seconds to unpack on cold start —
+      // poll before declaring it down
+      let up = false;
+      for (let i = 0; i < 15 && !up; i++) {
+        try {
+          await api.health();
+          up = true;
+        } catch {
+          await new Promise((r) => setTimeout(r, 700));
+        }
       }
+      set({ engineUp: up });
+      if (!up) return;
       const [names, snapshots] = await Promise.all([
         api.listScenarios().then((l) => l.map((x) => x.name)).catch(() => []),
         api.snapshots().catch(() => []),

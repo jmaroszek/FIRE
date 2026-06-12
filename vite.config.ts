@@ -8,6 +8,10 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
+    // Tell Vite to ignore the Tauri backend folder to prevent EBUSY locks
+    watch: {
+      ignored: ["**/src-tauri/**"],
+    },
   },
   build: {
     target: "es2021",
