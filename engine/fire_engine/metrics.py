@@ -165,6 +165,7 @@ def ladder_schedule(result: SimResult) -> list[dict]:
     deflate = _flow_deflator(result)  # conversions are a flow
     med = np.median(result.conversions / deflate, axis=0)
     trad = result.pools["trad"]
+    mrate = result.conversion_marginal_rate
     out = []
     for i, amount in enumerate(med):
         if amount > 1.0:
@@ -176,6 +177,34 @@ def ladder_schedule(result: SimResult) -> list[dict]:
                 "amount_real": float(amount),
                 "matures": int(result.years[i]) + 5,
                 "trad_remaining_real": trad_left,
+                # marginal tax rate the NEXT conversion dollar would face (median
+                # path) — bracket + SS torpedo + LTCG displacement
+                "marginal_rate": float(np.median(mrate[:, i])) if mrate is not None else 0.0,
+            })
+    return out
+
+
+def rmd_schedule(result: SimResult) -> list[dict]:
+    """Median required minimum distribution per year (real), the traditional pool
+    feeding it, and the marginal tax rate on the next ordinary dollar that year —
+    i.e. the bracket the RMD pushes you into. Diagnostic for how hard to ladder:
+    if these RMDs land in a high bracket, convert more (lower) before 75."""
+    if result.rmds is None:
+        return []
+    deflate = _flow_deflator(result)  # RMDs are a flow
+    med = np.median(result.rmds / deflate, axis=0)
+    trad = result.pools["trad"]
+    mrate = result.conversion_marginal_rate
+    out = []
+    for i, amount in enumerate(med):
+        if amount > 1.0:
+            out.append({
+                "year": int(result.years[i]),
+                "age": int(result.ages[i]),
+                "amount_real": float(amount),
+                "trad_remaining_real": float(np.median(
+                    trad[:, i + 1] / result.cum_inflation[:, i + 1])),
+                "marginal_rate": float(np.median(mrate[:, i])) if mrate is not None else 0.0,
             })
     return out
 
@@ -201,6 +230,7 @@ def summarize(result: SimResult) -> dict:
         "survival_curve": survival_curve(result),
         "accessibility_real": accessibility_medians_real(result),
         "ladder_schedule": ladder_schedule(result),
+        "rmd_schedule": rmd_schedule(result),
         "taxes_median_real": np.median(
             result.taxes_paid / _flow_deflator(result), axis=0).tolist(),
         "expenses_median_real": np.median(

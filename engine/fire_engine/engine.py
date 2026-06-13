@@ -66,6 +66,11 @@ def load_rmd_divisors() -> dict[int, float]:
 
 
 RMD_START_AGE = 75  # SECURE 2.0, born 1960+
+# Default last age for the Roth conversion ladder. The ladder serves two jobs:
+# bridging to 59.5 AND shrinking the traditional balance before RMDs begin, so
+# the default runs well past 59.5 — stopping a couple of years short of RMDs,
+# where the next converted dollar starts competing with forced RMD income.
+LADDER_DEFAULT_END_AGE = 72
 
 
 @dataclass
@@ -115,6 +120,8 @@ class SimResult:
     contributions: np.ndarray  # (P, T) nominal total contributions
     contrib_pools: dict[str, np.ndarray] | None = None  # destination -> (P, T) nominal
     liability_balance: np.ndarray | None = None  # (T+1,) nominal outstanding debt
+    conversion_marginal_rate: np.ndarray | None = None  # (P, T) marginal tax on next conversion $
+    rmds: np.ndarray | None = None  # (P, T) nominal required minimum distributions
 
     @property
     def success_rate(self) -> float:
@@ -296,7 +303,7 @@ def run(
 
     conv_rule = scenario.conversion_rule
     conv_start = conv_rule.start_age if conv_rule.start_age is not None else retirement_age
-    conv_end = conv_rule.end_age if conv_rule.end_age is not None else PENALTY_FREE_AGE - 2
+    conv_end = conv_rule.end_age if conv_rule.end_age is not None else LADDER_DEFAULT_END_AGE
 
     ss = scenario.social_security
     ss_factor = SS_CLAIMING_FACTORS.get(ss.claiming_age, 1.0)
@@ -318,6 +325,8 @@ def run(
     taxes_paid = np.zeros((P, T))
     spending_mult_out = np.ones((P, T))
     conversions_out = np.zeros((P, T))
+    conv_marginal_rate = np.zeros((P, T))
+    rmds_out = np.zeros((P, T))
     contrib_pool_names = ("taxable", "trad", "roth", "hsa", "cash", "match")
     contrib_pools_out = {n: np.zeros((P, T)) for n in contrib_pool_names}
     ss_out = np.zeros((P, T))
@@ -392,11 +401,12 @@ def run(
 
         limits = _contribution_limits(age, infl, scenario.hsa.coverage)
         conv_active = (conv_rule.kind != "none") and (conv_start <= age <= conv_end)
-        bracket_top_nom = (
-            taxmod.ordinary_bracket_top(conv_rule.bracket_top, tables, infl)
-            if conv_rule.kind == "fill_bracket"
-            else None
-        )
+        if conv_rule.kind != "fill_bracket":
+            bracket_top_nom = None
+        elif conv_rule.bracket_top == "custom":
+            bracket_top_nom = conv_rule.custom_top * infl
+        else:
+            bracket_top_nom = taxmod.ordinary_bracket_top(conv_rule.bracket_top, tables, infl)
         std_nom = tables.standard_deduction * infl
 
         # ---- fixed-point: taxes <-> contributions <-> withdrawals <-> conversions
@@ -410,12 +420,17 @@ def run(
             w_ltcg = wplan.ltcg_income if wplan is not None else zeros
             w_penalty = wplan.penalty_base if wplan is not None else zeros
 
-            ordinary = (
+            ordinary_excl_ss = (
                 np.maximum(wages - pretax, 0.0)
                 + rmd + conv + w_ordinary + cash_interest
-                + tables.ss_taxable_fraction * ss_nom
             )
             ltcg = dividends + w_ltcg
+            # Social Security taxation follows the IRS provisional-income test:
+            # other (non-SS) income plus half the benefit decides how much of the
+            # benefit (0/50/85%) is taxed — the source of the "tax torpedo" that a
+            # flat fraction would hide from bracket-management decisions.
+            taxable_ss = taxmod.taxable_social_security(ordinary_excl_ss + ltcg, ss_nom, tables)
+            ordinary = ordinary_excl_ss + taxable_ss
             fed, ord_taxable, ltcg_taxable = taxmod.federal_tax(ordinary, ltcg, tables, infl)
             state_tax = scenario.profile.state_tax_rate * (ord_taxable + ltcg_taxable)
             fica = taxmod.fica_tax(wages, tables, infl)
@@ -451,6 +466,17 @@ def run(
         # ---- apply the converged plan
         apply_plan(state, wplan, age)
         fail[:, t] = wplan.shortfall > 1.0
+
+        # marginal federal+state tax rate on the next dollar of Roth conversion
+        # (ordinary income): captures the bracket, the Social Security
+        # provisional-income "torpedo", and any long-term gains pushed out of the
+        # 0% band. A finite difference around the converged plan — it tells you
+        # what filling the bracket one notch higher would actually cost.
+        bump = 1000.0 * infl
+        ss_bumped = taxmod.taxable_social_security(ordinary_excl_ss + bump + ltcg, ss_nom, tables)
+        fed_b, ot_b, lt_b = taxmod.federal_tax(ordinary_excl_ss + bump + ss_bumped, ltcg, tables, infl)
+        tax_b = fed_b + scenario.profile.state_tax_rate * (ot_b + lt_b)
+        conv_marginal_rate[:, t] = (tax_b - (fed + state_tax)) / bump
 
         leftover = available
         for acc_type, amount in contrib.items():
@@ -508,6 +534,7 @@ def run(
         for n in pool_names:
             pools[n][:, t + 1] = getattr(state, n)
         taxes_paid[:, t] = total_tax
+        rmds_out[:, t] = rmd
         spending_mult_out[:, t] = spend_mult
         ss_out[:, t] = ss_nom
         expenses_out[:, t] = expenses_nom
@@ -532,6 +559,8 @@ def run(
         contributions=contributions_out,
         contrib_pools=contrib_pools_out,
         liability_balance=liab_balance,
+        conversion_marginal_rate=conv_marginal_rate,
+        rmds=rmds_out,
     )
 
 

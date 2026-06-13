@@ -99,6 +99,14 @@ main { padding: 18px; max-width: 1500px; width: 100%; margin: 0 auto; }
 .group-grid .card.span1 { flex: 1 1 340px; }
 /* full-width within a group: always claims its own row regardless of viewport */
 .group-grid .card.full { flex: 1 1 100%; }
+/* a stacked column of cards that fills the space beside a content-sized tile */
+.group-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1 1 480px;
+  min-width: 340px;
+}
 
 .card {
   background: var(--panel);
@@ -148,6 +156,18 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .fields { display: flex; flex-wrap: wrap; gap: 12px 26px; align-items: flex-end; }
 .field { display: flex; flex-direction: column; gap: 3px; }
 .field-label { color: var(--muted); font-size: 12px; white-space: nowrap; }
+/* retirement-age slider: breathing room from the chart/button above, and the
+   "use suggested age" action sitting beside the slider */
+.retire-control { margin-top: 16px; }
+.slider-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.link-action {
+  background: none; border: none; color: var(--accent);
+  padding: 4px 2px; font-size: 13px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.link-action:hover { text-decoration: underline; }
+.slider-note { color: var(--muted); font-size: 12px; }
+.slider-note.ok { color: #3fb950; }
 .pair { display: inline-flex; gap: 6px; align-items: center; }
 .numwrap { display: inline-flex; align-items: center; gap: 4px; }
 .suffix { color: var(--muted); font-size: 12px; }

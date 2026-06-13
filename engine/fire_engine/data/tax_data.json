@@ -1,5 +1,5 @@
 {
-  "_comment": "2026 federal tax parameters, single filer (verified against IRS Rev. Proc. / Tax Foundation, June 2026). All thresholds in nominal base_year dollars; the engine scales them by each path's cumulative simulated inflation. Refresh annually.",
+  "_comment": "2026 federal tax parameters, single filer (verified against IRS Rev. Proc. / Tax Foundation, June 2026). All thresholds in nominal base_year dollars; the engine scales them by each path's cumulative simulated inflation. EXCEPTION: the Social Security provisional-income thresholds are not indexed in statute and are left unscaled (see _ss_comment). Refresh annually.",
   "base_year": 2026,
   "single": {
     "standard_deduction": 16100,
@@ -24,5 +24,8 @@
     "medicare_rate": 0.0145
   },
   "early_withdrawal_penalty": 0.10,
-  "ss_taxable_fraction": 0.85
+  "ss_taxable_fraction": 0.85,
+  "_ss_comment": "Social Security taxability, single filer (IRS Pub. 915). ss_taxable_fraction is the statutory MAXIMUM share of benefits that can be taxed. The provisional-income thresholds are fixed in statute and NOT inflation-indexed, so the engine compares nominal income against them WITHOUT scaling by simulated inflation — intentionally modeling the SS 'tax torpedo' worsening over a long, inflating retirement.",
+  "ss_provisional_base_lower": 25000,
+  "ss_provisional_base_upper": 34000
 }

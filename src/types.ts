@@ -82,7 +82,8 @@ export interface WithdrawalPolicy {
 export interface ConversionRule {
   kind: "none" | "fixed" | "fill_bracket";
   annual_amount: number;
-  bracket_top: "std_deduction" | "10" | "12" | "22";
+  bracket_top: "std_deduction" | "10" | "12" | "22" | "custom";
+  custom_top?: number;
   start_age?: number | null;
   end_age?: number | null;
 }
@@ -162,7 +163,11 @@ export interface SimulateResult {
   accessibility_real: Record<string, number[]>;
   ladder_schedule: {
     year: number; age: number; amount_real: number; matures: number;
-    trad_remaining_real: number;
+    trad_remaining_real: number; marginal_rate: number;
+  }[];
+  rmd_schedule: {
+    year: number; age: number; amount_real: number;
+    trad_remaining_real: number; marginal_rate: number;
   }[];
   taxes_median_real: number[];
   expenses_median_real: number[];

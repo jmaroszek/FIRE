@@ -76,6 +76,50 @@ def test_fica(tables):
     assert tax[1] == pytest.approx(184500 * 0.062 + 200000 * 0.0145)
 
 
+def test_taxable_ss_below_base(tables):
+    # provisional = 10,000 other + 0.5*18,000 = 19,000 < 25,000 -> none taxed
+    taxed = taxes.taxable_social_security(np.array([10000.0]), np.array([18000.0]), tables)
+    assert taxed[0] == pytest.approx(0.0)
+
+
+def test_taxable_ss_50pct_tier(tables):
+    # B=12,000, other=20,000 -> provisional 26,000 in (25k, 34k]
+    # taxable = min(0.5*B=6,000, 0.5*(26,000-25,000)=500) = 500
+    taxed = taxes.taxable_social_security(np.array([20000.0]), np.array([12000.0]), tables)
+    assert taxed[0] == pytest.approx(500.0)
+
+
+def test_taxable_ss_85pct_tier_partial(tables):
+    # B=20,000, other=25,000 -> provisional 35,000 > 34,000
+    # taxable = min(0.85*B=17,000, 0.85*(35,000-34,000)=850 + min(0.5*B,4,500)=4,500) = 5,350
+    taxed = taxes.taxable_social_security(np.array([25000.0]), np.array([20000.0]), tables)
+    assert taxed[0] == pytest.approx(5350.0)
+
+
+def test_taxable_ss_85pct_cap(tables):
+    # high provisional income hits the statutory 85% ceiling on the benefit
+    taxed = taxes.taxable_social_security(np.array([80000.0]), np.array([20000.0]), tables)
+    assert taxed[0] == pytest.approx(0.85 * 20000.0)
+
+
+def test_taxable_ss_capital_gains_count_as_provisional(tables):
+    # LTCG is part of provisional income even though it's taxed at LTCG rates:
+    # passing it via other_income must trigger the same taxation as ordinary income
+    taxed = taxes.taxable_social_security(np.array([40000.0]), np.array([20000.0]), tables)
+    assert taxed[0] == pytest.approx(0.85 * 20000.0)
+
+
+def test_taxable_ss_thresholds_not_inflation_indexed(tables):
+    # The function takes no inflation factor: the same nominal income later in a
+    # high-inflation path is taxed identically, so the real thresholds erode —
+    # the modeled "tax torpedo". Vectorized across paths.
+    other = np.array([20000.0, 20000.0])
+    ss = np.array([12000.0, 12000.0])
+    taxed = taxes.taxable_social_security(other, ss, tables)
+    assert taxed[0] == pytest.approx(500.0)
+    assert taxed[1] == pytest.approx(500.0)
+
+
 def test_bracket_top_lookup(tables):
     infl = np.array([1.0])
     assert taxes.ordinary_bracket_top("std_deduction", tables, infl)[0] == 0.0

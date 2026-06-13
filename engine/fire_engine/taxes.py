@@ -29,7 +29,9 @@ class TaxTables:
     ss_wage_base: float
     medicare_rate: float
     early_penalty: float
-    ss_taxable_fraction: float
+    ss_taxable_fraction: float  # statutory maximum (0.85) taxable share of benefits
+    ss_base_lower: float  # provisional-income threshold where 50% taxation begins
+    ss_base_upper: float  # provisional-income threshold where 85% taxation begins
 
 
 def load_tax_tables() -> TaxTables:
@@ -57,6 +59,8 @@ def load_tax_tables() -> TaxTables:
         medicare_rate=raw["fica"]["medicare_rate"],
         early_penalty=raw["early_withdrawal_penalty"],
         ss_taxable_fraction=raw["ss_taxable_fraction"],
+        ss_base_lower=raw["ss_provisional_base_lower"],
+        ss_base_upper=raw["ss_provisional_base_upper"],
     )
 
 
@@ -114,6 +118,43 @@ def federal_tax(ordinary_income: np.ndarray, ltcg_income: np.ndarray,
     tax = bracket_tax(ordinary_taxable, tables.ordinary_thresholds, tables.ordinary_rates, infl)
     tax = tax + ltcg_stacked_tax(ordinary_taxable, ltcg_taxable, tables, infl)
     return tax, ordinary_taxable, ltcg_taxable
+
+
+def taxable_social_security(
+    other_income: np.ndarray, ss_benefits: np.ndarray, tables: TaxTables
+) -> np.ndarray:
+    """Federally taxable portion of Social Security benefits (single filer).
+
+    Implements the IRS provisional-income test (Pub. 915 worksheet):
+
+        provisional = other_income + 0.5 * benefits
+
+    where ``other_income`` is all non-SS income (ordinary + capital gains, gross
+    of the standard deduction). The taxable share steps 0% -> 50% -> 85% across
+    two thresholds (``lower``, ``upper``):
+
+        provisional <= lower:          0
+        lower < provisional <= upper:  min(0.5*B, 0.5*(provisional - lower))
+        provisional > upper:           min(0.85*B,
+                                           0.85*(provisional - upper)
+                                           + min(0.5*B, 0.5*(upper - lower)))
+
+    The thresholds ($25,000 / $34,000) are fixed in statute and NOT indexed for
+    inflation, so they are intentionally compared against NOMINAL income with no
+    `infl` scaling. Over a long, inflating retirement this realistically drags a
+    rising share of the benefit into tax — the Social Security "tax torpedo" —
+    and is the reason a flat 85% assumption misleads bracket-management planning.
+    """
+    other = np.maximum(np.asarray(other_income, dtype=float), 0.0)
+    ss = np.maximum(np.asarray(ss_benefits, dtype=float), 0.0)
+    lower, upper, cap = tables.ss_base_lower, tables.ss_base_upper, tables.ss_taxable_fraction
+    provisional = other + 0.5 * ss
+    mid = np.minimum(0.5 * ss, 0.5 * np.maximum(provisional - lower, 0.0))
+    high = np.minimum(
+        cap * ss,
+        cap * np.maximum(provisional - upper, 0.0) + np.minimum(0.5 * ss, 0.5 * (upper - lower)),
+    )
+    return np.where(provisional <= lower, 0.0, np.where(provisional <= upper, mid, high))
 
 
 def fica_tax(wages: np.ndarray, tables: TaxTables, infl: np.ndarray | float) -> np.ndarray:

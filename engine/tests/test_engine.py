@@ -134,6 +134,46 @@ def test_conversion_ladder_fill_12_bracket_pays_tax():
     assert result.taxes_paid[0, 0] == pytest.approx(5800.0)
 
 
+def test_conversion_ladder_runs_past_59_5_by_default():
+    """The ladder is a lifetime tool: with the default window it keeps converting
+    well past 59½ (here at 65) to shrink the pre-RMD traditional balance."""
+    s = Scenario(
+        profile=Profile(birth_year=1986, horizon_age=70, state_tax_rate=0.0),
+        accounts=[
+            Account(type=AccountType.trad_401k, balance=2_000_000),
+            Account(type=AccountType.roth_ira, balance=500000, roth_contribution_basis=500000),
+        ],
+        retirement_age=50,
+        expense_streams=[ExpenseStream(name="living", annual=30000)],
+        conversion_rule=ConversionRule(kind="fill_bracket", bracket_top="12"),
+        sim=SimSettings(n_paths=2, start_year=2026),
+        **FROZEN_MARKET,
+    )
+    result = run(s)
+    age65 = 65 - s.start_age
+    assert result.conversions[0, age65] > 1.0  # still laddering at 65 (default end 72)
+
+
+def test_conversion_marginal_rate_reports_next_dollar_bracket():
+    """The 'Next $ Taxed At' readout: filling to the standard deduction leaves the
+    next conversion dollar landing in the bottom 10% bracket (no SS, no state tax,
+    no gains in play)."""
+    s = Scenario(
+        profile=Profile(birth_year=1986, horizon_age=50, state_tax_rate=0.0),
+        accounts=[
+            Account(type=AccountType.trad_401k, balance=500000),
+            Account(type=AccountType.taxable, balance=600000, cost_basis=600000),
+        ],
+        retirement_age=40,
+        expense_streams=[ExpenseStream(name="living", annual=40000)],
+        conversion_rule=ConversionRule(kind="fill_bracket", bracket_top="std_deduction"),
+        sim=SimSettings(n_paths=2, start_year=2026),
+        **FROZEN_MARKET,
+    )
+    result = run(s)
+    assert result.conversion_marginal_rate[0, 0] == pytest.approx(0.10, abs=1e-6)
+
+
 def test_rmd_forced_at_75():
     s = Scenario(
         profile=Profile(birth_year=1951, horizon_age=80, state_tax_rate=0.05),
@@ -150,6 +190,7 @@ def test_rmd_forced_at_75():
     )
     result = run(s)
     rmd = 1_000_000 / 24.6
+    assert result.rmds[0, 0] == pytest.approx(rmd)
     assert result.pools["trad"][0, 1] == pytest.approx(1_000_000 - rmd)
     # RMD is ordinary income: taxable = rmd - 16,100
     taxable = rmd - 16100
@@ -159,6 +200,47 @@ def test_rmd_forced_at_75():
     # excess RMD beyond spending+tax lands in the taxable account
     leftover = rmd - 30000 - (fed + state_tax)
     assert result.pools["taxable"][0, 1] == pytest.approx(leftover, rel=1e-6)
+
+
+def test_rmd_schedule_metric():
+    """The RMD tile's data: first year's distribution = balance / divisor, with a
+    marginal-rate diagnostic on the same income."""
+    from fire_engine.metrics import rmd_schedule
+    s = Scenario(
+        profile=Profile(birth_year=1951, horizon_age=80, state_tax_rate=0.0),
+        accounts=[Account(type=AccountType.trad_ira, balance=1_000_000)],
+        retirement_age=65,
+        expense_streams=[ExpenseStream(name="living", annual=30000)],
+        sim=SimSettings(n_paths=2, start_year=2026),
+        **FROZEN_MARKET,
+    )
+    rows = rmd_schedule(run(s))
+    assert rows[0]["age"] == 75  # RMDs begin the year you turn 75
+    assert rows[0]["amount_real"] == pytest.approx(1_000_000 / 24.6, rel=1e-6)
+    assert 0.0 <= rows[0]["marginal_rate"] <= 1.0
+
+
+def test_custom_conversion_target_between_brackets():
+    """A custom fill target lands between the named brackets: it converts more
+    than the 12% top but less than the 22% top in the same scenario."""
+    def trad_at_72(bracket_top, custom=0.0):
+        s = Scenario(
+            profile=Profile(birth_year=1999, horizon_age=90, state_tax_rate=0.05),
+            accounts=[Account(type=AccountType.trad_401k, balance=1_400_000),
+                      Account(type=AccountType.taxable, balance=1_500_000, cost_basis=1_300_000)],
+            retirement_age=45,
+            expense_streams=[ExpenseStream(name="living", annual=50000, essential=True)],
+            conversion_rule=ConversionRule(kind="fill_bracket", bracket_top=bracket_top, custom_top=custom),
+            sim=SimSettings(n_paths=2, start_year=2026),
+            **FROZEN_MARKET,
+        )
+        r = run(s)
+        t = list(r.ages).index(72)
+        return r.pools["trad"][0, t + 1] / r.cum_inflation[0, t + 1]
+    low = trad_at_72("12")
+    mid = trad_at_72("custom", 80000)
+    high = trad_at_72("22")
+    assert high < mid < low  # custom drains more than 12%, less than 22%
 
 
 def test_social_security_haircut_and_claiming():
@@ -176,6 +258,54 @@ def test_social_security_haircut_and_claiming():
     age67 = 67 - s.start_age
     assert np.allclose(result.ss_income[:, age67 - 1], 0.0)
     assert result.ss_income[0, age67] == pytest.approx(2000 * 12 * 0.75)
+
+
+def test_social_security_not_taxed_when_provisional_income_low():
+    """SS taxation follows the provisional-income test, not a flat 85%. A retiree
+    funded only by (tax-free) Roth with a $40k benefit has provisional income
+    0.5*40k = $20k, below the $25k base, so NONE of the benefit is taxed and
+    federal tax is zero — a flat-85% model would instead tax 0.85*40k = $34k of
+    ordinary income (≈$1,900 of federal tax after the standard deduction)."""
+    s = Scenario(
+        profile=Profile(birth_year=1959, horizon_age=68, state_tax_rate=0.0),
+        accounts=[Account(type=AccountType.roth_ira, balance=1_000_000,
+                          roth_contribution_basis=1_000_000)],
+        income=Income(gross_salary=0),
+        retirement_age=67,
+        expense_streams=[ExpenseStream(name="living", annual=50000)],
+        social_security={"monthly_at_fra": 40000 / 12, "claiming_age": 67, "haircut": 1.0},
+        sim=SimSettings(n_paths=2, start_year=2026),
+        **FROZEN_MARKET,
+    )
+    result = run(s)
+    t0 = 67 - s.start_age
+    assert result.ss_income[0, t0] == pytest.approx(40000.0)
+    assert result.taxes_paid[0, t0] == pytest.approx(0.0, abs=1.0)
+
+
+def test_social_security_torpedo_partial_taxation():
+    """Other ordinary income drags part of the benefit into tax. Age-75 retiree,
+    $30k RMD ($738k trad / 24.6) + $40k SS, no other income, zero inflation:
+        provisional = 30,000 + 0.5*40,000 = 50,000 > $34k upper threshold
+        taxable SS  = min(0.85*40k, 0.85*(50k-34k) + min(0.5*40k, 4,500))
+                    = min(34,000, 13,600 + 4,500) = 18,100   (partial, not the cap)
+        ordinary    = 30,000 + 18,100 = 48,100; taxable = 48,100 - 16,100 = 32,000
+        federal tax = 12,400*10% + 19,600*12% = 3,592
+    """
+    s = Scenario(
+        profile=Profile(birth_year=1951, horizon_age=76, state_tax_rate=0.0),
+        accounts=[Account(type=AccountType.trad_ira, balance=738000)],  # RMD = 738000/24.6 = 30000
+        income=Income(gross_salary=0),
+        retirement_age=70,
+        expense_streams=[ExpenseStream(name="living", annual=30000)],
+        social_security={"monthly_at_fra": 40000 / 12, "claiming_age": 67, "haircut": 1.0},
+        sim=SimSettings(n_paths=2, start_year=2026),
+        **FROZEN_MARKET,
+    )
+    result = run(s)
+    t0 = 75 - s.start_age
+    assert result.ss_income[0, t0] == pytest.approx(40000.0)
+    assert result.taxes_paid[0, t0] == pytest.approx(3592.0, abs=1.0)
 
 
 def test_trinity_replication_bootstrap():

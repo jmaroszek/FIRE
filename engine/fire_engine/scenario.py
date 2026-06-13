@@ -214,9 +214,13 @@ class ConversionRule(BaseModel):
 
     kind: Literal["none", "fixed", "fill_bracket"] = "none"
     annual_amount: float = 0.0  # today's dollars, kind="fixed"
-    bracket_top: Literal["std_deduction", "10", "12", "22"] = "12"
+    bracket_top: Literal["std_deduction", "10", "12", "22", "custom"] = "12"
+    # kind="fill_bracket", bracket_top="custom": fill ordinary income to this
+    # taxable-income ceiling (today's dollars), letting you target a point between
+    # the named brackets (e.g. 80k, between the 12% top 50,400 and 22% top 105,700).
+    custom_top: float = 0.0
     start_age: Optional[int] = None  # default: retirement age
-    end_age: Optional[int] = None  # default: 58 (last useful ladder rung before 59.5)
+    end_age: Optional[int] = None  # default: 72 (lifetime ladder: bridge + pre-RMD drawdown)
 
 
 class SocialSecurity(BaseModel):
