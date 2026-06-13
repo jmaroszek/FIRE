@@ -232,6 +232,7 @@ def apply_plan(state: PortfolioState, plan: WithdrawalPlan, age: int) -> None:
 
     conv_take = takes[WithdrawalSource.roth_matured_conversions]
     state.conv_total -= conv_take
+    state.roth -= conv_take
     if age < PENALTY_FREE_AGE:
         state.conv_matured -= conv_take
     else:

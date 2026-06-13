@@ -91,6 +91,22 @@ def test_roth_ordering_and_early_trad_penalty():
     assert plan.penalty_base[0] == pytest.approx(30000.0)  # age < 60
 
 
+def test_matured_conversion_withdrawal_reduces_roth_pool():
+    # Roth = 50k, all of it matured conversion principal (no direct basis).
+    state = make_state(roth=(50000.0, 0.0))
+    state.conv_total = np.array([50000.0])
+    state.conv_matured = np.array([50000.0])
+    order = [WithdrawalSource.roth_matured_conversions]
+    plan = plan_withdrawals(state, np.array([30000.0]), age=45, order=order,
+                            cash_buffer_nominal=np.array([0.0]), allow_early_trad=False)
+    assert plan.takes[WithdrawalSource.roth_matured_conversions][0] == pytest.approx(30000.0)
+    apply_plan(state, plan, age=45)
+    # the withdrawal must leave the Roth pool, not just the conversion ledger
+    assert state.roth[0] == pytest.approx(20000.0)
+    assert state.conv_total[0] == pytest.approx(20000.0)
+    assert state.conv_matured[0] == pytest.approx(20000.0)
+
+
 def test_early_trad_blocked_when_disallowed():
     state = make_state(trad=100000.0)
     plan = plan_withdrawals(state, np.array([10000.0]), age=45,
@@ -107,6 +123,85 @@ def test_trad_unrestricted_at_60():
                             cash_buffer_nominal=np.array([0.0]), allow_early_trad=False)
     assert plan.takes[WithdrawalSource.trad][0] == pytest.approx(10000.0)
     assert plan.penalty_base[0] == 0.0
+
+
+def test_all_three_roth_sources_reduce_pool_after_60():
+    # roth = 100k: 20k direct basis, 30k matured conversions, 50k earnings.
+    state = make_state(roth=(100000.0, 20000.0))
+    state.conv_total = np.array([30000.0])
+    state.conv_matured = np.array([30000.0])
+    order = [WithdrawalSource.roth_basis,
+             WithdrawalSource.roth_matured_conversions,
+             WithdrawalSource.roth_earnings]
+    plan = plan_withdrawals(state, np.array([90000.0]), age=65, order=order,
+                            cash_buffer_nominal=np.array([0.0]), allow_early_trad=False)
+    assert plan.takes[WithdrawalSource.roth_basis][0] == pytest.approx(20000.0)
+    assert plan.takes[WithdrawalSource.roth_matured_conversions][0] == pytest.approx(30000.0)
+    assert plan.takes[WithdrawalSource.roth_earnings][0] == pytest.approx(40000.0)
+    apply_plan(state, plan, age=65)
+    # every dollar withdrawn must leave the pool: 100k - 90k = 10k
+    assert state.roth[0] == pytest.approx(10000.0)
+    assert state.roth_contrib_basis[0] == pytest.approx(0.0)
+    assert state.conv_total[0] == pytest.approx(0.0)
+    assert state.conv_matured[0] == pytest.approx(0.0)
+
+
+def test_convert_then_spend_matured_roundtrip_conserves():
+    # convert 30k trad->roth, season it, then spend it as a matured conversion.
+    state = make_state(trad=100000.0)
+    state.convert(np.array([30000.0]), t=0)
+    assert state.trad[0] == pytest.approx(70000.0)
+    assert state.roth[0] == pytest.approx(30000.0)
+    for t in range(1, 6):
+        state.season_conversions(t)
+    assert state.conv_matured[0] == pytest.approx(30000.0)
+    plan = plan_withdrawals(state, np.array([30000.0]), age=50,
+                            order=[WithdrawalSource.roth_matured_conversions],
+                            cash_buffer_nominal=np.array([0.0]), allow_early_trad=False)
+    apply_plan(state, plan, age=50)
+    # the converted dollars are spent and gone — they do not linger in the Roth
+    assert state.roth[0] == pytest.approx(0.0)
+    assert state.conv_total[0] == pytest.approx(0.0)
+    assert state.conv_matured[0] == pytest.approx(0.0)
+    assert state.trad[0] == pytest.approx(70000.0)  # untouched by the spend
+
+
+def test_grow_compounds_each_pool_and_freezes_basis():
+    state = make_state(
+        taxable=(100000.0, 60000.0),
+        roth=(50000.0, 20000.0),
+        trad=80000.0,
+        hsa=10000.0,
+        cash=5000.0,
+    )
+    state.conv_total = np.array([15000.0])
+    state.conv_matured = np.array([15000.0])
+    state.grow(np.array([0.10]), np.array([0.04]), hsa_cash_buffer=np.array([4000.0]))
+    # invested pools earn the blended return
+    assert state.taxable[0] == pytest.approx(110000.0)
+    assert state.trad[0] == pytest.approx(88000.0)
+    assert state.roth[0] == pytest.approx(55000.0)
+    # cash earns the cash return
+    assert state.cash[0] == pytest.approx(5200.0)
+    # HSA: 4k buffer parked at the cash return, 6k invested at the blended return
+    assert state.hsa[0] == pytest.approx(4000 * 1.04 + 6000 * 1.10)
+    # cost-basis and conversion ledgers are nominal cost amounts and never grow
+    assert state.taxable_basis[0] == pytest.approx(60000.0)
+    assert state.roth_contrib_basis[0] == pytest.approx(20000.0)
+    assert state.conv_total[0] == pytest.approx(15000.0)
+    assert state.conv_matured[0] == pytest.approx(15000.0)
+
+
+def test_taxable_withdrawal_keeps_basis_proportional():
+    # 100k value, 40k basis -> 60% of any sale is gain, 40% returns basis.
+    state = make_state(taxable=(100000.0, 40000.0))
+    plan = plan_withdrawals(state, np.array([25000.0]), age=50,
+                            order=[WithdrawalSource.taxable],
+                            cash_buffer_nominal=np.array([0.0]), allow_early_trad=False)
+    assert plan.ltcg_income[0] == pytest.approx(25000.0 * 0.60)
+    apply_plan(state, plan, age=50)
+    assert state.taxable[0] == pytest.approx(75000.0)
+    assert state.taxable_basis[0] == pytest.approx(40000.0 * (75000.0 / 100000.0))
 
 
 def test_waterfall_limits_and_match():
