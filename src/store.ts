@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import { api } from "./api";
 import type {
-  FreedomResult, Scenario, SimulateResult, Snapshot, SweepResult,
+  Category, FreedomResult, Scenario, SimulateResult, Snapshot, SweepResult,
 } from "./types";
 
-export type Tab = "dashboard" | "inputs" | "simulate" | "freedom" | "compare" | "settings";
+export type Tab = "dashboard" | "cashflow" | "investing" | "freedom" | "compare" | "settings";
 
 export interface CompareSlot {
   name: string;
@@ -30,6 +30,7 @@ interface AppState {
   savedScenarios: string[];
   compare: CompareSlot[];
   snapshots: Snapshot[];
+  categories: Category[];
   axisMode: "age" | "year";
   display: "real" | "nominal";
   engineUp: boolean | null;
@@ -46,6 +47,7 @@ interface AppState {
   addToCompare: () => void;
   removeFromCompare: (name: string) => void;
   refreshSnapshots: () => Promise<void>;
+  setCategories: (categories: Category[]) => void;
   addSnapshot: (snap: Snapshot) => Promise<void>;
   deleteSnapshot: (date: string) => Promise<void>;
   setAxisMode: (m: "age" | "year") => void;
@@ -90,6 +92,7 @@ export const useStore = create<AppState>((set, get) => {
     savedScenarios: [],
     compare: [],
     snapshots: [],
+    categories: [],
     axisMode: "age",
     display: "real",
     engineUp: null,
@@ -110,9 +113,10 @@ export const useStore = create<AppState>((set, get) => {
       }
       set({ engineUp: up });
       if (!up) return;
-      const [names, snapshots] = await Promise.all([
+      const [names, snapshots, categories] = await Promise.all([
         api.listScenarios().then((l) => l.map((x) => x.name)).catch(() => []),
         api.snapshots().catch(() => []),
+        api.categories().catch(() => []),
       ]);
       // the autosaved workspace is the persistent baseline; named scenarios
       // are explicit snapshots on top of it
@@ -124,7 +128,7 @@ export const useStore = create<AppState>((set, get) => {
           ? await api.loadScenario(names[0])
           : await api.defaults();
       }
-      set({ savedScenarios: names, snapshots, scenario, savedAs: "", dirty: false });
+      set({ savedScenarios: names, snapshots, categories, scenario, savedAs: "", dirty: false });
       scheduleSimulate();
     },
 
@@ -224,6 +228,11 @@ export const useStore = create<AppState>((set, get) => {
       set({ compare: get().compare.filter((c) => c.name !== name) }),
 
     refreshSnapshots: async () => set({ snapshots: await api.snapshots() }),
+
+    setCategories: (categories) => {
+      set({ categories });
+      void api.saveCategories(categories).catch(() => {});
+    },
 
     addSnapshot: async (snap) => {
       await api.addSnapshot(snap);

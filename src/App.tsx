@@ -1,16 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { useStore, type Tab } from "./store";
 import Dashboard from "./tabs/Dashboard";
-import Inputs from "./tabs/Inputs";
-import Simulate from "./tabs/Simulate";
+import CashFlow from "./tabs/CashFlow";
+import Investing from "./tabs/Investing";
 import Freedom from "./tabs/Freedom";
 import Compare from "./tabs/Compare";
 import Settings from "./tabs/Settings";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
-  { id: "inputs", label: "Inputs" },
-  { id: "simulate", label: "Simulate" },
+  { id: "cashflow", label: "Cash Flow" },
+  { id: "investing", label: "Investing" },
   { id: "freedom", label: "Freedom" },
   { id: "compare", label: "Compare" },
   { id: "settings", label: "Settings" },
@@ -97,8 +97,8 @@ export default function App() {
       </header>
       <main>
         {tab === "dashboard" && <Dashboard />}
-        {tab === "inputs" && <Inputs />}
-        {tab === "simulate" && <Simulate />}
+        {tab === "cashflow" && <CashFlow />}
+        {tab === "investing" && <Investing />}
         {tab === "freedom" && <Freedom />}
         {tab === "compare" && <Compare />}
         {tab === "settings" && <Settings />}

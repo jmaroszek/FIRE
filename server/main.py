@@ -26,11 +26,31 @@ APP_DATA = Path(os.environ.get("FIRE_DATA_DIR",
 SCENARIO_DIR = APP_DATA / "scenarios"
 SNAPSHOT_FILE = APP_DATA / "snapshots.json"
 WORKSPACE_FILE = APP_DATA / "workspace.json"
+CATEGORY_FILE = APP_DATA / "categories.json"
+
+# Spending categories are add-only by policy: slugs are permanent identifiers
+# referenced by snapshots forever; display names and order are free to change.
+DEFAULT_CATEGORIES = [
+    {"slug": "home", "name": "Home", "essential": True},
+    {"slug": "utilities", "name": "Utilities", "essential": True},
+    {"slug": "food", "name": "Food", "essential": True},
+    {"slug": "auto", "name": "Auto", "essential": True},
+    {"slug": "insurance", "name": "Insurance", "essential": True},
+    {"slug": "health", "name": "Health", "essential": True},
+    {"slug": "technology", "name": "Technology", "essential": False},
+    {"slug": "entertainment", "name": "Entertainment", "essential": False},
+    {"slug": "travel", "name": "Travel", "essential": False},
+    {"slug": "self-care", "name": "Self Care", "essential": False},
+    {"slug": "fashion", "name": "Fashion", "essential": False},
+    {"slug": "gifts", "name": "Gifts", "essential": False},
+    {"slug": "other", "name": "Other", "essential": False},
+]
 
 app = FastAPI(title="fire-engine", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:1420", "http://localhost:5173",
+    allow_origins=["http://localhost:1420", "http://localhost:1430",
+                   "http://localhost:5173",
                    "tauri://localhost", "http://tauri.localhost"],
     allow_methods=["*"],
     allow_headers=["*"],
@@ -169,11 +189,40 @@ def delete_scenario(name: str) -> dict:
     return {"deleted": name}
 
 
+# ---------------------------------------------------------------- categories
+
+class Category(BaseModel):
+    slug: str  # permanent identifier; never rename or reuse
+    name: str  # display name, freely editable
+    essential: bool = False
+
+
+@app.get("/categories")
+def get_categories() -> list[Category]:
+    if CATEGORY_FILE.exists():
+        return [Category.model_validate(c) for c in json.loads(CATEGORY_FILE.read_text())]
+    return [Category.model_validate(c) for c in DEFAULT_CATEGORIES]
+
+
+@app.put("/categories")
+def save_categories(categories: list[Category]) -> dict:
+    slugs = [c.slug for c in categories]
+    if len(set(slugs)) != len(slugs):
+        raise HTTPException(400, "duplicate category slugs")
+    APP_DATA.mkdir(parents=True, exist_ok=True)
+    CATEGORY_FILE.write_text(json.dumps([c.model_dump() for c in categories], indent=2))
+    return {"saved": len(categories)}
+
+
 # ---------------------------------------------------------------- snapshots
 
 class Snapshot(BaseModel):
     date: date
     balances: dict[str, float] = Field(default_factory=dict)  # pool -> amount
+    # annual spending by category slug, nominal dollars at the snapshot date
+    spending: dict[str, float] = Field(default_factory=dict)
+    # outstanding loan balances by liability name
+    liabilities: dict[str, float] = Field(default_factory=dict)
     note: str = ""
 
 

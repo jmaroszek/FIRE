@@ -111,6 +111,21 @@ class ExpenseStream(BaseModel):
     essential: bool = False  # essential streams are exempt from guardrail cuts
 
 
+class Liability(BaseModel):
+    """A loan with a fixed nominal payment: mortgage, car loan, business loan.
+
+    The payment is an essential, non-inflating expense each year until the
+    amortization (balance grows by interest, shrinks by the payment) reaches
+    zero. The outstanding balance is subtracted from reported net worth but
+    plays no role in withdrawals or failure — only the payment does.
+    """
+
+    name: str
+    balance: float  # outstanding principal today
+    interest_rate: float = 0.0  # annual nominal rate
+    annual_payment: float = 0.0  # fixed nominal payment per year
+
+
 class GuardrailRule(BaseModel):
     """Guyton-Klinger-style withdrawal-rate guardrails, applied in retirement.
 
@@ -155,6 +170,9 @@ class WithdrawalSource(str, Enum):
 
 
 class WithdrawalPolicy(BaseModel):
+    # Before 59.5: traditional and Roth earnings are locked (penalty), so the
+    # bridge is funded from cash, taxable, Roth contributions, and matured
+    # conversions; trad sits last as a penalty-paying last resort.
     order: list[WithdrawalSource] = Field(
         default_factory=lambda: [
             WithdrawalSource.cash,
@@ -166,10 +184,28 @@ class WithdrawalPolicy(BaseModel):
             WithdrawalSource.roth_earnings,
         ]
     )
+    # 59.5 and after: tap traditional ahead of Roth so the Roth keeps compounding
+    # tax-free as long as possible (Roth sources drawn last).
+    late_order: list[WithdrawalSource] = Field(
+        default_factory=lambda: [
+            WithdrawalSource.cash,
+            WithdrawalSource.taxable,
+            WithdrawalSource.trad,
+            WithdrawalSource.hsa,
+            WithdrawalSource.roth_matured_conversions,
+            WithdrawalSource.roth_basis,
+            WithdrawalSource.roth_earnings,
+        ]
+    )
     # Keep this much cash (today's dollars) untouched as a buffer.
     cash_buffer: float = 10000.0
     # Last resort: tap traditional accounts before 59.5 paying the 10% penalty.
     allow_early_trad_with_penalty: bool = True
+
+    def order_for_age(self, age: int, penalty_free_age: int) -> list[WithdrawalSource]:
+        """Pre-59.5 vs 59.5+ ordering. Availability is still age-gated downstream
+        in plan_withdrawals; this only chooses the *preference* order."""
+        return self.order if age < penalty_free_age else self.late_order
 
 
 class ConversionRule(BaseModel):
@@ -259,6 +295,7 @@ class Scenario(BaseModel):
     income: Income = Income()
     retirement_age: int = 65
     expense_streams: list[ExpenseStream] = Field(default_factory=list)
+    liabilities: list[Liability] = Field(default_factory=list)
     waterfall: list[WaterfallStep] = Field(default_factory=default_waterfall)
     withdrawal_policy: WithdrawalPolicy = WithdrawalPolicy()
     conversion_rule: ConversionRule = ConversionRule()

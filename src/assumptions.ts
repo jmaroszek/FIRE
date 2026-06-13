@@ -42,7 +42,7 @@ export const A = {
   fireSimple:
     "25× annual retirement expenses (the 4% rule). Built on 30-year horizons — for a 50+ year early retirement, treat it as intuition, not a target.",
   fireMc:
-    "The smallest portfolio for which retiring TODAY meets your success threshold, found by bisecting Monte Carlo runs. This is the number to trust.",
+    "The smallest portfolio for which retiring TODAY meets your success threshold, found by bisecting Monte Carlo runs. It scales your CURRENT account mix — hitting the same total at a later age usually isn't equivalent, because by then more of it sits in retirement accounts you can't freely touch before 59½. The When Can I Retire curve is the age-honest answer.",
   coast:
     "What you'd need today to hit 25× expenses by the coast age with zero further contributions, compounding at your blended real CAGR (deterministic).",
   accessibility:
@@ -55,6 +55,12 @@ export const A = {
     "Events change the simulation from their date forward: one-time flows (positive = expense, negative = windfall), regime changes (salary/allocation), and market crashes.",
   snapshots:
     "Record your actual balances over time.",
+  liabilities:
+    "Loans with fixed nominal payments: mortgage, car, business loans. The payment is an essential, non-inflating expense until the amortization (balance × rate − payment) hits zero; the outstanding balance is subtracted from net worth. Loans never inflate — that's the upside of fixed-rate debt.",
+  investing:
+    "How much the plan saves each year, by destination — the median path in today's dollars. Anything left after taxes and expenses is assumed saved: first down your contribution waterfall, then any unallocated surplus pools in Cash. If the Cash band looks large, your waterfall isn't capturing your full surplus.",
+  sweep:
+    "Success probability if you retire at each age, holding everything else constant (one shared set of market paths, so the curve is noise-free). Note: this can disagree with the FIRE number — by a later age your money is mostly in retirement accounts, so the same total is less accessible before 59½ than today's mix would be. New Salary events pinned after a candidate retirement age count as returning to work.",
   actualsVsProjection:
     "Your recorded snapshots plotted over the projection cone — watch reality thread through the bands.",
 };

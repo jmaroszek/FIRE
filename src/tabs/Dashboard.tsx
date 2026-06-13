@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { A } from "../assumptions";
 import { FanChart } from "../components/charts";
-import { Field, NumberInput, Section, Stat, fmtMoney, fmtPct } from "../components/ui";
+import { Field, InfoTip, NumberInput, Section, Stat, fmtMoney, fmtPct } from "../components/ui";
 import { useStore } from "../store";
 
 const POOLS = ["taxable", "trad", "roth", "hsa", "cash"] as const;
@@ -22,14 +22,22 @@ function poolBalances(accounts: { type: string; balance: number }[]) {
   return out;
 }
 
+interface SnapDraft {
+  balances: Record<string, number>;
+  spending: Record<string, number>;
+  liabilities: Record<string, number>;
+}
+
 export default function Dashboard() {
-  const { scenario, result, freedom, snapshots, addSnapshot, deleteSnapshot,
-          axisMode, display } = useStore();
-  const [snapDraft, setSnapDraft] = useState<Record<string, number> | null>(null);
+  const { scenario, result, freedom, snapshots, categories, addSnapshot,
+          deleteSnapshot, axisMode, display } = useStore();
+  const [snapDraft, setSnapDraft] = useState<SnapDraft | null>(null);
   if (!scenario) return null;
 
   const pools = poolBalances(scenario.accounts);
-  const total = Object.values(pools).reduce((a, b) => a + b, 0);
+  const assets = Object.values(pools).reduce((a, b) => a + b, 0);
+  const debt = (scenario.liabilities ?? []).reduce((a, l) => a + l.balance, 0);
+  const total = assets - debt;
   const retMarker = axisMode === "age"
     ? scenario.retirement_age
     : scenario.profile.birth_year + scenario.retirement_age;
@@ -38,7 +46,8 @@ export default function Dashboard() {
     <div className="stack">
       <div className="stat-grid">
         <Section title="Net Worth">
-          <Stat label="Total Across All Pools" value={fmtMoney(total)} />
+          <Stat label={debt > 0 ? "Assets Minus Liabilities" : "Total Across All Pools"}
+            value={fmtMoney(total)} />
           <table className="table">
             <tbody>
               {POOLS.map((p) => (
@@ -46,8 +55,17 @@ export default function Dashboard() {
                   <td>{POOL_LABELS[p]}</td>
                   <td style={{ textAlign: "right" }}>{fmtMoney(pools[p])}</td>
                   <td style={{ textAlign: "right", color: "#8b949e" }}>
-                    {total > 0 ? fmtPct(pools[p] / total, 0) : "—"}
+                    {assets > 0 ? fmtPct(pools[p] / assets, 0) : "—"}
                   </td>
+                </tr>
+              ))}
+              {(scenario.liabilities ?? []).filter((l) => l.balance > 0).map((l) => (
+                <tr key={l.name}>
+                  <td style={{ color: "#ff7b72" }}>{l.name}</td>
+                  <td style={{ textAlign: "right", color: "#ff7b72" }}>
+                    −{fmtMoney(l.balance)}
+                  </td>
+                  <td />
                 </tr>
               ))}
             </tbody>
@@ -62,8 +80,8 @@ export default function Dashboard() {
           )}
           {freedom && (
             <>
-              <Stat label="FIRE Progress (MC)" value={fmtPct(freedom.fire_progress_mc)} />
               <Stat label="Coast Progress" value={fmtPct(freedom.coast.progress)} />
+              <Stat label="FIRE Progress (MC)" value={fmtPct(freedom.fire_progress_mc)} />
             </>
           )}
           {!result && <p className="hint">Simulation pending…</p>}
@@ -72,17 +90,45 @@ export default function Dashboard() {
         <Section title="Record A Snapshot" info={A.snapshots}>
           {snapDraft ? (
             <>
+              <div className="snap-head">Balances</div>
               {POOLS.map((p) => (
                 <Field key={p} label={POOL_LABELS[p]}>
-                  <NumberInput value={snapDraft[p] ?? 0} step={500}
-                    onChange={(v) => setSnapDraft({ ...snapDraft, [p]: v })} />
+                  <NumberInput value={snapDraft.balances[p] ?? 0} step={500}
+                    onChange={(v) => setSnapDraft({
+                      ...snapDraft, balances: { ...snapDraft.balances, [p]: v },
+                    })} />
                 </Field>
               ))}
-              <div className="pair">
+              <div className="snap-head">
+                Annual Spending
+                <InfoTip text="Nominal dollars per year at today's prices, summed from your budget's category totals. Sinking-fund contributions count as spending in their category; income taxes and loan payments are tracked elsewhere." />
+              </div>
+              {categories.map((c) => (
+                <Field key={c.slug} label={c.name}>
+                  <NumberInput value={snapDraft.spending[c.slug] ?? 0} step={250}
+                    onChange={(v) => setSnapDraft({
+                      ...snapDraft, spending: { ...snapDraft.spending, [c.slug]: v },
+                    })} />
+                </Field>
+              ))}
+              {(scenario.liabilities ?? []).length > 0 && (
+                <>
+                  <div className="snap-head">Loan Balances</div>
+                  {(scenario.liabilities ?? []).map((l) => (
+                    <Field key={l.name} label={l.name}>
+                      <NumberInput value={snapDraft.liabilities[l.name] ?? 0} step={1000}
+                        onChange={(v) => setSnapDraft({
+                          ...snapDraft, liabilities: { ...snapDraft.liabilities, [l.name]: v },
+                        })} />
+                    </Field>
+                  ))}
+                </>
+              )}
+              <div className="pair" style={{ marginTop: 8 }}>
                 <button onClick={async () => {
                   await addSnapshot({
                     date: new Date().toISOString().slice(0, 10),
-                    balances: snapDraft,
+                    ...snapDraft,
                   });
                   setSnapDraft(null);
                 }}>Save</button>
@@ -94,24 +140,38 @@ export default function Dashboard() {
               {snapshots.length > 0 ? (
                 <table className="table">
                   <tbody>
-                    {snapshots.map((snap) => (
-                      <tr key={snap.date}>
-                        <td>{snap.date}</td>
-                        <td style={{ textAlign: "right" }}>
-                          {fmtMoney(Object.values(snap.balances).reduce((a, b) => a + b, 0))}
-                        </td>
-                        <td>
-                          <button className="ghost" title="Delete Snapshot"
-                            onClick={() => deleteSnapshot(snap.date)}>✕</button>
-                        </td>
-                      </tr>
-                    ))}
+                    {snapshots.map((snap) => {
+                      const spendTotal = Object.values(snap.spending ?? {}).reduce((a, b) => a + b, 0);
+                      return (
+                        <tr key={snap.date}>
+                          <td>{snap.date}</td>
+                          <td style={{ textAlign: "right" }}>
+                            {fmtMoney(Object.values(snap.balances).reduce((a, b) => a + b, 0))}
+                          </td>
+                          <td style={{ textAlign: "right", color: "#8b949e" }}>
+                            {spendTotal > 0 ? `${fmtMoney(spendTotal)}/yr` : ""}
+                          </td>
+                          <td>
+                            <button className="ghost" title="Delete Snapshot"
+                              onClick={() => deleteSnapshot(snap.date)}>✕</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               ) : (
                 <p className="hint">No snapshots recorded yet.</p>
               )}
-              <button onClick={() => setSnapDraft(pools)}>+ Snapshot Today</button>
+              <button onClick={() => {
+                const last = snapshots[snapshots.length - 1];
+                setSnapDraft({
+                  balances: pools,
+                  spending: { ...(last?.spending ?? {}) },
+                  liabilities: Object.fromEntries(
+                    (scenario.liabilities ?? []).map((l) => [l.name, l.balance])),
+                });
+              }}>+ Snapshot Today</button>
             </>
           )}
         </Section>

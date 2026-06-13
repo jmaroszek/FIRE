@@ -210,6 +210,69 @@ def test_higher_equity_higher_median():
     assert med_a > med_c
 
 
+def test_two_phase_withdrawal_order_selects_by_age():
+    from fire_engine.accounts import PENALTY_FREE_AGE
+    from fire_engine.scenario import WithdrawalPolicy, WithdrawalSource
+
+    p = WithdrawalPolicy()
+    assert p.order_for_age(45, PENALTY_FREE_AGE) is p.order
+    assert p.order_for_age(60, PENALTY_FREE_AGE) is p.late_order
+    # 59.5+ default taps traditional before Roth contributions; pre-59.5 is the
+    # reverse (traditional is penalty-locked, so Roth funds the bridge).
+    assert p.late_order.index(WithdrawalSource.trad) < \
+        p.late_order.index(WithdrawalSource.roth_basis)
+    assert p.order.index(WithdrawalSource.roth_basis) < \
+        p.order.index(WithdrawalSource.trad)
+
+
+def test_late_order_trad_first_preserves_roth():
+    """At 60+, a trad-first late order spends traditional and leaves the Roth to
+    compound; a roth-first late order drains the Roth instead."""
+    from fire_engine.scenario import WithdrawalSource
+
+    def build():
+        return Scenario(
+            profile=Profile(birth_year=1966, horizon_age=90, state_tax_rate=0.0),
+            accounts=[
+                Account(type=AccountType.trad_401k, balance=500000),
+                Account(type=AccountType.roth_ira, balance=500000,
+                        roth_contribution_basis=500000),
+            ],
+            income=Income(gross_salary=0),
+            retirement_age=60,
+            # under the standard deduction, so the trad draw carries no tax and
+            # the comparison is exact
+            expense_streams=[ExpenseStream(name="living", annual=12000)],
+            sim=SimSettings(n_paths=4, start_year=2026),
+            market=MarketModel(mode="parametric",
+                               stocks={"real_cagr": 0.0, "vol": 0.0},
+                               bonds={"real_cagr": 0.0, "vol": 0.0},
+                               cash={"real_cagr": 0.0, "vol": 0.0},
+                               dividend_yield=0.0),
+            inflation=InflationModel(mean=0.0, persistence=0.0, sigma=0.0, initial=0.0),
+        )
+
+    trad_first = build()
+    trad_first.withdrawal_policy.late_order = [
+        WithdrawalSource.cash, WithdrawalSource.taxable, WithdrawalSource.trad,
+        WithdrawalSource.hsa, WithdrawalSource.roth_matured_conversions,
+        WithdrawalSource.roth_basis, WithdrawalSource.roth_earnings,
+    ]
+    roth_first = build()
+    roth_first.withdrawal_policy.late_order = [
+        WithdrawalSource.cash, WithdrawalSource.taxable, WithdrawalSource.roth_basis,
+        WithdrawalSource.roth_matured_conversions, WithdrawalSource.trad,
+        WithdrawalSource.hsa, WithdrawalSource.roth_earnings,
+    ]
+    rt = run(trad_first)
+    rr = run(roth_first)
+    c = 10  # after 10 yearly withdrawals (ages 60-69)
+    assert rt.pools["trad"][0, c] == pytest.approx(500000 - 12000 * c)
+    assert rt.pools["roth"][0, c] == pytest.approx(500000)  # roth untouched
+    assert rr.pools["roth"][0, c] == pytest.approx(500000 - 12000 * c)
+    assert rt.pools["roth"][0, c] > rr.pools["roth"][0, c]  # trad-first keeps more roth
+
+
 def test_performance_budget():
     s = example_scenario()
     s.sim.n_paths = 2000

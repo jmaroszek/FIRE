@@ -13,6 +13,17 @@ from .scenario import Scenario
 DEFAULT_PERCENTILES = (5, 25, 50, 75, 95)
 
 
+def _flow_deflator(result: SimResult) -> np.ndarray:
+    """Deflator for year-t *flows* (taxes, expenses, contributions, conversions).
+
+    The engine computes flows at start-of-year prices, cum_inflation[:, t], so
+    they convert back to today's dollars with column t — i.e. cum_inflation[:, :-1].
+    End-of-year *stocks* (net worth, pools, accessibility) deflate with [:, 1:].
+    Using [:, 1:] for a flow over-deflates it by one year of inflation (~2%),
+    which is why a contribution pinned to its IRS cap showed up just under it."""
+    return result.cum_inflation[:, :-1]
+
+
 def percentile_fan(result: SimResult,
                    percentiles=DEFAULT_PERCENTILES) -> dict[str, dict[str, list[float]]]:
     """Net-worth percentile bands over time, nominal and real (today's $)."""
@@ -54,10 +65,18 @@ def retirement_sweep(scenario: Scenario, ages: list[int] | None = None,
 
 
 def years_to_fi(sweep: dict[int, float], threshold: float, start_age: int) -> int | None:
-    for age in sorted(sweep):
+    """Earliest age from which success stays at/above the threshold for every
+    later age too. A transient peak (e.g. retiring just before a New Salary
+    event resumes income) must not count as 'FI reached'."""
+    ages = sorted(sweep)
+    sustained_from: int | None = None
+    for age in ages:
         if sweep[age] >= threshold:
-            return age - start_age
-    return None
+            if sustained_from is None:
+                sustained_from = age
+        else:
+            sustained_from = None
+    return sustained_from - start_age if sustained_from is not None else None
 
 
 def annual_retirement_expenses(scenario: Scenario, at_age: int) -> float:
@@ -139,19 +158,37 @@ def accessibility_medians_real(result: SimResult) -> dict[str, list[float]]:
 
 
 def ladder_schedule(result: SimResult) -> list[dict]:
-    """Median Roth conversion per year (real), with maturation year."""
-    deflate = result.cum_inflation[:, 1:]
+    """Median Roth conversion per year (real), with maturation year and the
+    traditional pool still left after that year's conversion. Conversions are
+    capped per path by the traditional balance (401k assumed rolled into an
+    IRA once you leave work, so the pools merge)."""
+    deflate = _flow_deflator(result)  # conversions are a flow
     med = np.median(result.conversions / deflate, axis=0)
+    trad = result.pools["trad"]
     out = []
     for i, amount in enumerate(med):
         if amount > 1.0:
+            trad_left = float(np.median(
+                trad[:, i + 1] / result.cum_inflation[:, i + 1]))
             out.append({
                 "year": int(result.years[i]),
                 "age": int(result.ages[i]),
                 "amount_real": float(amount),
                 "matures": int(result.years[i]) + 5,
+                "trad_remaining_real": trad_left,
             })
     return out
+
+
+def investing_medians_real(result: SimResult) -> dict[str, list[float]]:
+    """Median annual contribution by destination, in today's dollars.
+    'cash' includes unallocated surplus that pools in the cash account;
+    'match' is the employer contribution."""
+    deflate = _flow_deflator(result)  # contributions are a flow
+    return {
+        name: np.median(series / deflate, axis=0).tolist()
+        for name, series in (result.contrib_pools or {}).items()
+    }
 
 
 def summarize(result: SimResult) -> dict:
@@ -165,10 +202,15 @@ def summarize(result: SimResult) -> dict:
         "accessibility_real": accessibility_medians_real(result),
         "ladder_schedule": ladder_schedule(result),
         "taxes_median_real": np.median(
-            result.taxes_paid / result.cum_inflation[:, 1:], axis=0).tolist(),
+            result.taxes_paid / _flow_deflator(result), axis=0).tolist(),
         "expenses_median_real": np.median(
-            result.expenses / result.cum_inflation[:, 1:], axis=0).tolist(),
+            result.expenses / _flow_deflator(result), axis=0).tolist(),
         "spending_mult_median": np.median(result.spending_mult, axis=0).tolist(),
+        "investing_real": investing_medians_real(result),
+        "liability_balance": (
+            result.liability_balance.tolist()
+            if result.liability_balance is not None else []
+        ),
         "ages": result.ages.tolist(),
         "years": result.years.tolist(),
         "sweep": sweep,

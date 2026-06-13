@@ -46,6 +46,13 @@ export interface ExpenseStream {
   essential: boolean;
 }
 
+export interface Liability {
+  name: string;
+  balance: number;
+  interest_rate: number;
+  annual_payment: number;
+}
+
 export interface GuardrailRule {
   enabled: boolean;
   band: number;
@@ -66,7 +73,8 @@ export type WithdrawalSource =
   | "trad" | "hsa" | "roth_earnings";
 
 export interface WithdrawalPolicy {
-  order: WithdrawalSource[];
+  order: WithdrawalSource[]; // before 59½
+  late_order: WithdrawalSource[]; // 59½ and after
   cash_buffer: number;
   allow_early_trad_with_penalty: boolean;
 }
@@ -131,6 +139,7 @@ export interface Scenario {
   income: Income;
   retirement_age: number;
   expense_streams: ExpenseStream[];
+  liabilities: Liability[];
   waterfall: WaterfallStep[];
   withdrawal_policy: WithdrawalPolicy;
   conversion_rule: ConversionRule;
@@ -151,10 +160,15 @@ export interface SimulateResult {
   pool_medians_real: Record<string, number[]>;
   survival_curve: number[];
   accessibility_real: Record<string, number[]>;
-  ladder_schedule: { year: number; age: number; amount_real: number; matures: number }[];
+  ladder_schedule: {
+    year: number; age: number; amount_real: number; matures: number;
+    trad_remaining_real: number;
+  }[];
   taxes_median_real: number[];
   expenses_median_real: number[];
   spending_mult_median: number[];
+  investing_real: Record<string, number[]>;
+  liability_balance: number[];
   ages: number[];
   years: number[];
   scenario_name: string;
@@ -186,5 +200,15 @@ export interface FreedomResult {
 export interface Snapshot {
   date: string;
   balances: Record<string, number>;
+  /** annual spending by category slug, nominal $ at the snapshot date */
+  spending?: Record<string, number>;
+  /** outstanding loan balances by liability name */
+  liabilities?: Record<string, number>;
   note?: string;
+}
+
+export interface Category {
+  slug: string; // permanent identifier; never renamed or reused
+  name: string; // display name, freely editable
+  essential: boolean;
 }

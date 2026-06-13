@@ -94,6 +94,11 @@ main { padding: 18px; max-width: 1500px; width: 100%; margin: 0 auto; }
   min-width: 340px;
   max-width: 100%;
 }
+/* explicit row proportions, e.g. a 2/3-width chart beside a 1/3-width editor */
+.group-grid .card.span2 { flex: 2 1 640px; }
+.group-grid .card.span1 { flex: 1 1 340px; }
+/* full-width within a group: always claims its own row regardless of viewport */
+.group-grid .card.full { flex: 1 1 100%; }
 
 .card {
   background: var(--panel);
@@ -134,6 +139,8 @@ input, select {
   font-size: 13px;
   max-width: 140px;
 }
+/* selects size to their longest option — never truncate a choice */
+select { max-width: none; width: auto; }
 input[type="checkbox"] { max-width: none; }
 input[type="range"] { max-width: 220px; accent-color: var(--accent); padding: 0; }
 input:focus, select:focus { outline: 1px solid var(--accent); }
@@ -163,9 +170,12 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .table input { max-width: 110px; }
 .table .numwrap input { max-width: 88px; }
 .agecell { white-space: nowrap; }
-.agecell input { max-width: 58px; }
+.agecell input { max-width: 52px; }
+.namecell input { max-width: none; width: 190px; }
+.cpicell .numwrap input { max-width: 56px; }
 
-.hint { color: var(--muted); font-size: 13px; }
+/* hints wrap instead of stretching their card wide */
+.hint { color: var(--muted); font-size: 13px; max-width: 440px; }
 .error { color: var(--red); font-size: 13px; white-space: pre-wrap; }
 
 .badge {
@@ -242,7 +252,7 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
   display: flex;
   flex-wrap: wrap;
   gap: 10px 16px;
-  align-items: center;
+  align-items: flex-end; /* labels above, inputs/chip/✕ share the baseline */
   background: #0d1117;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -250,24 +260,62 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 }
 .event-chip {
   font-size: 11px;
-  padding: 2px 10px;
+  padding: 6px 10px; /* matches input height so the Type column aligns */
   border-radius: 10px;
   white-space: nowrap;
   min-width: 110px;
   text-align: center;
 }
 .event-name { max-width: 150px; }
+.event-remove { padding: 5px 10px; } /* same height as inputs -> centers on the field row */
 
-.policy-list { margin: 0 0 10px; padding-left: 22px; }
+.policy-list { margin: 0 0 6px; padding-left: 22px; }
 .policy-list li {
   display: flex;
   justify-content: space-between;
   max-width: 360px;
   padding: 2px 0;
 }
+.policy-col-head {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 6px;
+}
+.policy-col .hint { max-width: 300px; margin-top: 0; }
+
+/* free-roaming chart tooltip: follows the cursor inside fan charts */
+.chart-tip {
+  position: absolute;
+  z-index: 50;
+  pointer-events: none;
+  background: #1c2128;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+  white-space: nowrap;
+}
+.chart-tip-value { font-size: 15px; font-weight: 600; }
+.chart-tip-sub { font-size: 11px; color: var(--muted); }
+
+.snap-head {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+  margin: 12px 0 8px;
+}
+.snap-head:first-child { margin-top: 0; }
 
 .slider-row { margin-top: 6px; }
 .add-select { max-width: 160px; }
+.ext { color: var(--accent); font-size: 12px; text-decoration: none; white-space: nowrap; }
+.ext:hover { text-decoration: underline; }
 
 .offline {
   display: flex;

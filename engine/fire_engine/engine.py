@@ -75,6 +75,28 @@ class YearRegime:
     weights: tuple[float, float, float]  # stocks, bonds, cash
 
 
+def _liability_schedule(scenario: Scenario, T: int) -> tuple[np.ndarray, np.ndarray]:
+    """Deterministic nominal amortization of all liabilities.
+
+    Returns (payments (T,), outstanding balance (T+1,)). Loans are nominal
+    contracts: payments are fixed dollars, identical across paths.
+    """
+    payments = np.zeros(T)
+    balance = np.zeros(T + 1)
+    for liab in scenario.liabilities:
+        bal = max(liab.balance, 0.0)
+        balance[0] += bal
+        for t in range(T):
+            if bal <= 1e-9:
+                break
+            bal *= 1.0 + liab.interest_rate
+            pay = min(liab.annual_payment, bal)
+            payments[t] += pay
+            bal -= pay
+            balance[t + 1] += bal
+    return payments, balance
+
+
 @dataclass
 class SimResult:
     scenario: Scenario
@@ -91,6 +113,8 @@ class SimResult:
     ss_income: np.ndarray  # (P, T) nominal
     expenses: np.ndarray  # (P, T) nominal total expenses
     contributions: np.ndarray  # (P, T) nominal total contributions
+    contrib_pools: dict[str, np.ndarray] | None = None  # destination -> (P, T) nominal
+    liability_balance: np.ndarray | None = None  # (T+1,) nominal outstanding debt
 
     @property
     def success_rate(self) -> float:
@@ -281,9 +305,11 @@ def run(
     policy = scenario.withdrawal_policy
     div_yield = scenario.market.dividend_yield
 
+    liab_payments, liab_balance = _liability_schedule(scenario, T)
+
     # result arrays
     nw = np.zeros((P, T + 1))
-    nw[:, 0] = state.total_net_worth()
+    nw[:, 0] = state.total_net_worth() - liab_balance[0]
     pool_names = ("taxable", "trad", "roth", "hsa", "cash")
     pools = {n: np.zeros((P, T + 1)) for n in pool_names}
     for n in pool_names:
@@ -292,6 +318,8 @@ def run(
     taxes_paid = np.zeros((P, T))
     spending_mult_out = np.ones((P, T))
     conversions_out = np.zeros((P, T))
+    contrib_pool_names = ("taxable", "trad", "roth", "hsa", "cash", "match")
+    contrib_pools_out = {n: np.zeros((P, T)) for n in contrib_pool_names}
     ss_out = np.zeros((P, T))
     expenses_out = np.zeros((P, T))
     contributions_out = np.zeros((P, T))
@@ -325,6 +353,7 @@ def run(
             rmd = zeros
 
         ess_nom, disc_nom, ess_med, disc_med = _expenses_for_year(scenario, t, age, infl)
+        ess_nom = ess_nom + liab_payments[t]  # loan payments: essential, non-inflating
 
         if guard.enabled and t >= t_retire:
             planned = ess_nom + disc_nom
@@ -405,7 +434,7 @@ def run(
             )
 
             wplan = plan_withdrawals(
-                state, need, age, policy.order,
+                state, need, age, policy.order_for_age(age, PENALTY_FREE_AGE),
                 cash_buffer_nominal=policy.cash_buffer * infl,
                 allow_early_trad=policy.allow_early_trad_with_penalty,
                 forced=forced or None,
@@ -429,17 +458,24 @@ def run(
             if acc_type is AccountType.taxable:
                 state.taxable = state.taxable + amount
                 state.taxable_basis = state.taxable_basis + amount
+                contrib_pools_out["taxable"][:, t] += amount
             elif acc_type in (AccountType.trad_401k, AccountType.trad_ira):
                 state.trad = state.trad + amount
+                contrib_pools_out["trad"][:, t] += amount
             elif acc_type in ROTH_TYPES:
                 state.roth = state.roth + amount
                 state.roth_contrib_basis = state.roth_contrib_basis + amount
+                contrib_pools_out["roth"][:, t] += amount
             elif acc_type is AccountType.hsa:
                 state.hsa = state.hsa + amount
+                contrib_pools_out["hsa"][:, t] += amount
             elif acc_type is AccountType.cash:
                 state.cash = state.cash + amount
+                contrib_pools_out["cash"][:, t] += amount
         state.cash = state.cash + np.maximum(leftover, 0.0)
+        contrib_pools_out["cash"][:, t] += np.maximum(leftover, 0.0)
         state.trad = state.trad + match
+        contrib_pools_out["match"][:, t] = match
 
         if conv_active:
             state.convert(conv, t)
@@ -468,7 +504,7 @@ def run(
         state.grow(blended, paths.cash[:, t],
                    hsa_cash_buffer=scenario.hsa.cash_buffer * infl)
 
-        nw[:, t + 1] = state.total_net_worth()
+        nw[:, t + 1] = state.total_net_worth() - liab_balance[t + 1]
         for n in pool_names:
             pools[n][:, t + 1] = getattr(state, n)
         taxes_paid[:, t] = total_tax
@@ -494,6 +530,8 @@ def run(
         ss_income=ss_out,
         expenses=expenses_out,
         contributions=contributions_out,
+        contrib_pools=contrib_pools_out,
+        liability_balance=liab_balance,
     )
 
 

@@ -77,3 +77,37 @@ def test_snapshots_upsert_by_date(client):
     snaps = client.get("/snapshots").json()
     assert len(snaps) == 1
     assert snaps[0]["balances"]["taxable"] == 31000
+
+
+def test_categories_defaults_and_roundtrip(client):
+    cats = client.get("/categories").json()
+    slugs = [c["slug"] for c in cats]
+    assert slugs[0] == "home" and "other" in slugs and len(cats) == 13
+    assert all(c["essential"] for c in cats if c["slug"] in ("home", "food", "insurance"))
+    # reorder + rename survives a round trip; slug is untouched
+    cats[0], cats[1] = cats[1], cats[0]
+    cats[0]["name"] = "Eats"
+    assert client.put("/categories", json=cats).json()["saved"] == 13
+    back = client.get("/categories").json()
+    assert back[0]["slug"] == "utilities" and back[0]["name"] == "Eats"
+    # duplicate slugs rejected
+    bad = back + [back[0]]
+    assert client.put("/categories", json=bad).status_code == 400
+
+
+def test_snapshot_v2_spending_and_liabilities(client):
+    snap = {
+        "date": "2026-06-12",
+        "balances": {"taxable": 1000.0},
+        "spending": {"home": 16500.0, "food": 7200.0},
+        "liabilities": {"Mattress": 4000.0},
+    }
+    client.post("/snapshots", json=snap)
+    back = client.get("/snapshots").json()
+    assert back[0]["spending"]["home"] == 16500.0
+    assert back[0]["liabilities"]["Mattress"] == 4000.0
+    # v1 snapshots (no spending/liabilities) still validate
+    client.post("/snapshots", json={"date": "2026-06-13", "balances": {"cash": 5.0}})
+    back = client.get("/snapshots").json()
+    assert back[1]["spending"] == {} and back[1]["liabilities"] == {}
+

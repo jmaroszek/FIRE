@@ -13,10 +13,10 @@ export const fmtPct = (v: number | null | undefined, digits = 1): string =>
 
 export function Section(props: {
   title: string; info?: string; children: React.ReactNode; actions?: React.ReactNode;
-  wide?: boolean;
+  wide?: boolean; className?: string;
 }) {
   return (
-    <section className={props.wide ? "card wide" : "card"}>
+    <section className={["card", props.wide ? "wide" : "", props.className ?? ""].join(" ").trim()}>
       <div className="card-head">
         <h3>
           {props.title}
@@ -26,6 +26,16 @@ export function Section(props: {
       </div>
       {props.children}
     </section>
+  );
+}
+
+/** A titled row of content-sized cards within a tab. */
+export function Group(props: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="input-group">
+      <h2 className="group-title">{props.title}</h2>
+      <div className="group-grid">{props.children}</div>
+    </div>
   );
 }
 

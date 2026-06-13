@@ -1,5 +1,5 @@
 import type {
-  FreedomResult, Scenario, SimulateResult, Snapshot, SweepResult,
+  Category, FreedomResult, Scenario, SimulateResult, Snapshot, SweepResult,
 } from "./types";
 
 const BASE = `http://127.0.0.1:${(window as any).__FIRE_PORT__ ?? 8765}`;
@@ -43,6 +43,9 @@ export const api = {
     }),
   deleteScenario: (name: string) =>
     req<{ deleted: string }>(`/scenarios/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  categories: () => req<Category[]>("/categories"),
+  saveCategories: (categories: Category[]) =>
+    req<{ saved: number }>("/categories", { method: "PUT", body: JSON.stringify(categories) }),
   snapshots: () => req<Snapshot[]>("/snapshots"),
   addSnapshot: (snap: Snapshot) =>
     req<{ count: number }>("/snapshots", { method: "POST", body: JSON.stringify(snap) }),
