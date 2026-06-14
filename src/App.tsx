@@ -4,6 +4,7 @@ import Dashboard from "./tabs/Dashboard";
 import CashFlow from "./tabs/CashFlow";
 import Investing from "./tabs/Investing";
 import Freedom from "./tabs/Freedom";
+import Risk from "./tabs/Risk";
 import Compare from "./tabs/Compare";
 import Settings from "./tabs/Settings";
 
@@ -12,6 +13,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "cashflow", label: "Cash Flow" },
   { id: "investing", label: "Investing" },
   { id: "freedom", label: "Freedom" },
+  { id: "risk", label: "Risk" },
   { id: "compare", label: "Compare" },
   { id: "settings", label: "Settings" },
 ];
@@ -100,6 +102,7 @@ export default function App() {
         {tab === "cashflow" && <CashFlow />}
         {tab === "investing" && <Investing />}
         {tab === "freedom" && <Freedom />}
+        {tab === "risk" && <Risk />}
         {tab === "compare" && <Compare />}
         {tab === "settings" && <Settings />}
       </main>

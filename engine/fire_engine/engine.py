@@ -122,6 +122,10 @@ class SimResult:
     liability_balance: np.ndarray | None = None  # (T+1,) nominal outstanding debt
     conversion_marginal_rate: np.ndarray | None = None  # (P, T) marginal tax on next conversion $
     rmds: np.ndarray | None = None  # (P, T) nominal required minimum distributions
+    port_return: np.ndarray | None = None  # (P, T) nominal blended portfolio return that year
+    # (allocation-weighted stock/bond/cash). Deflate with cum_inflation for real returns.
+    aca_subsidy: np.ndarray | None = None  # (P, T) nominal ACA premium subsidy received
+    net_health_cost: np.ndarray | None = None  # (P, T) nominal net ACA premium + IRMAA surcharge
 
     @property
     def success_rate(self) -> float:
@@ -275,11 +279,31 @@ def _allocate_waterfall(
     return contrib, pretax, match
 
 
+def _aca_applicable_pct(fpl_ratio: np.ndarray) -> np.ndarray:
+    """Post-2021 (IRA-extended) ACA applicable percentage — the share of MAGI a
+    household is expected to pay toward the benchmark plan — by % of the federal
+    poverty line. No 400%-FPL cliff: it caps at 8.5%."""
+    pct = fpl_ratio * 100.0
+    xs = [0.0, 150.0, 200.0, 250.0, 300.0, 400.0, 1e9]
+    ys = [0.0, 0.0, 0.02, 0.04, 0.06, 0.085, 0.085]
+    return np.interp(pct, xs, ys)
+
+
+def _irmaa_surcharge(magi: np.ndarray, brackets, infl: np.ndarray) -> np.ndarray:
+    """Step-function Medicare surcharge: the highest bracket whose (inflation-
+    scaled) threshold MAGI exceeds sets the annual Part B + D surcharge."""
+    surcharge = np.zeros_like(magi)
+    for b in brackets:  # brackets ascending; last exceeded wins
+        surcharge = np.where(magi > b.magi_threshold * infl, b.annual_surcharge * infl, surcharge)
+    return surcharge
+
+
 def run(
     scenario: Scenario,
     paths: MarketPaths | None = None,
     retirement_age: int | None = None,
     balance_scale: float = 1.0,
+    spending_scale: float = 1.0,
     deterministic: bool = False,
 ) -> SimResult:
     tables = taxmod.load_tax_tables()
@@ -311,6 +335,8 @@ def run(
 
     policy = scenario.withdrawal_policy
     div_yield = scenario.market.dividend_yield
+    aca = scenario.aca
+    irmaa = scenario.irmaa
 
     liab_payments, liab_balance = _liability_schedule(scenario, T)
 
@@ -332,6 +358,9 @@ def run(
     ss_out = np.zeros((P, T))
     expenses_out = np.zeros((P, T))
     contributions_out = np.zeros((P, T))
+    port_return_out = np.zeros((P, T))
+    aca_subsidy_out = np.zeros((P, T))
+    net_health_cost_out = np.zeros((P, T))  # net ACA premium + IRMAA surcharge
     accessible_out: dict[str, np.ndarray] = {}
 
     zeros = np.zeros(P)
@@ -362,6 +391,13 @@ def run(
             rmd = zeros
 
         ess_nom, disc_nom, ess_med, disc_med = _expenses_for_year(scenario, t, age, infl)
+        # spending_scale flexes the controllable living-expense lever (used by the
+        # max-sustainable-spend solver and the success surface). It leaves medical
+        # streams unscaled (essential, ACA/IRMAA-coupled) and loan payments unscaled
+        # (contractual), so the HSA medical offset below stays consistent.
+        if spending_scale != 1.0:
+            ess_nom = ess_med + (ess_nom - ess_med) * spending_scale
+            disc_nom = disc_med + (disc_nom - disc_med) * spending_scale
         ess_nom = ess_nom + liab_payments[t]  # loan payments: essential, non-inflating
 
         if guard.enabled and t >= t_retire:
@@ -415,6 +451,13 @@ def run(
         contrib: dict[AccountType, np.ndarray] = {}
         match = zeros
         wplan = None
+        # health-cost feedback (MAGI -> ACA subsidy / IRMAA -> cash flow) co-converges
+        # inside the same fixed point; persist the last-iteration values for recording.
+        aca_subsidy = zeros
+        net_premium = zeros
+        irmaa_cost = zeros
+        aca_active = aca.enabled and age >= retirement_age and age < aca.coverage_end_age
+        irmaa_active = irmaa.enabled and age >= irmaa.start_age
         for _ in range(FIXED_POINT_ITERATIONS):
             w_ordinary = wplan.ordinary_income if wplan is not None else zeros
             w_ltcg = wplan.ltcg_income if wplan is not None else zeros
@@ -437,7 +480,23 @@ def run(
             penalty = tables.early_penalty * w_penalty
             total_tax = fed + state_tax + fica + penalty
 
-            cash_flow = (wages + ss_nom + rmd - total_tax - oop_expenses - general_out)
+            # Health costs key off MAGI and feed back into cash flow, so they
+            # co-converge with taxes/withdrawals inside this fixed point. MAGI is
+            # AGI-based, so it must include capital gains (unlike `ordinary`).
+            # ACA MAGI also adds back untaxed Social Security; IRMAA uses AGI.
+            if aca_active:
+                aca_magi = ordinary_excl_ss + ltcg + ss_nom
+                fpl_nom = aca.fpl_base_single * infl
+                applic = _aca_applicable_pct(aca_magi / np.maximum(fpl_nom, 1.0))
+                benchmark = aca.benchmark_annual * infl
+                actual = aca.actual_annual * infl
+                aca_subsidy = np.clip(benchmark - applic * aca_magi, 0.0, actual)
+                net_premium = np.maximum(actual - aca_subsidy, 0.0)
+            if irmaa_active:
+                irmaa_cost = _irmaa_surcharge(ordinary + ltcg, irmaa.brackets, infl)
+
+            cash_flow = (wages + ss_nom + rmd - total_tax - oop_expenses - general_out
+                         - net_premium - irmaa_cost)
             available = np.maximum(cash_flow, 0.0)
             need = np.maximum(-cash_flow, 0.0)
 
@@ -527,6 +586,7 @@ def run(
         weights = regime.weights
         blended = (weights[0] * paths.stock[:, t] + weights[1] * paths.bond[:, t]
                    + weights[2] * paths.cash[:, t])
+        port_return_out[:, t] = blended
         state.grow(blended, paths.cash[:, t],
                    hsa_cash_buffer=scenario.hsa.cash_buffer * infl)
 
@@ -536,6 +596,8 @@ def run(
         taxes_paid[:, t] = total_tax
         rmds_out[:, t] = rmd
         spending_mult_out[:, t] = spend_mult
+        aca_subsidy_out[:, t] = aca_subsidy
+        net_health_cost_out[:, t] = net_premium + irmaa_cost
         ss_out[:, t] = ss_nom
         expenses_out[:, t] = expenses_nom
         contributions_out[:, t] = sum(contrib.values(), start=zeros) + match
@@ -561,6 +623,9 @@ def run(
         liability_balance=liab_balance,
         conversion_marginal_rate=conv_marginal_rate,
         rmds=rmds_out,
+        port_return=port_return_out,
+        aca_subsidy=aca_subsidy_out,
+        net_health_cost=net_health_cost_out,
     )
 
 

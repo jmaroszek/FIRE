@@ -10,12 +10,17 @@ from fire_engine import Scenario, example_scenario, run
 from fire_engine.scenario import (
     Account,
     AccountType,
+    Allocation,
     ConversionRule,
+    Event,
+    EventKind,
     ExpenseStream,
     Income,
     InflationModel,
+    Liability,
     MarketModel,
     Profile,
+    RegimeOverrides,
     SimSettings,
 )
 
@@ -401,6 +406,108 @@ def test_late_order_trad_first_preserves_roth():
     assert rt.pools["roth"][0, c] == pytest.approx(500000)  # roth untouched
     assert rr.pools["roth"][0, c] == pytest.approx(500000 - 12000 * c)
     assert rt.pools["roth"][0, c] > rr.pools["roth"][0, c]  # trad-first keeps more roth
+
+
+def test_port_return_is_nominal_blend():
+    """port_return is the allocation-weighted NOMINAL return each year, and
+    deflating it by realized inflation recovers the weighted real return."""
+    s = Scenario(
+        profile=Profile(birth_year=1990, horizon_age=80, state_tax_rate=0.0),
+        accounts=[Account(type=AccountType.taxable, balance=100000, cost_basis=100000)],
+        allocation=Allocation(stocks=0.75, bonds=0.25, cash=0.0),
+        income=Income(gross_salary=0),
+        retirement_age=36,
+        expense_streams=[],
+        sim=SimSettings(n_paths=4, start_year=2026),
+        market=MarketModel(mode="parametric",
+                           stocks={"real_cagr": 0.08, "vol": 0.0},
+                           bonds={"real_cagr": 0.02, "vol": 0.0},
+                           cash={"real_cagr": 0.0, "vol": 0.0},
+                           dividend_yield=0.0),
+        inflation=InflationModel(mean=0.03, persistence=0.0, sigma=0.0, initial=0.03),
+    )
+    result = run(s)
+    assert result.port_return is not None
+    assert result.port_return.shape == (4, s.n_years)
+    nom_stock = 1.08 * 1.03 - 1
+    nom_bond = 1.02 * 1.03 - 1
+    assert np.allclose(result.port_return, 0.75 * nom_stock + 0.25 * nom_bond)
+    # weights sum to 1, so the (1+infl) factor cancels: real blend == weighted reals
+    infl = result.cum_inflation[:, 1:] / result.cum_inflation[:, :-1] - 1
+    real_ret = (1 + result.port_return) / (1 + infl) - 1
+    assert np.allclose(real_ret, 0.75 * 0.08 + 0.25 * 0.02)
+
+
+def test_port_return_follows_allocation_regime_change():
+    """A Change Allocation event shifts the weights port_return reflects."""
+    s = Scenario(
+        profile=Profile(birth_year=1990, horizon_age=80, state_tax_rate=0.0),
+        accounts=[Account(type=AccountType.taxable, balance=100000, cost_basis=100000)],
+        allocation=Allocation(stocks=1.0, bonds=0.0, cash=0.0),
+        income=Income(gross_salary=0),
+        retirement_age=36,
+        expense_streams=[],
+        events=[Event(kind=EventKind.regime_change, age=40,
+                      overrides=RegimeOverrides(
+                          allocation=Allocation(stocks=0.0, bonds=1.0, cash=0.0)))],
+        sim=SimSettings(n_paths=2, start_year=2026),
+        market=MarketModel(mode="parametric",
+                           stocks={"real_cagr": 0.08, "vol": 0.0},
+                           bonds={"real_cagr": 0.02, "vol": 0.0},
+                           cash={"real_cagr": 0.0, "vol": 0.0},
+                           dividend_yield=0.0),
+        inflation=InflationModel(mean=0.0, persistence=0.0, sigma=0.0, initial=0.0),
+    )
+    result = run(s)
+    t_switch = 40 - s.start_age  # year index where age becomes 40
+    assert np.allclose(result.port_return[:, :t_switch], 0.08)  # 100% stock
+    assert np.allclose(result.port_return[:, t_switch:], 0.02)  # 100% bond
+
+
+def _scale_base() -> dict:
+    return dict(
+        profile=Profile(birth_year=1980, horizon_age=70, state_tax_rate=0.0),
+        accounts=[Account(type=AccountType.taxable, balance=5_000_000, cost_basis=5_000_000)],
+        income=Income(gross_salary=0),
+        retirement_age=46,  # birth 1980, start 2026 -> retired from year 0
+        sim=SimSettings(n_paths=2, start_year=2026),
+        market=MarketModel(mode="parametric",
+                           stocks={"real_cagr": 0.0, "vol": 0.0},
+                           bonds={"real_cagr": 0.0, "vol": 0.0},
+                           cash={"real_cagr": 0.0, "vol": 0.0},
+                           dividend_yield=0.0),
+        inflation=InflationModel(mean=0.0, persistence=0.0, sigma=0.0, initial=0.0),
+    )
+
+
+def test_spending_scale_living_only_liability_carveout():
+    """spending_scale flexes living + discretionary streams but leaves the loan
+    payment (contractual) untouched. Identity holds at 1.0."""
+    base = _scale_base()
+    base["expense_streams"] = [
+        ExpenseStream(name="living", annual=30000, essential=True),
+        ExpenseStream(name="fun", annual=10000, essential=False),
+    ]
+    base["liabilities"] = [Liability(name="mortgage", balance=200000,
+                                     interest_rate=0.05, annual_payment=12000)]
+    r1 = run(Scenario(**base))
+    r2 = run(Scenario(**base), spending_scale=2.0)
+    assert r1.expenses[0, 0] == pytest.approx(40000 + 12000)        # living+disc + loan
+    assert r2.expenses[0, 0] == pytest.approx(2 * 40000 + 12000)    # streams x2, loan fixed
+    assert np.allclose(run(Scenario(**base), spending_scale=1.0).expenses, r1.expenses)
+
+
+def test_spending_scale_excludes_medical():
+    """Medical streams (essential, ACA/IRMAA-coupled) are not scaled."""
+    base = _scale_base()
+    base["expense_streams"] = [
+        ExpenseStream(name="living", annual=30000, essential=True),
+        ExpenseStream(name="health", annual=8000, essential=True, is_medical=True),
+    ]
+    r1 = run(Scenario(**base))
+    r2 = run(Scenario(**base), spending_scale=2.0)
+    assert r1.expenses[0, 0] == pytest.approx(30000 + 8000)
+    assert r2.expenses[0, 0] == pytest.approx(2 * 30000 + 8000)  # living x2, medical fixed
 
 
 def test_performance_budget():

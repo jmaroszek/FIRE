@@ -1,5 +1,6 @@
 import type {
-  Category, FreedomResult, Scenario, SimulateResult, Snapshot, SweepResult,
+  Category, FreedomResult, MaxSpendResult, RothTradResult, Scenario, SensitivityResult,
+  SimulateResult, Snapshot, StressResult, SurfaceResult, SweepResult,
 } from "./types";
 
 const BASE = `http://127.0.0.1:${(window as any).__FIRE_PORT__ ?? 8765}`;
@@ -30,6 +31,27 @@ export const api = {
     req<FreedomResult>("/simulate/freedom", {
       method: "POST",
       body: JSON.stringify({ scenario, n_paths: nPaths }),
+    }),
+  maxSpend: (scenario: Scenario, nPaths = 1000) =>
+    req<MaxSpendResult>("/simulate/max-spend", {
+      method: "POST", body: JSON.stringify({ scenario, n_paths: nPaths }),
+    }),
+  surface: (scenario: Scenario, nPaths = 800) =>
+    req<SurfaceResult>("/simulate/surface", {
+      method: "POST", body: JSON.stringify({ scenario, n_paths: nPaths }),
+    }),
+  sensitivity: (scenario: Scenario, nPaths = 2000) =>
+    req<SensitivityResult>("/simulate/sensitivity", {
+      method: "POST", body: JSON.stringify({ scenario, n_paths: nPaths }),
+    }),
+  stress: (scenario: Scenario, shockAge: number, duration = 3, nPaths = 2000) =>
+    req<StressResult>("/simulate/stress", {
+      method: "POST",
+      body: JSON.stringify({ scenario, shock_age: shockAge, duration, n_paths: nPaths }),
+    }),
+  rothVsTrad: (scenario: Scenario, nPaths = 1000) =>
+    req<RothTradResult>("/simulate/roth-vs-trad", {
+      method: "POST", body: JSON.stringify({ scenario, n_paths: nPaths }),
     }),
   getWorkspace: () => req<Scenario>("/workspace"),
   saveWorkspace: (scenario: Scenario) =>

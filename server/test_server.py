@@ -43,6 +43,66 @@ def test_simulate_returns_fan_and_metrics(client):
     assert "roth_matured_conversions" in body["accessibility_real"]
 
 
+def test_simulate_carries_distribution_metrics(client):
+    s = small_scenario(client)
+    body = client.post("/simulate", json=s).json()
+    n = s["sim"]["n_paths"]
+    assert len(body["ending_balance"]["real"]) == n
+    assert len(body["ending_balance"]["nominal"]) == n
+    assert len(body["spending_distribution"]["total_real"]) == n
+    assert len(body["spending_distribution"]["years_in_cut"]) == n
+    assert len(body["max_drawdown"]) == n
+    assert len(body["sequence_scatter"]["first_window_return"]) == n
+    assert len(body["sequence_scatter"]["survived"]) == n
+    ci = body["success_ci"]
+    assert ci["lo"] <= ci["rate"] <= ci["hi"] and ci["n_paths"] == n
+    ar = body["age_at_ruin"]
+    assert ar["total_paths"] == n
+    assert ar["success_paths"] + sum(ar["counts"]) == n
+
+
+def test_max_spend_endpoint(client):
+    s = small_scenario(client)
+    body = client.post("/simulate/max-spend", json={"scenario": s, "n_paths": 200}).json()
+    assert body["max_scale"] >= 0.0
+    assert body["max_living_annual"] == pytest.approx(body["max_scale"] * body["base_living_annual"])
+
+
+def test_surface_endpoint(client):
+    s = small_scenario(client)
+    body = client.post("/simulate/surface", json={
+        "scenario": s, "ages": [s["sim"]["start_year"] - s["profile"]["birth_year"] + 5],
+        "spending_scales": [0.9, 1.1], "n_paths": 200,
+    }).json()
+    assert len(body["matrix"]) == 2 and len(body["matrix"][0]) == 1
+    assert all(0.0 <= c <= 1.0 for row in body["matrix"] for c in row)
+
+
+def test_sensitivity_endpoint(client):
+    s = small_scenario(client)
+    body = client.post("/simulate/sensitivity", json={"scenario": s, "n_paths": 200}).json()
+    assert len(body["entries"]) == 7
+    swings = [abs(e["high_success"] - e["low_success"]) for e in body["entries"]]
+    assert swings == sorted(swings, reverse=True)
+
+
+def test_stress_endpoint(client):
+    s = small_scenario(client)
+    body = client.post("/simulate/stress", json={
+        "scenario": s, "shock_age": 30, "duration": 3, "n_paths": 200,
+    }).json()
+    assert body["stressed_success"] <= body["base_success"] + 1e-9
+
+
+def test_roth_vs_trad_endpoint(client):
+    s = small_scenario(client)
+    body = client.post("/simulate/roth-vs-trad", json={"scenario": s, "n_paths": 200}).json()
+    assert 0.0 <= body["trad"]["success_rate"] <= 1.0
+    assert 0.0 <= body["roth"]["success_rate"] <= 1.0
+    assert body["tax_diff"] == pytest.approx(
+        body["roth"]["lifetime_tax_real"] - body["trad"]["lifetime_tax_real"])
+
+
 def test_sweep_monotone_ish(client):
     s = small_scenario(client)
     resp = client.post("/simulate/sweep",

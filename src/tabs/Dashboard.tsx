@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { A } from "../assumptions";
-import { FanChart } from "../components/charts";
+import { FanChart, percentileAt } from "../components/charts";
 import { Field, InfoTip, NumberInput, Section, Stat, fmtMoney, fmtPct } from "../components/ui";
 import { useStore } from "../store";
 
@@ -42,6 +42,18 @@ export default function Dashboard() {
     ? scenario.retirement_age
     : scenario.profile.birth_year + scenario.retirement_age;
 
+  // Where the latest snapshot lands in the original projection cone for its year.
+  // Compared in nominal $ (the fan's nominal series), so the CPI deflator cancels;
+  // the fan index matches how the chart plots the snapshot dot (x = snapshot year).
+  const latestSnap = snapshots[snapshots.length - 1];
+  let trackingLabel: string | null = null;
+  if (result && latestSnap) {
+    const snapTotal = Object.values(latestSnap.balances).reduce((a, b) => a + b, 0);
+    const i = new Date(latestSnap.date).getFullYear() - scenario.sim.start_year + 1;
+    const fanNom = result.fan.nominal;
+    if (i >= 0 && i < fanNom.p50.length) trackingLabel = percentileAt(fanNom, i, snapTotal);
+  }
+
   return (
     <div className="stack">
       <div className="stat-grid">
@@ -75,8 +87,12 @@ export default function Dashboard() {
         <Section title="Headline">
           {result && (
             <Stat label="Plan Success Probability" value={fmtPct(result.success_rate)}
-              sub={`Retire at ${scenario.retirement_age}, horizon ${scenario.profile.horizon_age}, guardrails ${scenario.guardrails.enabled ? "on" : "off"}`}
-              info={A.successRate} />
+              sub={`95% CI ${fmtPct(result.success_ci.lo)}–${fmtPct(result.success_ci.hi)} · ${result.success_ci.n_paths.toLocaleString()} paths`}
+              info={A.successCi} />
+          )}
+          {trackingLabel && (
+            <Stat label="Tracking vs Plan" value={trackingLabel}
+              sub={`latest snapshot ${latestSnap!.date}`} info={A.vsPlan} />
           )}
           {freedom && (
             <>

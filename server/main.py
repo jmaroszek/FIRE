@@ -123,6 +123,62 @@ def freedom(req: FreedomRequest) -> dict:
     }
 
 
+class MaxSpendRequest(BaseModel):
+    scenario: Scenario
+    n_paths: int = 1000
+
+
+@app.post("/simulate/max-spend")
+def max_spend(req: MaxSpendRequest) -> dict:
+    return m.max_sustainable_spend(req.scenario, n_paths=req.n_paths)
+
+
+class SurfaceRequest(BaseModel):
+    scenario: Scenario
+    ages: Optional[list[int]] = None
+    spending_scales: Optional[list[float]] = None
+    n_paths: int = 800
+
+
+@app.post("/simulate/surface")
+def surface(req: SurfaceRequest) -> dict:
+    return m.success_surface(req.scenario, ages=req.ages,
+                             spending_scales=req.spending_scales, n_paths=req.n_paths)
+
+
+class SensitivityRequest(BaseModel):
+    scenario: Scenario
+    n_paths: int = 2000
+
+
+@app.post("/simulate/sensitivity")
+def sensitivity(req: SensitivityRequest) -> dict:
+    return m.sensitivity_tornado(req.scenario, n_paths=req.n_paths)
+
+
+class StressRequest(BaseModel):
+    scenario: Scenario
+    shock_age: int
+    duration: int = 3
+    n_paths: int = 2000
+
+
+@app.post("/simulate/stress")
+def stress(req: StressRequest) -> dict:
+    return m.income_stress(req.scenario, shock_age=req.shock_age,
+                           duration=req.duration, n_paths=req.n_paths)
+
+
+class RothTradRequest(BaseModel):
+    scenario: Scenario
+    n_paths: int = 1000
+
+
+@app.post("/simulate/roth-vs-trad")
+def roth_vs_trad(req: RothTradRequest) -> dict:
+    return m.roth_vs_trad(req.scenario, n_paths=req.n_paths)
+
+
 # ---------------------------------------------------------------- workspace
 # The working scenario, autosaved on every edit so the app reopens exactly
 # where you left off — independent of named "saved scenarios".

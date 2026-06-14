@@ -63,4 +63,32 @@ export const A = {
     "Success probability if you retire at each age, holding everything else constant (one shared set of market paths, so the curve is noise-free). Note: this can disagree with the FIRE number — by a later age your money is mostly in retirement accounts, so the same total is less accessible before 59½ than today's mix would be. New Salary events pinned after a candidate retirement age count as returning to work.",
   actualsVsProjection:
     "Your recorded snapshots plotted over the projection cone — watch reality thread through the bands.",
+  successCi:
+    "The 95% interval is Monte-Carlo SAMPLING error: how much the success estimate would wobble from re-running with a different random seed at this path count. It is NOT a confidence interval on your real-life outcome. It shrinks as you raise the number of paths — widen it before reading small differences as real (a Wilson score interval, so it never spills past 100%).",
+  endingBalance:
+    "Distribution of net worth left at the horizon across all paths. A plan can clear the success bar yet leave a large median estate — that surplus is years of life traded for money you never spent. Read it alongside the success rate to judge over- vs under-saving. Honors the Today's-$ / Nominal toggle.",
+  spendingDelivered:
+    "Total lifestyle actually funded over the whole plan, in today's dollars, per path. With guardrails on, bad markets cut discretionary spending — two plans can both 'succeed' while one quietly under-delivers for years. The companion stat counts the years a path spent in a guardrail cut.",
+  ruinAge:
+    "For the paths that run short, the age at which spending first can't be met. 'When do plans die?' is more actionable than a single success number — late failures may be survivable by trimming; early ones are the real danger.",
+  drawdown:
+    "Each path's deepest peak-to-trough fall in REAL net worth. Computed in today's dollars so inflation's nominal growth can't hide a real decline. This is the dip you'd actually have to sit through without panic-selling.",
+  sequenceRisk:
+    "Each dot is one path: its average real return over the first few years (x) vs. the wealth it ended with (y), colored by whether it survived. The cloud tilts right because a weak first decade is far harder to recover from than a weak later one — sequence-of-returns risk, the early retiree's central hazard.",
+  vsPlan:
+    "Where your latest recorded snapshot lands within the original projection cone for that year (compared in nominal dollars, so inflation doesn't matter). 'Tracking ≈ 60th percentile' means you're ahead of the median path the plan drew at the start.",
+  maxSpend:
+    "The most you could spend each year (today's $) and still clear your success threshold — found by bisecting Monte Carlo runs on your flexible living expenses (medical and loan payments held fixed). The mirror image of the FIRE number: 'how much can I spend?' instead of 'how much do I need?'.",
+  surface:
+    "Success probability across retirement age (x) and spending level (y, as a % of your planned living expenses), on one shared set of market paths. Read the whole trade-off at once: retire earlier by spending less, or spend more by working longer. The color flips at your success threshold.",
+  tornado:
+    "One-at-a-time sensitivity: each bar shows how far the success rate swings when that single input moves ±10% (retirement age moves ±2 years). The longest bar is the assumption that matters most — and the shortest ones you can stop worrying about. Note: Stock Volatility and Inflation only bite in Parametric market mode; in Bootstrap mode the historical data sets the spread, so those bars stay short.",
+  aca:
+    "Optional pre-65 health-insurance modeling. When you retire before Medicare, marketplace premiums are offset by an income-based subsidy. This uses the post-2021 rules: your expected contribution rises from 0% to a flat 8.5% of MAGI as income climbs, with no cliff at 400% of poverty — the subsidy is the benchmark (second-lowest Silver) premium minus that contribution, capped at your actual premium. Because MAGI includes Roth conversions and capital gains, this is where bracket-filling and healthcare cost directly trade off. Single-filer; one benchmark instead of a full regional table (ASSUMPTIONS #26).",
+  irmaa:
+    "Optional Medicare surcharge at 65+. Above income thresholds, Part B and D premiums carry an extra step-function charge (IRMAA). Defaults to the 2025 single-filer tiers, inflated per path. Real IRMAA keys off your MAGI from two years prior; the model uses the current year as a simplification, so a conversion spike shows its surcharge the same year (ASSUMPTIONS #27).",
+  rothTrad:
+    "The accumulation-phase mirror of the Roth conversion ladder: should your tax-advantaged contributions go pre-tax (Traditional — deduct now, taxed on withdrawal) or post-tax (Roth — taxed now, then tax-free, with no RMDs)? Runs both routings on the same market paths. Traditional tends to win if your tax rate falls in retirement; Roth wins if it rises, or when decades of tax-free growth and dodging RMDs outweigh today's deduction. Lifetime tax is the median real total across every year.",
+  stressTest:
+    "What if your wages stopped for a few years — a layoff, a sabbatical, or your role being automated away? Re-runs the plan with salary zeroed for the chosen window (on the same market paths, so the change is pure income effect, not noise) and reports the hit to your success rate. Note: a shock early in your career, when savings are thin, can fail outright — the model counts any year you can't cover essential spending as a failure, so this doubles as an emergency-fund check, not just a retirement-timing one.",
 };

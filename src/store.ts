@@ -1,10 +1,11 @@
 import { create } from "zustand";
 import { api } from "./api";
 import type {
-  Category, FreedomResult, Scenario, SimulateResult, Snapshot, SweepResult,
+  Category, FreedomResult, MaxSpendResult, RothTradResult, Scenario, SensitivityResult,
+  SimulateResult, Snapshot, StressResult, SurfaceResult, SweepResult,
 } from "./types";
 
-export type Tab = "dashboard" | "cashflow" | "investing" | "freedom" | "compare" | "settings";
+export type Tab = "dashboard" | "cashflow" | "investing" | "freedom" | "risk" | "compare" | "settings";
 
 export interface CompareSlot {
   name: string;
@@ -27,6 +28,17 @@ interface AppState {
   sweeping: boolean;
   freedom: FreedomResult | null;
   freedomLoading: boolean;
+  // on-demand decision-surface analyses (Phase 2); all nulled on every simulate
+  maxspend: MaxSpendResult | null;
+  maxspendLoading: boolean;
+  surface: SurfaceResult | null;
+  surfaceLoading: boolean;
+  sensitivity: SensitivityResult | null;
+  sensitivityLoading: boolean;
+  stress: StressResult | null;
+  stressLoading: boolean;
+  rothtrad: RothTradResult | null;
+  rothtradLoading: boolean;
   savedScenarios: string[];
   compare: CompareSlot[];
   snapshots: Snapshot[];
@@ -41,6 +53,11 @@ interface AppState {
   patchScenario: (patch: Partial<Scenario>) => void;
   runSweep: () => Promise<void>;
   runFreedom: () => Promise<void>;
+  runMaxSpend: () => Promise<void>;
+  runSurface: () => Promise<void>;
+  runSensitivity: () => Promise<void>;
+  runStress: (shockAge: number, duration: number) => Promise<void>;
+  runRothTrad: () => Promise<void>;
   saveAs: (name: string) => Promise<void>;
   load: (name: string) => Promise<void>;
   remove: (name: string) => Promise<void>;
@@ -57,6 +74,13 @@ interface AppState {
 let simTimer: ReturnType<typeof setTimeout> | null = null;
 let simSeq = 0;
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+// set when a scenario edit changes something the success-curve sweep depends on
+// (anything but the single planned retirement age); the next simulate then drops
+// the now-stale sweep. Retirement-age-only edits leave the sweep curve intact.
+let sweepInvalidated = false;
+// the sweep depends on the whole scenario except the planned retirement age,
+// which only moves the selected point along the curve, not the curve itself
+const sweepKey = (s: Scenario) => JSON.stringify({ ...s, retirement_age: 0 });
 
 export const useStore = create<AppState>((set, get) => {
   const scheduleSimulate = () => {
@@ -64,11 +88,17 @@ export const useStore = create<AppState>((set, get) => {
     simTimer = setTimeout(async () => {
       const scenario = get().scenario;
       if (!scenario) return;
+      const dropSweep = sweepInvalidated;
+      sweepInvalidated = false;
       const seq = ++simSeq;
       set({ simulating: true });
       try {
         const result = await api.simulate(scenario);
-        if (seq === simSeq) set({ result, simError: null, sweep: null, freedom: null });
+        if (seq === simSeq) set({
+          result, simError: null, freedom: null,
+          maxspend: null, surface: null, sensitivity: null, stress: null, rothtrad: null,
+          sweep: dropSweep ? null : get().sweep,
+        });
       } catch (e) {
         if (seq === simSeq) set({ simError: String(e) });
       } finally {
@@ -89,6 +119,16 @@ export const useStore = create<AppState>((set, get) => {
     sweeping: false,
     freedom: null,
     freedomLoading: false,
+    maxspend: null,
+    maxspendLoading: false,
+    surface: null,
+    surfaceLoading: false,
+    sensitivity: null,
+    sensitivityLoading: false,
+    stress: null,
+    stressLoading: false,
+    rothtrad: null,
+    rothtradLoading: false,
     savedScenarios: [],
     compare: [],
     snapshots: [],
@@ -133,6 +173,8 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     setScenario: (scenario) => {
+      const prev = get().scenario;
+      if (!prev || sweepKey(prev) !== sweepKey(scenario)) sweepInvalidated = true;
       set({ scenario, dirty: true });
       scheduleSimulate();
       if (autosaveTimer) clearTimeout(autosaveTimer);
@@ -172,6 +214,71 @@ export const useStore = create<AppState>((set, get) => {
         set({ simError: String(e) });
       } finally {
         set({ freedomLoading: false });
+      }
+    },
+
+    runMaxSpend: async () => {
+      const scenario = get().scenario;
+      if (!scenario || get().maxspendLoading) return;
+      set({ maxspendLoading: true });
+      try {
+        set({ maxspend: await api.maxSpend(scenario) });
+      } catch (e) {
+        set({ simError: String(e) });
+      } finally {
+        set({ maxspendLoading: false });
+      }
+    },
+
+    runSurface: async () => {
+      const scenario = get().scenario;
+      if (!scenario || get().surfaceLoading) return;
+      set({ surfaceLoading: true });
+      try {
+        set({ surface: await api.surface(scenario) });
+      } catch (e) {
+        set({ simError: String(e) });
+      } finally {
+        set({ surfaceLoading: false });
+      }
+    },
+
+    runSensitivity: async () => {
+      const scenario = get().scenario;
+      if (!scenario || get().sensitivityLoading) return;
+      set({ sensitivityLoading: true });
+      try {
+        set({ sensitivity: await api.sensitivity(scenario) });
+      } catch (e) {
+        set({ simError: String(e) });
+      } finally {
+        set({ sensitivityLoading: false });
+      }
+    },
+
+    runStress: async (shockAge, duration) => {
+      const scenario = get().scenario;
+      if (!scenario || get().stressLoading) return;
+      set({ stressLoading: true });
+      try {
+        set({ stress: await api.stress(scenario, shockAge, duration) });
+      } catch (e) {
+        set({ simError: String(e) });
+      } finally {
+        set({ stressLoading: false });
+      }
+    },
+
+    runRothTrad: async () => {
+      const scenario = get().scenario;
+      if (!scenario || get().rothtradLoading) return;
+      set({ rothtradLoading: true });
+      try {
+        set({ rothtrad: await api.rothVsTrad(scenario) });
+      } catch (e) {
+        set({ simError: String(e) });
+      } finally {
+        set({ rothtradLoading: false });
       }
     },
 

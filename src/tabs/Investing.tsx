@@ -2,7 +2,7 @@ import React from "react";
 import { A } from "../assumptions";
 import { AccountBalanceChart, FanChart, InvestingChart } from "../components/charts";
 import {
-  Field, Group, InfoTip, NumberInput, PercentInput, Section, fmtPct,
+  Field, Group, InfoTip, NumberInput, PercentInput, Section, fmtMoney, fmtPct,
 } from "../components/ui";
 import { ACCOUNT_LABELS } from "../labels";
 import { useStore } from "../store";
@@ -10,7 +10,7 @@ import type { Account, AccountType, Scenario, WaterfallStep } from "../types";
 
 export default function Investing() {
   const { scenario, result, simulating, simError, axisMode, display, setDisplay,
-          snapshots } = useStore();
+          snapshots, rothtrad, runRothTrad, rothtradLoading } = useStore();
   const setScenario = useStore((s) => s.setScenario);
   if (!scenario) return null;
   const s = scenario;
@@ -201,6 +201,42 @@ export default function Investing() {
               ))}
             </tbody>
           </table>
+        </Section>
+
+        <Section className="span1" title="Roth vs Traditional Contributions" info={A.rothTrad}
+          actions={rothtrad && (
+            <button className="ghost" onClick={runRothTrad} disabled={rothtradLoading}>
+              {rothtradLoading ? "Computing…" : "Recompute"}
+            </button>
+          )}>
+          {rothtrad ? (
+            <>
+              <table className="table">
+                <thead><tr><th /><th>Traditional</th><th>Roth</th></tr></thead>
+                <tbody>
+                  <tr><td>Success Probability</td>
+                    <td>{fmtPct(rothtrad.trad.success_rate)}</td>
+                    <td>{fmtPct(rothtrad.roth.success_rate)}</td></tr>
+                  <tr><td>Lifetime Tax (Today's $)</td>
+                    <td>{fmtMoney(rothtrad.trad.lifetime_tax_real)}</td>
+                    <td>{fmtMoney(rothtrad.roth.lifetime_tax_real)}</td></tr>
+                  <tr><td>Median Ending Net Worth</td>
+                    <td>{fmtMoney(rothtrad.trad.ending_real)}</td>
+                    <td>{fmtMoney(rothtrad.roth.ending_real)}</td></tr>
+                </tbody>
+              </table>
+              <p className="hint">
+                Routing tax-advantaged contributions to{" "}
+                <strong>{rothtrad.ending_diff >= 0 ? "Roth" : "Traditional"}</strong>{" "}
+                ends with {fmtMoney(Math.abs(rothtrad.ending_diff))} more net worth (today's $);
+                lifetime tax differs by {fmtMoney(Math.abs(rothtrad.tax_diff))}.
+              </p>
+            </>
+          ) : (
+            <button onClick={runRothTrad} disabled={rothtradLoading}>
+              {rothtradLoading ? "Computing…" : "Compare"}
+            </button>
+          )}
         </Section>
       </Group>
 

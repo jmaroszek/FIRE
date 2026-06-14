@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import { A } from "../assumptions";
-import { AccessibilityChart, SweepChart } from "../components/charts";
+import { AccessibilityChart, SurfaceHeatmap, SweepChart, TornadoChart } from "../components/charts";
 import {
   Field, Group, InfoTip, NumberInput, PercentInput, ProgressBar, Section, Stat,
   fmtMoney, fmtPct,
@@ -17,7 +17,10 @@ const DEFAULT_LATE_ORDER: WithdrawalSource[] =
 
 export default function Freedom() {
   const { scenario, result, freedom, freedomLoading, runFreedom, sweep, runSweep,
-          sweeping, axisMode } = useStore();
+          sweeping, axisMode,
+          maxspend, runMaxSpend, maxspendLoading,
+          surface, runSurface, surfaceLoading,
+          sensitivity, runSensitivity, sensitivityLoading } = useStore();
   const setScenario = useStore((s) => s.setScenario);
 
   useEffect(() => {
@@ -124,6 +127,23 @@ export default function Freedom() {
             </Field>
           </div>
         </Section>
+
+        <Section title="Max Sustainable Spending" info={A.maxSpend}
+          actions={maxspend && (
+            <button className="ghost" onClick={runMaxSpend} disabled={maxspendLoading}>
+              {maxspendLoading ? "Computing…" : "Recompute"}
+            </button>
+          )}>
+          {maxspend ? (
+            <Stat label={`At ≥${fmtPct(maxspend.threshold, 0)} Success`}
+              value={`${fmtMoney(maxspend.max_living_annual)}/yr`}
+              sub={`${maxspend.max_scale.toFixed(2)}× planned ${fmtMoney(maxspend.base_living_annual)}/yr${maxspend.capped ? " (capped at 8×)" : ""}`} />
+          ) : (
+            <button onClick={runMaxSpend} disabled={maxspendLoading}>
+              {maxspendLoading ? "Computing…" : "Compute"}
+            </button>
+          )}
+        </Section>
       </div>
 
       <Section title="Liquidity: Can You Bridge To 59½?"
@@ -136,6 +156,36 @@ export default function Freedom() {
             birthYear={s.profile.birth_year} />
         ) : (
           <p className="hint">Simulation pending…</p>
+        )}
+      </Section>
+
+      <Section title="When & How Much: Success Surface" info={A.surface}
+        actions={surface && (
+          <button className="ghost" onClick={runSurface} disabled={surfaceLoading}>
+            {surfaceLoading ? "Computing…" : "Recompute"}
+          </button>
+        )}>
+        {surface ? (
+          <SurfaceHeatmap data={surface} axisMode={axisMode} birthYear={s.profile.birth_year} />
+        ) : (
+          <button onClick={runSurface} disabled={surfaceLoading}>
+            {surfaceLoading ? "Computing…" : "Compute Surface"}
+          </button>
+        )}
+      </Section>
+
+      <Section title="What Moves The Needle" info={A.tornado}
+        actions={sensitivity && (
+          <button className="ghost" onClick={runSensitivity} disabled={sensitivityLoading}>
+            {sensitivityLoading ? "Computing…" : "Recompute"}
+          </button>
+        )}>
+        {sensitivity ? (
+          <TornadoChart data={sensitivity} />
+        ) : (
+          <button onClick={runSensitivity} disabled={sensitivityLoading}>
+            {sensitivityLoading ? "Computing…" : "Compute Sensitivity"}
+          </button>
         )}
       </Section>
 

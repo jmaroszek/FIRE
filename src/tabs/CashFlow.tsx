@@ -3,7 +3,7 @@ import { A } from "../assumptions";
 import { SpendingActualsChart, TaxesChart } from "../components/charts";
 import TimelineEditor from "../components/TimelineEditor";
 import {
-  Field, Group, InfoTip, NumberInput, PercentInput, Section,
+  Field, Group, InfoTip, NumberInput, PercentInput, Section, fmtMoney,
 } from "../components/ui";
 import { KIND_META, KIND_ORDER, displayKindOf, newEventOf, type DisplayKind } from "../events";
 import { useStore } from "../store";
@@ -106,6 +106,21 @@ export default function CashFlow() {
   const up = (patch: Partial<Scenario>) => setScenario({ ...s, ...patch });
 
   const startAge = s.sim.start_year - s.profile.birth_year;
+
+  // median healthcare cost/subsidy averaged over the pre-65 retired bridge years
+  const hc = result?.healthcare;
+  let hcWindow: { net: number; subsidy: number } | null = null;
+  if (result && hc?.net_cost_real) {
+    const idx = result.ages
+      .map((a, i) => ({ a, i }))
+      .filter(({ a }) => a >= s.retirement_age && a < s.aca.coverage_end_age)
+      .map(({ i }) => i);
+    if (idx.length) {
+      const mean = (arr?: number[]) =>
+        arr ? idx.reduce((sum, i) => sum + (arr[i] ?? 0), 0) / idx.length : 0;
+      hcWindow = { net: mean(hc.net_cost_real), subsidy: mean(hc.subsidy_real) };
+    }
+  }
 
   const upStream = (i: number, patch: Partial<ExpenseStream>) => {
     const expense_streams = s.expense_streams.map((e, j) => (j === i ? { ...e, ...patch } : e));
@@ -325,6 +340,59 @@ export default function CashFlow() {
           ) : (
             <p className="hint">Simulation pending…</p>
           )}
+        </Section>
+      </Group>
+
+      <Group title="Healthcare">
+        <Section title="ACA Premium Subsidy (Pre-65)" info={A.aca}>
+          <div className="fields">
+            <Field label="Enabled">
+              <input type="checkbox" checked={s.aca.enabled}
+                onChange={(e) => up({ aca: { ...s.aca, enabled: e.target.checked } })} />
+            </Field>
+            <Field label="Benchmark Premium (Today's $/yr)"
+              info="The second-lowest-cost Silver plan in your area — the plan the subsidy is computed against. Look it up on healthcare.gov or your state exchange at your expected retirement income.">
+              <NumberInput value={s.aca.benchmark_annual} step={500}
+                onChange={(v) => up({ aca: { ...s.aca, benchmark_annual: v } })} />
+            </Field>
+            <Field label="Your Plan's Premium (Today's $/yr)"
+              info="The full annual premium of the plan you'd actually buy, before subsidy. The subsidy can't exceed this.">
+              <NumberInput value={s.aca.actual_annual} step={500}
+                onChange={(v) => up({ aca: { ...s.aca, actual_annual: v } })} />
+            </Field>
+            <Field label="Coverage Ends At Age"
+              info="Medicare eligibility — marketplace coverage (and this subsidy) stops here.">
+              <NumberInput value={s.aca.coverage_end_age} step={1}
+                onChange={(v) => up({ aca: { ...s.aca, coverage_end_age: v } })} />
+            </Field>
+          </div>
+          {s.aca.enabled && hcWindow ? (
+            <p className="hint">
+              Median across the pre-65 bridge: subsidy {fmtMoney(hcWindow.subsidy)}/yr,
+              net premium {fmtMoney(hcWindow.net)}/yr (today's $). Don't also list this
+              premium as an expense stream, or you'll double-count it.
+            </p>
+          ) : (
+            <p className="hint">
+              Models the post-2021 subsidy (caps at 8.5% of MAGI, no income cliff) against
+              the benchmark you enter. Roth conversions raise MAGI and shrink the subsidy —
+              this is where the ladder and your healthcare cost collide.
+            </p>
+          )}
+        </Section>
+
+        <Section title="IRMAA Medicare Surcharge (65+)" info={A.irmaa}>
+          <div className="fields">
+            <Field label="Enabled">
+              <input type="checkbox" checked={s.irmaa.enabled}
+                onChange={(e) => up({ irmaa: { ...s.irmaa, enabled: e.target.checked } })} />
+            </Field>
+          </div>
+          <p className="hint">
+            Uses the 2025 single-filer Part B + D tiers (the surcharge starts above ~$106k
+            MAGI). A high Roth-conversion or RMD year can trip a tier — cross-check the
+            Projected RMDs and ladder tables on the Freedom tab.
+          </p>
         </Section>
       </Group>
 

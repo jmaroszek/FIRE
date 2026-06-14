@@ -3,7 +3,9 @@ import Plotly from "plotly.js-dist-min";
 import type { Config, Data, Layout, Shape } from "plotly.js";
 import createPlotlyComponent from "react-plotly.js/factory";
 import type { CompareSlot } from "../store";
-import type { Category, SimulateResult, Snapshot, SweepResult } from "../types";
+import type {
+  Category, SensitivityResult, SimulateResult, Snapshot, SurfaceResult, SweepResult,
+} from "../types";
 
 const Plot = createPlotlyComponent(Plotly);
 
@@ -39,7 +41,7 @@ const fmtTipMoney = (v: number) =>
 
 /** Estimate which percentile of outcomes a dollar value sits at, by linear
  * interpolation between the fan's percentile curves at one time step. */
-function percentileAt(fan: Record<string, number[]>, i: number, y: number): string | null {
+export function percentileAt(fan: Record<string, number[]>, i: number, y: number): string | null {
   const levels: [number, number][] = [5, 25, 50, 75, 95].map(
     (p) => [p, fan[`p${p}`][i]] as [number, number]);
   if (y < levels[0][1]) return "below 5th percentile";
@@ -186,12 +188,14 @@ export function SweepChart(props: {
     <Plot
       data={[
         { x, y, type: "scatter", mode: "lines+markers", name: "Success probability",
-          line: { color: "#3fb950", width: 2.5 }, hovertemplate: "%{y:.1%}" },
+          line: { color: "#3fb950", width: 2.5 },
+          hovertemplate: "%{x}: %{y:.1%}<extra></extra>" },
       ]}
       layout={{
         ...baseLayout,
         height: props.height ?? 320,
-        yaxis: { ...baseLayout.yaxis, tickformat: ".0%", range: [0, 1.02] },
+        // pad below 0 / above 1 so markers at the extremes aren't clipped
+        yaxis: { ...baseLayout.yaxis, tickformat: ".0%", range: [-0.05, 1.05] },
         xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Retirement Age" : "Retirement Year" } },
         shapes: [{
           type: "line", x0: x[0], x1: x[x.length - 1],
@@ -233,19 +237,27 @@ export function AccessibilityChart(props: {
   const x = props.axisMode === "age" ? props.result.ages : props.result.years;
   const order = ["cash", "taxable", "roth_basis", "roth_matured_conversions",
                  "trad", "hsa", "roth_earnings"];
-  const data: Data[] = order
-    .filter((src) => props.result.accessibility_real[src])
-    .map((src) => ({
-      x: [...x],
-      y: props.result.accessibility_real[src],
-      type: "scatter" as const,
-      mode: "lines" as const,
-      stackgroup: "one",
-      name: SOURCE_LABELS[src] ?? src,
-      line: { width: 0.5, color: SOURCE_COLORS[src] },
-      fillcolor: SOURCE_COLORS[src] + "66",
-      hovertemplate: "%{y:$,.0f}",
-    }));
+  const present = order.filter((src) => props.result.accessibility_real[src]);
+  const data: Data[] = present.map((src) => ({
+    x: [...x],
+    y: props.result.accessibility_real[src],
+    type: "scatter" as const,
+    mode: "lines" as const,
+    stackgroup: "one",
+    name: SOURCE_LABELS[src] ?? src,
+    line: { width: 0.5, color: SOURCE_COLORS[src] },
+    fillcolor: SOURCE_COLORS[src] + "66",
+    hovertemplate: "%{y:$,.0f}",
+  }));
+  // Transparent overlay so unified hover gets a "Total" row summing every
+  // source at that year; sits atop the stack and draws nothing.
+  const totals = [...x].map((_, i) =>
+    present.reduce((sum, src) => sum + (props.result.accessibility_real[src][i] ?? 0), 0));
+  data.push({
+    x: [...x], y: totals, type: "scatter", mode: "lines", name: "Total",
+    line: { width: 0 }, showlegend: false,
+    hovertemplate: "Total accessible: %{y:$,.0f}<extra></extra>",
+  });
 
   // Frame the bridge window: from retirement to 59½, when traditional and Roth
   // earnings become penalty-free (the model's annual grain unlocks them at 60).
@@ -278,6 +290,7 @@ export function AccessibilityChart(props: {
       layout={{
         ...baseLayout,
         height: props.height ?? 400,
+        hovermode: "x unified",
         shapes, annotations: annotations as Layout["annotations"],
         // Reverse the legend so it reads in withdrawal-policy order; the stack
         // order (set by trace order in `data`) is unchanged.
@@ -570,6 +583,202 @@ export function CompareSweepChart(props: {
           line: { color: "#d29922", width: 1, dash: "dot" },
         }] : [],
         title: { text: "Success Probability vs Retirement Age", font: { size: 14 } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
+// ---- outcome-distribution & robustness charts (Risk tab) -----------------
+
+type HistUnit = "money" | "percent" | "years" | "number";
+
+function median(xs: number[]): number {
+  if (!xs.length) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+const histTickFormat = (u: HistUnit): string | undefined =>
+  u === "money" ? "$.3~s" : u === "percent" ? ".0%" : undefined;
+
+/** Histogram of a per-path quantity (ending balance, lifetime spend, drawdown).
+ * Draws dashed reference lines for the supplied markers (median by default). */
+export function HistogramChart(props: {
+  values: number[];
+  title: string;
+  xTitle: string;
+  unit?: HistUnit;
+  color?: string;
+  markers?: { value: number; label: string; color?: string }[];
+  uirevision?: string;
+  height?: number;
+}) {
+  const unit = props.unit ?? "money";
+  const color = props.color ?? "rgba(88,166,255,0.55)";
+  const markers = props.markers ?? [{ value: median(props.values), label: "Median", color: ACCENT }];
+  const hoverX = unit === "money" ? "%{x:$,.0f}" : unit === "percent" ? "%{x:.0%}" : "%{x:,.0f}";
+  const shapes: Partial<Shape>[] = markers.map((mk) => ({
+    type: "line", x0: mk.value, x1: mk.value, y0: 0, y1: 1, yref: "paper",
+    line: { color: mk.color ?? ACCENT, width: 1.5, dash: "dash" },
+  }));
+  const annotations = markers.map((mk) => ({
+    x: mk.value, y: 1, yref: "paper" as const, yanchor: "bottom" as const,
+    text: mk.label, showarrow: false, font: { color: mk.color ?? ACCENT, size: 11 },
+  }));
+  return (
+    <Plot
+      data={[{
+        x: props.values, type: "histogram", nbinsx: 40,
+        marker: { color, line: { color: "#1c2128", width: 0.5 } },
+        hovertemplate: `${hoverX}<br>%{y} paths<extra></extra>`,
+      } as Data]}
+      layout={{
+        ...baseLayout, height: props.height ?? 300, showlegend: false, bargap: 0.02,
+        uirevision: props.uirevision ?? props.title,
+        shapes, annotations: annotations as Layout["annotations"],
+        xaxis: { ...baseLayout.xaxis, tickformat: histTickFormat(unit), title: { text: props.xTitle } },
+        yaxis: { ...baseLayout.yaxis, title: { text: "Paths" } },
+        title: { text: props.title, font: { size: 14 } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
+/** Bar chart of the age at which failing paths first run short of money. */
+export function RuinAgeChart(props: {
+  data: SimulateResult["age_at_ruin"]; height?: number;
+}) {
+  const { ages, counts, total_paths, success_paths } = props.data;
+  if (!ages.length) {
+    return (
+      <p className="hint">
+        No path ran short — every Monte Carlo path funded spending through the horizon.
+      </p>
+    );
+  }
+  return (
+    <Plot
+      data={[{
+        x: ages, y: counts, type: "bar",
+        marker: { color: "#ff7b72" },
+        hovertemplate: "Age %{x}<br>%{y} paths fail here<extra></extra>",
+      }]}
+      layout={{
+        ...baseLayout, height: props.height ?? 300, showlegend: false,
+        xaxis: { ...baseLayout.xaxis, title: { text: "Age At First Shortfall" } },
+        yaxis: { ...baseLayout.yaxis, title: { text: "Paths" } },
+        title: {
+          text: `When Plans Fail — ${success_paths} of ${total_paths} never run short`,
+          font: { size: 14 },
+        },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
+/** Scatter of each path's mean real return over its first window of years vs.
+ * its ending wealth, colored by survival — the sequence-of-returns story. */
+export function SequenceScatter(props: {
+  data: SimulateResult["sequence_scatter"]; height?: number;
+}) {
+  const { first_window_return, ending_real, survived, window } = props.data;
+  if (!first_window_return.length) return <p className="hint">Sequence data unavailable.</p>;
+  const split = (keep: boolean) => {
+    const xs: number[] = [], ys: number[] = [];
+    survived.forEach((s, i) => {
+      if (s === keep) { xs.push(first_window_return[i]); ys.push(ending_real[i]); }
+    });
+    return { xs, ys };
+  };
+  const win = split(true), lose = split(false);
+  const tip = (label: string) =>
+    `First-${window}yr real return %{x:.1%}<br>Ending %{y:$,.0f}<extra>${label}</extra>`;
+  return (
+    <Plot
+      data={[
+        { x: lose.xs, y: lose.ys, type: "scatter", mode: "markers", name: "Ran short",
+          marker: { color: "rgba(255,123,114,0.55)", size: 5 }, hovertemplate: tip("Ran short") },
+        { x: win.xs, y: win.ys, type: "scatter", mode: "markers", name: "Survived",
+          marker: { color: "rgba(63,185,80,0.55)", size: 5 }, hovertemplate: tip("Survived") },
+      ]}
+      layout={{
+        ...baseLayout, height: props.height ?? 340,
+        xaxis: { ...baseLayout.xaxis, tickformat: ".0%", title: { text: `Mean Real Return, First ${window} Years` } },
+        yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero", title: { text: "Ending Net Worth (Today's $)" } },
+        title: { text: "Sequence-Of-Returns Risk", font: { size: 14 } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
+/** Heatmap of success rate over (retirement age × spending scale). */
+export function SurfaceHeatmap(props: {
+  data: SurfaceResult; axisMode: "age" | "year"; birthYear: number; height?: number;
+}) {
+  const { ages, spending_scales, matrix, threshold } = props.data;
+  const x = props.axisMode === "age" ? ages : ages.map((a) => a + props.birthYear);
+  const y = spending_scales.map((s) => Math.round(s * 100));
+  return (
+    <Plot
+      data={[{
+        x, y, z: matrix, type: "heatmap",
+        zmin: 0, zmax: 1,
+        colorscale: [[0, "#7d1f1f"], [Math.max(0.01, Math.min(0.99, threshold)), "#d29922"], [1, "#2ea043"]],
+        colorbar: { tickformat: ".0%", title: { text: "Success", side: "right" } },
+        hovertemplate: `Retire %{x} · spend %{y}% of plan<br>%{z:.0%} success<extra></extra>`,
+      } as Data]}
+      layout={{
+        ...baseLayout, height: props.height ?? 360, showlegend: false,
+        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Retirement Age" : "Retirement Year" } },
+        yaxis: { ...baseLayout.yaxis, title: { text: "Spending (% Of Plan)" } },
+        title: { text: `Success Surface (threshold ${(threshold * 100).toFixed(0)}%)`, font: { size: 14 } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
+/** Horizontal tornado of one-at-a-time sensitivity, biggest swing on top. */
+export function TornadoChart(props: { data: SensitivityResult; height?: number }) {
+  const { entries, base_success } = props.data;
+  if (!entries.length) return <p className="hint">No sensitivity data.</p>;
+  const rows = [...entries].reverse(); // Plotly stacks horizontal bars bottom-up
+  const labels = rows.map((e) => e.param);
+  const bases = rows.map((e) => Math.min(e.low_success, e.high_success));
+  const widths = rows.map((e) => Math.abs(e.high_success - e.low_success));
+  const customdata = rows.map((e) => [e.low_label, e.low_success, e.high_label, e.high_success]);
+  return (
+    <Plot
+      data={[{
+        type: "bar", orientation: "h", y: labels, x: widths, base: bases,
+        marker: { color: "rgba(88,166,255,0.7)", line: { color: ACCENT, width: 1 } },
+        customdata,
+        hovertemplate:
+          "%{customdata[0]}: %{customdata[1]:.1%}<br>%{customdata[2]}: %{customdata[3]:.1%}<extra>%{y}</extra>",
+      } as Data]}
+      layout={{
+        ...baseLayout, height: props.height ?? 40 + rows.length * 38, showlegend: false,
+        shapes: [{
+          type: "line", x0: base_success, x1: base_success, y0: -0.5, y1: rows.length - 0.5,
+          line: { color: "#8b949e", width: 1.5, dash: "dash" },
+        }],
+        annotations: [{
+          x: base_success, y: rows.length - 0.5, yanchor: "bottom", text: "base",
+          showarrow: false, font: { color: "#8b949e", size: 11 },
+        }] as Layout["annotations"],
+        xaxis: { ...baseLayout.xaxis, tickformat: ".0%", range: [0, 1], title: { text: "Success Rate (input ±10%, retire age ±2 yr)" } },
+        yaxis: { ...baseLayout.yaxis, automargin: true },
+        title: { text: "What Moves The Needle", font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}

@@ -98,6 +98,22 @@ export interface HSARule {
   cash_buffer: number;
 }
 
+export interface ACAConfig {
+  enabled: boolean;
+  benchmark_annual: number;
+  actual_annual: number;
+  coverage_end_age: number;
+  fpl_base_single: number;
+}
+
+export interface IRMAABracket { magi_threshold: number; annual_surcharge: number }
+
+export interface IRMAAConfig {
+  enabled: boolean;
+  start_age: number;
+  brackets: IRMAABracket[];
+}
+
 export type EventKind = "one_time_flow" | "regime_change" | "crash";
 
 export interface RegimeOverrides {
@@ -147,6 +163,8 @@ export interface Scenario {
   social_security: SocialSecurity;
   hsa: HSARule;
   guardrails: GuardrailRule;
+  aca: ACAConfig;
+  irmaa: IRMAAConfig;
   events: FireEvent[];
   sim: SimSettings;
 }
@@ -174,6 +192,19 @@ export interface SimulateResult {
   spending_mult_median: number[];
   investing_real: Record<string, number[]>;
   liability_balance: number[];
+  // outcome-distribution & robustness views
+  ending_balance: { nominal: number[]; real: number[] };
+  spending_distribution: { total_real: number[]; years_in_cut: number[] };
+  age_at_ruin: {
+    ages: number[]; counts: number[]; success_paths: number; total_paths: number;
+  };
+  max_drawdown: number[];
+  sequence_scatter: {
+    first_window_return: number[]; ending_real: number[];
+    survived: boolean[]; window: number;
+  };
+  success_ci: { rate: number; lo: number; hi: number; n_paths: number };
+  healthcare: { net_cost_real?: number[]; subsidy_real?: number[] };
   ages: number[];
   years: number[];
   scenario_name: string;
@@ -200,6 +231,53 @@ export interface FreedomResult {
     years_to_target: number;
   };
   annual_retirement_expenses: number;
+}
+
+export interface MaxSpendResult {
+  max_scale: number;
+  base_living_annual: number;
+  max_living_annual: number;
+  threshold: number;
+  capped: boolean;
+}
+
+export interface SurfaceResult {
+  ages: number[];
+  spending_scales: number[];
+  matrix: number[][]; // rows = spending_scales, cols = ages
+  threshold: number;
+}
+
+export interface TornadoEntry {
+  param: string;
+  low_label: string; low_success: number;
+  high_label: string; high_success: number;
+  base_success: number;
+}
+
+export interface SensitivityResult {
+  base_success: number;
+  entries: TornadoEntry[];
+  delta: number;
+}
+
+export interface StressResult {
+  base_success: number;
+  stressed_success: number;
+  delta: number;
+  shock_age: number;
+  duration: number;
+}
+
+export interface RothTradVariant {
+  success_rate: number; lifetime_tax_real: number; ending_real: number;
+}
+export interface RothTradResult {
+  trad: RothTradVariant;
+  roth: RothTradVariant;
+  success_diff: number;
+  tax_diff: number;
+  ending_diff: number;
 }
 
 export interface Snapshot {

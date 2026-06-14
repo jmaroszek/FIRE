@@ -244,6 +244,47 @@ class HSARule(BaseModel):
     cash_buffer: float = 0.0
 
 
+class ACAConfig(BaseModel):
+    """Pre-65 ACA marketplace premium with the post-2021 (IRA-extended) subsidy:
+    the expected contribution caps at 8.5% of MAGI with no 400%-FPL cliff. The
+    subsidy is keyed to one benchmark (second-lowest-cost Silver) premium you
+    supply, against your actual plan's premium. Only applies once retired and
+    before Medicare. See docs/ASSUMPTIONS.md #26."""
+
+    enabled: bool = False
+    benchmark_annual: float = 0.0  # today's $, the SLCSP benchmark premium
+    actual_annual: float = 0.0  # today's $, your chosen plan's premium
+    coverage_end_age: int = 65  # Medicare starts; ACA stops
+    fpl_base_single: float = 15060.0  # 2025 federal poverty line, single (today's $)
+
+
+class IRMAABracket(BaseModel):
+    magi_threshold: float  # today's $, single filer; surcharge applies ABOVE this
+    annual_surcharge: float  # today's $, combined Part B + D, per year
+
+
+def default_irmaa_brackets() -> list["IRMAABracket"]:
+    # 2025 single-filer tiers, combined Part B + D annual surcharge (approximate).
+    return [
+        IRMAABracket(magi_threshold=106000, annual_surcharge=1050),
+        IRMAABracket(magi_threshold=133000, annual_surcharge=2640),
+        IRMAABracket(magi_threshold=167000, annual_surcharge=4230),
+        IRMAABracket(magi_threshold=200000, annual_surcharge=5810),
+        IRMAABracket(magi_threshold=500000, annual_surcharge=6370),
+    ]
+
+
+class IRMAAConfig(BaseModel):
+    """Medicare income-related premium surcharge (Part B + D) at 65+. A step
+    function on MAGI. Real IRMAA lags two years (it keys off MAGI from two years
+    prior); the engine uses current-year MAGI as a documented simplification.
+    See docs/ASSUMPTIONS.md #27."""
+
+    enabled: bool = False
+    start_age: int = 65
+    brackets: list[IRMAABracket] = Field(default_factory=default_irmaa_brackets)
+
+
 class EventKind(str, Enum):
     one_time_flow = "one_time_flow"
     regime_change = "regime_change"
@@ -306,6 +347,8 @@ class Scenario(BaseModel):
     social_security: SocialSecurity = SocialSecurity()
     hsa: HSARule = HSARule()
     guardrails: GuardrailRule = GuardrailRule()
+    aca: ACAConfig = ACAConfig()
+    irmaa: IRMAAConfig = IRMAAConfig()
     events: list[Event] = Field(default_factory=list)
     sim: SimSettings = SimSettings()
 
