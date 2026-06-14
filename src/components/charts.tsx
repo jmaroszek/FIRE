@@ -4,7 +4,7 @@ import type { Config, Data, Layout, Shape } from "plotly.js";
 import createPlotlyComponent from "react-plotly.js/factory";
 import type { CompareSlot } from "../store";
 import type {
-  Category, SensitivityResult, SimulateResult, Snapshot, SurfaceResult, SweepResult,
+  Category, FanSeries, SensitivityResult, SimulateResult, Snapshot, SurfaceResult, SweepResult,
 } from "../types";
 
 const Plot = createPlotlyComponent(Plotly);
@@ -106,6 +106,9 @@ export function FanChart(props: {
       fillcolor: color, line: { width: 0 }, name: label, hoverinfo: "skip" },
   ];
   const data: Data[] = [
+    // outer 5–95% band first (drawn behind), then the tighter 25–75% band; the
+    // 50% band alone visually understates tail risk on the app's anchor chart
+    ...band("p5", "p95", "rgba(88,166,255,0.10)", "5–95%"),
     ...band("p25", "p75", "rgba(88,166,255,0.22)", "25–75%"),
     { x, y: fan.p50, type: "scatter", mode: "lines", name: "Median",
       line: { color: ACCENT, width: 2.5 }, hoverinfo: "skip" },
@@ -298,6 +301,54 @@ export function AccessibilityChart(props: {
         yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s" },
         xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
         title: { text: "Accessible (Penalty-Free) Assets By Source — Median Path, Today's $", font: { size: 14 } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
+/** Median amount actually withdrawn from each source per year (stacked, today's
+ * $) — the funding sequence the withdrawal policy produces, vs the accessibility
+ * chart which shows what was merely available. */
+export function WithdrawalSourceChart(props: {
+  result: SimulateResult; axisMode: "age" | "year"; height?: number;
+}) {
+  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
+  const order = ["cash", "taxable", "roth_basis", "roth_matured_conversions",
+                 "trad", "hsa", "roth_earnings"];
+  const w = props.result.withdrawals_real ?? {};
+  const present = order.filter((src) => w[src]?.some((v) => v > 1));
+  if (!present.length)
+    return (
+      <p className="hint">
+        No withdrawals on the median path yet — still accumulating, or spending is
+        covered by wages, Social Security, and RMDs.
+      </p>
+    );
+  const data: Data[] = present.map((src) => ({
+    x: [...x], y: w[src], type: "scatter" as const, mode: "lines" as const,
+    stackgroup: "one", name: SOURCE_LABELS[src] ?? src,
+    line: { width: 0.5, color: SOURCE_COLORS[src] },
+    fillcolor: (SOURCE_COLORS[src] ?? "#8b949e") + "66",
+    hovertemplate: "%{y:$,.0f}",
+  }));
+  const totals = [...x].map((_, i) =>
+    present.reduce((sum, src) => sum + (w[src][i] ?? 0), 0));
+  data.push({
+    x: [...x], y: totals, type: "scatter", mode: "lines", name: "Total",
+    line: { width: 0 }, showlegend: false,
+    hovertemplate: "Total drawn: %{y:$,.0f}<extra></extra>",
+  });
+  return (
+    <Plot
+      data={data}
+      layout={{
+        ...baseLayout, height: props.height ?? 340, hovermode: "x unified",
+        legend: { ...baseLayout.legend, traceorder: "reversed" },
+        yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero" },
+        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
+        title: { text: "Spending Funded By Source — Median Path, Today's $", font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}
@@ -722,25 +773,48 @@ export function SequenceScatter(props: {
 
 /** Heatmap of success rate over (retirement age × spending scale). */
 export function SurfaceHeatmap(props: {
-  data: SurfaceResult; axisMode: "age" | "year"; birthYear: number; height?: number;
+  data: SurfaceResult; axisMode: "age" | "year"; birthYear: number;
+  currentAge?: number | null; height?: number;
 }) {
   const { ages, spending_scales, matrix, threshold } = props.data;
   const x = props.axisMode === "age" ? ages : ages.map((a) => a + props.birthYear);
   const y = spending_scales.map((s) => Math.round(s * 100));
+  const data: Data[] = [
+    {
+      x, y, z: matrix, type: "heatmap",
+      zmin: 0, zmax: 1,
+      colorscale: [[0, "#7d1f1f"], [Math.max(0.01, Math.min(0.99, threshold)), "#d29922"], [1, "#2ea043"]],
+      colorbar: { tickformat: ".0%", title: { text: "Success", side: "right" } },
+      hovertemplate: `Retire %{x} · spend %{y}% of plan<br>%{z:.0%} success<extra></extra>`,
+    } as Data,
+    // the threshold iso-line IS the "retire-here-or-later" frontier — a drawn
+    // contour reads more precisely than the colour transition alone
+    {
+      x, y, z: matrix, type: "contour",
+      showscale: false, hoverinfo: "skip",
+      contours: { start: threshold, end: threshold, size: 0.0001, coloring: "lines" },
+      line: { color: "#f0f6fc", width: 2 },
+    } as Data,
+  ];
+  // crosshair at the plan as configured today (planned age, 100% of spend)
+  const markX = props.currentAge != null
+    ? (props.axisMode === "age" ? props.currentAge : props.currentAge + props.birthYear)
+    : null;
+  if (markX != null) {
+    data.push({
+      x: [markX], y: [100], type: "scatter", mode: "markers", name: "You Are Here",
+      marker: { symbol: "circle-open", size: 16, color: "#f0f6fc", line: { width: 2.5 } },
+      hovertemplate: "Your plan: retire %{x}, 100% spend<extra></extra>",
+    } as Data);
+  }
   return (
     <Plot
-      data={[{
-        x, y, z: matrix, type: "heatmap",
-        zmin: 0, zmax: 1,
-        colorscale: [[0, "#7d1f1f"], [Math.max(0.01, Math.min(0.99, threshold)), "#d29922"], [1, "#2ea043"]],
-        colorbar: { tickformat: ".0%", title: { text: "Success", side: "right" } },
-        hovertemplate: `Retire %{x} · spend %{y}% of plan<br>%{z:.0%} success<extra></extra>`,
-      } as Data]}
+      data={data}
       layout={{
         ...baseLayout, height: props.height ?? 360, showlegend: false,
         xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Retirement Age" : "Retirement Year" } },
         yaxis: { ...baseLayout.yaxis, title: { text: "Spending (% Of Plan)" } },
-        title: { text: `Success Surface (threshold ${(threshold * 100).toFixed(0)}%)`, font: { size: 14 } },
+        title: { text: `Success Surface (white line = ${(threshold * 100).toFixed(0)}% threshold)`, font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}
@@ -783,5 +857,271 @@ export function TornadoChart(props: { data: SensitivityResult; height?: number }
       config={config}
       style={{ width: "100%" }}
     />
+  );
+}
+
+// ---- shared time-axis primitives (Phase C) -------------------------------
+
+type YFmt = "money" | "percent" | "multiplier";
+const yTick = (f: YFmt) => (f === "money" ? "$.3~s" : f === "percent" ? ".0%" : ".2f");
+const yHover = (f: YFmt) => (f === "money" ? "%{y:$,.0f}" : f === "percent" ? "%{y:.1%}" : "%{y:.2f}×");
+
+interface LifeMark { age: number; label: string; color?: string }
+
+/** Dashed vertical guides at life-stage ages (retire / 59½ / 65 / 75 / SS), so
+ * every time-axis chart marks the same milestones consistently instead of each
+ * reinventing them. Converts age→x for the active axis mode. */
+function lifeStageMarkers(axisMode: "age" | "year", birthYear: number | undefined,
+                          marks: LifeMark[]): { shapes: Partial<Shape>[]; annotations: any[] } {
+  const shapes: Partial<Shape>[] = [];
+  const annotations: any[] = [];
+  for (const m of marks) {
+    const xv = axisMode === "age" ? m.age : m.age + (birthYear ?? 0);
+    shapes.push({
+      type: "line", x0: xv, x1: xv, y0: 0, y1: 1, yref: "paper",
+      line: { color: m.color ?? "#8b949e", width: 1.5, dash: "dash" },
+    });
+    annotations.push({
+      x: xv, y: 1, yref: "paper", yanchor: "bottom", showarrow: false,
+      text: m.label, font: { color: m.color ?? "#8b949e", size: 10 },
+    });
+  }
+  return { shapes, annotations };
+}
+
+/** Generic single/multi-series line or area chart over an age/year axis, with
+ * optional life-stage markers and horizontal reference lines. */
+export function SeriesChart(props: {
+  x: number[]; axisMode: "age" | "year"; yFormat: YFmt; title: string;
+  series: { name: string; values: number[]; color: string; fill?: boolean }[];
+  markers?: { shapes: Partial<Shape>[]; annotations: any[] };
+  refLines?: { value: number; label: string; color?: string }[];
+  height?: number; legend?: boolean;
+}) {
+  const data: Data[] = props.series.map((s) => ({
+    x: props.x, y: s.values, type: "scatter", mode: "lines", name: s.name,
+    line: { color: s.color, width: 2 },
+    fill: s.fill ? "tozeroy" : undefined,
+    fillcolor: s.fill ? s.color + "22" : undefined,
+    hovertemplate: `${s.name}: ${yHover(props.yFormat)}<extra></extra>`,
+  } as Data));
+  const shapes: Partial<Shape>[] = [...(props.markers?.shapes ?? [])];
+  const annotations: any[] = [...(props.markers?.annotations ?? [])];
+  for (const r of props.refLines ?? []) {
+    shapes.push({
+      type: "line", xref: "paper", x0: 0, x1: 1, y0: r.value, y1: r.value,
+      line: { color: r.color ?? "#8b949e", width: 1, dash: "dot" },
+    });
+    annotations.push({
+      xref: "paper", x: 0, y: r.value, xanchor: "left", yanchor: "bottom",
+      showarrow: false, text: r.label, font: { color: r.color ?? "#8b949e", size: 10 },
+    });
+  }
+  return (
+    <Plot
+      data={data}
+      layout={{
+        ...baseLayout, height: props.height ?? 320, hovermode: "x unified",
+        showlegend: props.legend ?? props.series.length > 1,
+        shapes, annotations: annotations as Layout["annotations"],
+        yaxis: {
+          ...baseLayout.yaxis, tickformat: yTick(props.yFormat),
+          ticksuffix: props.yFormat === "multiplier" ? "×" : undefined,
+          rangemode: "tozero",
+        },
+        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
+        title: { text: props.title, font: { size: 14 } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
+/** Percentile fan (5–95 / 25–75 / median) for a series that can go negative,
+ * so it does not force a zero baseline like the net-worth FanChart. */
+export function PercentileFanChart(props: {
+  x: number[]; fan: FanSeries; axisMode: "age" | "year"; yFormat: YFmt; title: string;
+  color?: string; markers?: { shapes: Partial<Shape>[]; annotations: any[] };
+  refLines?: { value: number; label: string; color?: string }[]; height?: number;
+}) {
+  const c = props.color ?? ACCENT;
+  const band = (lo: string, hi: string, alpha: string): Data[] => [
+    { x: props.x, y: props.fan[lo], type: "scatter", mode: "lines",
+      line: { width: 0 }, hoverinfo: "skip", showlegend: false },
+    { x: props.x, y: props.fan[hi], type: "scatter", mode: "lines", fill: "tonexty",
+      fillcolor: c + alpha, line: { width: 0 }, hoverinfo: "skip", showlegend: false },
+  ];
+  const data: Data[] = [
+    ...band("p5", "p95", "12"),
+    ...band("p25", "p75", "24"),
+    { x: props.x, y: props.fan.p50, type: "scatter", mode: "lines", name: "Median",
+      line: { color: c, width: 2 }, hovertemplate: `${yHover(props.yFormat)}<extra></extra>` },
+  ];
+  const shapes: Partial<Shape>[] = [...(props.markers?.shapes ?? [])];
+  const annotations: any[] = [...(props.markers?.annotations ?? [])];
+  for (const r of props.refLines ?? []) {
+    shapes.push({
+      type: "line", xref: "paper", x0: 0, x1: 1, y0: r.value, y1: r.value,
+      line: { color: r.color ?? "#8b949e", width: 1, dash: "dot" },
+    });
+    annotations.push({
+      xref: "paper", x: 0, y: r.value, xanchor: "left", yanchor: "bottom",
+      showarrow: false, text: r.label, font: { color: r.color ?? "#8b949e", size: 10 },
+    });
+  }
+  return (
+    <Plot
+      data={data}
+      layout={{
+        ...baseLayout, height: props.height ?? 320, showlegend: false,
+        shapes, annotations: annotations as Layout["annotations"],
+        yaxis: {
+          ...baseLayout.yaxis, tickformat: yTick(props.yFormat),
+          ticksuffix: props.yFormat === "multiplier" ? "×" : undefined,
+        },
+        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
+        title: { text: props.title, font: { size: 14 } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
+// ---- named wrappers consuming summarize() series -------------------------
+
+export function MarginalRateChart(props: {
+  result: SimulateResult; axisMode: "age" | "year";
+  retirementAge: number; claimingAge?: number; birthYear?: number; height?: number;
+}) {
+  if (!props.result.marginal_rate_median?.length)
+    return <p className="hint">No conversion-rate data.</p>;
+  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
+  const marks: LifeMark[] = [
+    { age: props.retirementAge, label: "Retire", color: "#d29922" },
+    { age: 60, label: "59½", color: "#f0883e" },
+    { age: 75, label: "RMD 75", color: "#8b949e" },
+  ];
+  if (props.claimingAge) marks.push({ age: props.claimingAge, label: "SS", color: "#56d364" });
+  return (
+    <SeriesChart x={x} axisMode={props.axisMode} yFormat="percent" height={props.height}
+      series={[{ name: "Next $ Taxed At", values: props.result.marginal_rate_median, color: "#f0883e", fill: true }]}
+      refLines={[{ value: 0.12, label: "12%" }, { value: 0.22, label: "22%" }, { value: 0.24, label: "24%" }]}
+      markers={lifeStageMarkers(props.axisMode, props.birthYear, marks)}
+      title="Marginal Tax Rate On The Next Conversion Dollar — Median Path" />
+  );
+}
+
+export function SpendingTrajectoryChart(props: {
+  result: SimulateResult; axisMode: "age" | "year"; retirementAge: number; birthYear?: number;
+}) {
+  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
+  return (
+    <SeriesChart x={x} axisMode={props.axisMode} yFormat="money"
+      series={[{ name: "Planned Spending", values: props.result.expenses_median_real, color: ACCENT, fill: true }]}
+      markers={lifeStageMarkers(props.axisMode, props.birthYear, [{ age: props.retirementAge, label: "Retire", color: "#d29922" }])}
+      title="Planned Spending — Median Path, Today's $" />
+  );
+}
+
+export function HealthcareTrajectoryChart(props: {
+  result: SimulateResult; axisMode: "age" | "year";
+  retirementAge: number; coverageEndAge: number; birthYear?: number;
+}) {
+  const hc = props.result.healthcare;
+  if (!hc?.net_cost_real && !hc?.subsidy_real)
+    return <p className="hint">Enable ACA or IRMAA above to chart net healthcare cost over time.</p>;
+  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
+  const series: { name: string; values: number[]; color: string; fill?: boolean }[] = [];
+  if (hc.net_cost_real) series.push({ name: "Net Cost (After Subsidy)", values: hc.net_cost_real, color: "#f0883e", fill: true });
+  if (hc.subsidy_real) series.push({ name: "ACA Subsidy", values: hc.subsidy_real, color: "#3fb950" });
+  return (
+    <SeriesChart x={x} axisMode={props.axisMode} yFormat="money" legend
+      series={series}
+      markers={lifeStageMarkers(props.axisMode, props.birthYear, [
+        { age: props.retirementAge, label: "Retire", color: "#d29922" },
+        { age: props.coverageEndAge, label: `Medicare ${props.coverageEndAge}`, color: "#bc8cff" },
+      ])}
+      title="Healthcare Cost & ACA Subsidy — Median Path, Today's $" />
+  );
+}
+
+export function SsIncomeChart(props: {
+  result: SimulateResult; axisMode: "age" | "year"; claimingAge: number; birthYear?: number;
+}) {
+  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
+  return (
+    <SeriesChart x={x} axisMode={props.axisMode} yFormat="money"
+      series={[{ name: "Social Security", values: props.result.ss_income_median_real, color: "#56d364", fill: true }]}
+      markers={lifeStageMarkers(props.axisMode, props.birthYear, [{ age: props.claimingAge, label: `Claim ${props.claimingAge}`, color: "#56d364" }])}
+      title="Social Security Income — Median Path, Today's $" />
+  );
+}
+
+export function SurvivalChart(props: {
+  result: SimulateResult; axisMode: "age" | "year";
+  retirementAge: number; threshold?: number; birthYear?: number;
+}) {
+  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
+  return (
+    <SeriesChart x={x} axisMode={props.axisMode} yFormat="percent"
+      series={[{ name: "Still Funded", values: props.result.survival_curve, color: "#3fb950", fill: true }]}
+      refLines={props.threshold != null ? [{ value: props.threshold, label: "Success Threshold", color: "#d29922" }] : []}
+      markers={lifeStageMarkers(props.axisMode, props.birthYear, [{ age: props.retirementAge, label: "Retire", color: "#d29922" }])}
+      title="Survival Curve — Share Of Paths Still Funded By Each Age" />
+  );
+}
+
+export function SpendingDepthChart(props: {
+  result: SimulateResult; axisMode: "age" | "year"; retirementAge: number;
+  enabled: boolean; floor: number; cap: number; birthYear?: number;
+}) {
+  if (!props.enabled)
+    return (
+      <p className="hint">
+        Spending guardrails are off, so discretionary spending follows the plan exactly
+        (a flat 100%). Enable Spending Guardrails on the Freedom tab to see how a bad
+        market would flex spending year to year.
+      </p>
+    );
+  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
+  const refs = [{ value: 1, label: "Plan (100%)", color: "#8b949e" }];
+  if (props.floor > 0) refs.push({ value: props.floor, label: "Floor", color: "#ff7b72" });
+  if (props.cap > 1) refs.push({ value: props.cap, label: "Cap", color: "#3fb950" });
+  return (
+    <SeriesChart x={x} axisMode={props.axisMode} yFormat="percent"
+      series={[{ name: "Discretionary vs Plan", values: props.result.spending_mult_median, color: ACCENT, fill: true }]}
+      refLines={refs}
+      markers={lifeStageMarkers(props.axisMode, props.birthYear, [{ age: props.retirementAge, label: "Retire", color: "#d29922" }])}
+      title="Realized Spending Level — Median Path (% Of Planned Discretionary)" />
+  );
+}
+
+export function RealizedReturnFan(props: {
+  result: SimulateResult; axisMode: "age" | "year"; retirementAge: number; birthYear?: number;
+}) {
+  if (!props.result.port_return_fan?.p50?.length)
+    return <p className="hint">Return data unavailable.</p>;
+  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
+  return (
+    <PercentileFanChart x={x} fan={props.result.port_return_fan} axisMode={props.axisMode}
+      yFormat="percent" color="#58a6ff"
+      refLines={[{ value: 0, label: "0%", color: "#8b949e" }]}
+      markers={lifeStageMarkers(props.axisMode, props.birthYear, [{ age: props.retirementAge, label: "Retire", color: "#d29922" }])}
+      title="Realized Real Portfolio Return — Percentile Fan" />
+  );
+}
+
+export function InflationFanChart(props: {
+  result: SimulateResult; axisMode: "age" | "year";
+}) {
+  if (!props.result.inflation_fan?.p50?.length) return null;
+  const x = xValues(props.result, props.axisMode); // price level carries T+1 points
+  return (
+    <PercentileFanChart x={x} fan={props.result.inflation_fan} axisMode={props.axisMode}
+      yFormat="multiplier" color="#d29922"
+      refLines={[{ value: 1, label: "Today", color: "#8b949e" }]}
+      title="Cumulative Inflation — Price Level vs Today" />
   );
 }

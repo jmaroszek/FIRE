@@ -1,6 +1,9 @@
 import React, { useState } from "react";
 import { A } from "../assumptions";
-import { HistogramChart, RuinAgeChart, SequenceScatter } from "../components/charts";
+import {
+  HistogramChart, RealizedReturnFan, RuinAgeChart, SequenceScatter,
+  SpendingDepthChart, SurvivalChart,
+} from "../components/charts";
 import { Field, NumberInput, Section, Stat, fmtMoney, fmtPct } from "../components/ui";
 import { useStore } from "../store";
 
@@ -12,7 +15,7 @@ function median(xs: number[]): number {
 }
 
 export default function Risk() {
-  const { scenario, result, display, setDisplay, stress, runStress, stressLoading } = useStore();
+  const { scenario, result, display, axisMode, stress, runStress, stressLoading } = useStore();
   const startAge = scenario ? scenario.sim.start_year - scenario.profile.birth_year : 40;
   // default to a mid-career shock: a shock at the current (lowest-savings) age
   // trivially fails on every path, which is true but uninformative as a default.
@@ -61,23 +64,46 @@ export default function Risk() {
         </Section>
       </div>
 
-      <Section title="Ending Net Worth Distribution" info={A.endingBalance}
-        actions={
-          <select value={display} onChange={(e) => setDisplay(e.target.value as "real" | "nominal")}>
-            <option value="real">Today's $</option>
-            <option value="nominal">Nominal $</option>
-          </select>
-        }>
+      <Section title="Ending Net Worth Distribution" info={A.endingBalance}>
         <HistogramChart values={endingVals} unit="money" uirevision={display}
           title="" xTitle={`Net Worth At Age ${scenario.profile.horizon_age} (${dollars} $)`} />
+      </Section>
+
+      <Section title="Survival Curve" info={A.survival}>
+        <SurvivalChart result={result} axisMode={axisMode}
+          retirementAge={scenario.retirement_age}
+          threshold={scenario.sim.success_threshold}
+          birthYear={scenario.profile.birth_year} />
       </Section>
 
       <Section title="When Plans Fail" info={A.ruinAge}>
         <RuinAgeChart data={result.age_at_ruin} />
       </Section>
 
+      <Section title="Failure Severity" info={A.failureSeverity}>
+        {result.failure_magnitude.failing_paths > 0 ? (
+          <div className="stat-grid">
+            <Stat label="Paths That Run Short"
+              value={`${result.failure_magnitude.failing_paths} of ${result.failure_magnitude.total_paths}`} />
+            <Stat label="Median Total Shortfall"
+              value={fmtMoney(result.failure_magnitude.median_total_shortfall_real)}
+              sub="today's $, failing paths only" info={A.failureSeverity} />
+            <Stat label="Median Years Short"
+              value={String(result.failure_magnitude.median_years_short)}
+              sub={`worst 10%: ${fmtMoney(result.failure_magnitude.p90_total_shortfall_real)}`} />
+          </div>
+        ) : (
+          <p className="hint">No path ran short — there is no shortfall to size.</p>
+        )}
+      </Section>
+
       <Section title="Sequence-Of-Returns Risk" info={A.sequenceRisk}>
         <SequenceScatter data={result.sequence_scatter} />
+      </Section>
+
+      <Section title="Realized Real Return" info={A.realizedReturn}>
+        <RealizedReturnFan result={result} axisMode={axisMode}
+          retirementAge={scenario.retirement_age} birthYear={scenario.profile.birth_year} />
       </Section>
 
       <Section title="Maximum Drawdown (Real)" info={A.drawdown}>
@@ -89,6 +115,17 @@ export default function Risk() {
         <HistogramChart values={result.spending_distribution.total_real} unit="money"
           color="rgba(63,185,80,0.5)" title=""
           xTitle="Total Real Spending Funded Over The Plan (Today's $)" />
+      </Section>
+
+      <Section title="Realized Spending Level" info={A.spendingDepth}>
+        <SpendingDepthChart result={result} axisMode={axisMode}
+          retirementAge={scenario.retirement_age}
+          enabled={scenario.spending_strategy.kind !== "constant_dollar" || scenario.guardrails.enabled}
+          floor={scenario.spending_strategy.kind === "floor_ceiling" ? scenario.spending_strategy.floor_mult
+            : scenario.spending_strategy.kind === "constant_dollar" ? scenario.guardrails.floor_mult : 0}
+          cap={scenario.spending_strategy.kind === "floor_ceiling" ? scenario.spending_strategy.ceiling_mult
+            : scenario.spending_strategy.kind === "constant_dollar" ? scenario.guardrails.cap_mult : 0}
+          birthYear={scenario.profile.birth_year} />
       </Section>
 
       <Section title="Income Shock Stress Test" info={A.stressTest}>

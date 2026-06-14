@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { A } from "../assumptions";
-import { SpendingActualsChart, TaxesChart } from "../components/charts";
+import {
+  HealthcareTrajectoryChart, SpendingActualsChart, SpendingTrajectoryChart,
+} from "../components/charts";
 import TimelineEditor from "../components/TimelineEditor";
 import {
   Field, Group, InfoTip, NumberInput, PercentInput, Section, fmtMoney,
@@ -196,8 +198,7 @@ export default function CashFlow() {
         )}
       </Section>
 
-      <Group title="Income">
-        <Section title="Income" info="Salary in today's dollars. It stops at retirement unless a later New Salary event sets another one.">
+      <Section title="Income" info="Salary in today's dollars. It stops at retirement unless a later New Salary event sets another one.">
           <div className="fields">
             <Field label="Gross Salary">
               <NumberInput value={s.income.gross_salary} step={1000}
@@ -213,8 +214,7 @@ export default function CashFlow() {
                 onChange={(v) => up({ income: { ...s.income, employer_match_pct: v } })} />
             </Field>
           </div>
-        </Section>
-      </Group>
+      </Section>
 
       <Group title="Spending">
         <Section
@@ -278,6 +278,15 @@ export default function CashFlow() {
           </table>
         </Section>
 
+        <Section wide title="Planned Spending Over Time" info={A.spendingTrajectory}>
+          {result ? (
+            <SpendingTrajectoryChart result={result} axisMode={axisMode}
+              retirementAge={s.retirement_age} birthYear={s.profile.birth_year} />
+          ) : (
+            <p className="hint">Simulation pending…</p>
+          )}
+        </Section>
+
         <Section
           title="Debt & Liabilities"
           info={A.liabilities}
@@ -325,22 +334,6 @@ export default function CashFlow() {
           )}
         </Section>
 
-      </Group>
-
-      <Group title="Taxes">
-        <Section className="span2" title="Annual Taxes" info={A.taxes}>
-          <div className="fields">
-            <Field label="State Tax (Flat)" info={A.taxes}>
-              <PercentInput value={s.profile.state_tax_rate}
-                onChange={(v) => up({ profile: { ...s.profile, state_tax_rate: v } })} />
-            </Field>
-          </div>
-          {result ? (
-            <TaxesChart result={result} axisMode={axisMode} />
-          ) : (
-            <p className="hint">Simulation pending…</p>
-          )}
-        </Section>
       </Group>
 
       <Group title="Healthcare">
@@ -391,8 +384,18 @@ export default function CashFlow() {
           <p className="hint">
             Uses the 2025 single-filer Part B + D tiers (the surcharge starts above ~$106k
             MAGI). A high Roth-conversion or RMD year can trip a tier — cross-check the
-            Projected RMDs and ladder tables on the Freedom tab.
+            Projected RMDs and ladder tables on the Taxes tab.
           </p>
+        </Section>
+
+        <Section wide title="Healthcare Cost Over Time" info={A.healthcareTrajectory}>
+          {result ? (
+            <HealthcareTrajectoryChart result={result} axisMode={axisMode}
+              retirementAge={s.retirement_age} coverageEndAge={s.aca.coverage_end_age}
+              birthYear={s.profile.birth_year} />
+          ) : (
+            <p className="hint">Simulation pending…</p>
+          )}
         </Section>
       </Group>
 

@@ -2,10 +2,10 @@ import { create } from "zustand";
 import { api } from "./api";
 import type {
   Category, FreedomResult, MaxSpendResult, RothTradResult, Scenario, SensitivityResult,
-  SimulateResult, Snapshot, StressResult, SurfaceResult, SweepResult,
+  SimulateResult, Snapshot, StressResult, SurfaceResult, SweepResult, TaxRegimeResult,
 } from "./types";
 
-export type Tab = "dashboard" | "cashflow" | "investing" | "freedom" | "risk" | "compare" | "settings";
+export type Tab = "dashboard" | "cashflow" | "investing" | "taxes" | "freedom" | "risk" | "compare" | "settings";
 
 export interface CompareSlot {
   name: string;
@@ -37,6 +37,8 @@ interface AppState {
   sensitivityLoading: boolean;
   stress: StressResult | null;
   stressLoading: boolean;
+  taxregime: TaxRegimeResult | null;
+  taxregimeLoading: boolean;
   rothtrad: RothTradResult | null;
   rothtradLoading: boolean;
   savedScenarios: string[];
@@ -57,6 +59,7 @@ interface AppState {
   runSurface: () => Promise<void>;
   runSensitivity: () => Promise<void>;
   runStress: (shockAge: number, duration: number) => Promise<void>;
+  runTaxRegime: (sunsetAge: number) => Promise<void>;
   runRothTrad: () => Promise<void>;
   saveAs: (name: string) => Promise<void>;
   load: (name: string) => Promise<void>;
@@ -94,11 +97,19 @@ export const useStore = create<AppState>((set, get) => {
       set({ simulating: true });
       try {
         const result = await api.simulate(scenario);
-        if (seq === simSeq) set({
-          result, simError: null, freedom: null,
-          maxspend: null, surface: null, sensitivity: null, stress: null, rothtrad: null,
-          sweep: dropSweep ? null : get().sweep,
-        });
+        if (seq === simSeq) {
+          // Freedom is stale-while-revalidate: keep the prior bundle visible and
+          // recompute it in the background, so the Dashboard headline's Coast/FIRE
+          // rows don't flicker out on every edit (they used to be nulled here).
+          const hadFreedom = get().freedom != null;
+          set({
+            result, simError: null,
+            maxspend: null, surface: null, sensitivity: null, stress: null,
+            taxregime: null, rothtrad: null,
+            sweep: dropSweep ? null : get().sweep,
+          });
+          if (hadFreedom) void get().runFreedom();
+        }
       } catch (e) {
         if (seq === simSeq) set({ simError: String(e) });
       } finally {
@@ -127,6 +138,8 @@ export const useStore = create<AppState>((set, get) => {
     sensitivityLoading: false,
     stress: null,
     stressLoading: false,
+    taxregime: null,
+    taxregimeLoading: false,
     rothtrad: null,
     rothtradLoading: false,
     savedScenarios: [],
@@ -266,6 +279,19 @@ export const useStore = create<AppState>((set, get) => {
         set({ simError: String(e) });
       } finally {
         set({ stressLoading: false });
+      }
+    },
+
+    runTaxRegime: async (sunsetAge) => {
+      const scenario = get().scenario;
+      if (!scenario || get().taxregimeLoading) return;
+      set({ taxregimeLoading: true });
+      try {
+        set({ taxregime: await api.taxRegime(scenario, sunsetAge) });
+      } catch (e) {
+        set({ simError: String(e) });
+      } finally {
+        set({ taxregimeLoading: false });
       }
     },
 

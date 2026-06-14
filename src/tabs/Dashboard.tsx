@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { A } from "../assumptions";
 import { FanChart, percentileAt } from "../components/charts";
 import { Field, InfoTip, NumberInput, Section, Stat, fmtMoney, fmtPct } from "../components/ui";
@@ -29,9 +29,14 @@ interface SnapDraft {
 }
 
 export default function Dashboard() {
-  const { scenario, result, freedom, snapshots, categories, addSnapshot,
-          deleteSnapshot, axisMode, display } = useStore();
+  const { scenario, result, freedom, freedomLoading, runFreedom, snapshots, categories,
+          addSnapshot, deleteSnapshot, axisMode, display } = useStore();
   const [snapDraft, setSnapDraft] = useState<SnapDraft | null>(null);
+  // Compute the Coast/FIRE bundle on mount so the headline is populated without
+  // requiring a visit to Freedom; the store keeps it fresh (stale-while-revalidate).
+  useEffect(() => {
+    if (scenario && !freedom && !freedomLoading) void runFreedom();
+  }, [scenario, freedom]);
   if (!scenario) return null;
 
   const pools = poolBalances(scenario.accounts);

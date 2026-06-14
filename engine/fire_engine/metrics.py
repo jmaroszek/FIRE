@@ -9,7 +9,7 @@ import numpy as np
 from .engine import SimResult, run
 from .sampling import MarketPaths, sample_paths
 from .scenario import (
-    AccountType, Event, EventKind, RegimeOverrides, Scenario, WaterfallStep,
+    AccountType, Event, EventKind, RegimeOverrides, Scenario, TaxRegimeShock, WaterfallStep,
 )
 
 DEFAULT_PERCENTILES = (5, 25, 50, 75, 95)
@@ -276,16 +276,22 @@ def max_drawdown_distribution(result: SimResult) -> list[float]:
     return np.clip(drawdown.max(axis=1), 0.0, 1.0).tolist()
 
 
-def sequence_scatter(result: SimResult, window: int = 5) -> dict:
-    """Each path's mean REAL portfolio return over its first `window` years paired
-    with its outcome (ending real wealth + survived flag). Visualizes sequence-of-
-    returns risk: the first decade dominates a multi-decade horizon."""
+def sequence_scatter(result: SimResult, window: int = 10) -> dict:
+    """Each path's mean REAL portfolio return over the first `window` years *after
+    retirement* paired with its outcome (ending real wealth + survived flag). The
+    sequence-of-returns hazard is the decade following the day you stop earning, so
+    the window is anchored at the retirement year — for a retire-at-45 plan the
+    sim-start window would just measure the accumulation decade, the wrong question."""
     if result.port_return is None:
-        return {"first_window_return": [], "ending_real": [], "survived": [], "window": window}
+        return {"first_window_return": [], "ending_real": [], "survived": [],
+                "window": window, "start_age": int(result.ages[0])}
     infl = result.cum_inflation[:, 1:] / result.cum_inflation[:, :-1] - 1.0
     real_ret = (1 + result.port_return) / (1 + infl) - 1.0
-    w = min(window, real_ret.shape[1])
-    first = real_ret[:, :w].mean(axis=1)
+    T = real_ret.shape[1]
+    start_age = int(result.ages[0])
+    t_retire = min(max(int(result.scenario.retirement_age) - start_age, 0), max(T - 1, 0))
+    w = min(window, T - t_retire)
+    first = real_ret[:, t_retire:t_retire + w].mean(axis=1)
     ending_real = result.net_worth[:, -1] / result.cum_inflation[:, -1]
     survived = ~result.fail.any(axis=1)
     return {
@@ -293,6 +299,79 @@ def sequence_scatter(result: SimResult, window: int = 5) -> dict:
         "ending_real": ending_real.tolist(),
         "survived": survived.tolist(),
         "window": w,
+        "start_age": start_age + t_retire,
+    }
+
+
+def failure_magnitude(result: SimResult) -> dict:
+    """Depth-of-ruin among the paths that fail: a binary success rate treats a
+    $500 miss at 89 and a collapse at 70 identically. For each failing path, the
+    total real unfunded spending (sum of the deflated annual shortfall) and the
+    number of years it spent short — so a 'late, survivable trim' reads differently
+    from an 'early, catastrophic' failure."""
+    failed = result.fail.any(axis=1)
+    n_fail = int(failed.sum())
+    if n_fail == 0 or result.shortfall is None:
+        return {"failing_paths": n_fail, "total_paths": int(result.fail.shape[0]),
+                "median_total_shortfall_real": 0.0, "median_years_short": 0.0,
+                "p90_total_shortfall_real": 0.0}
+    short_real = (result.shortfall / _flow_deflator(result))[failed]
+    total = short_real.sum(axis=1)
+    years_short = result.fail[failed].sum(axis=1)
+    return {
+        "failing_paths": n_fail,
+        "total_paths": int(result.fail.shape[0]),
+        "median_total_shortfall_real": float(np.median(total)),
+        "p90_total_shortfall_real": float(np.percentile(total, 90)),
+        "median_years_short": float(np.median(years_short)),
+    }
+
+
+def ss_income_median_real(result: SimResult) -> list[float]:
+    """Median Social Security benefit per year in today's dollars (a flow)."""
+    return np.median(result.ss_income / _flow_deflator(result), axis=0).tolist()
+
+
+def marginal_rate_median(result: SimResult) -> list[float]:
+    """Median marginal fed+state rate on the next conversion dollar, per year —
+    the lifetime view of the per-cell rate the ladder/RMD tables already sample."""
+    if result.conversion_marginal_rate is None:
+        return []
+    return np.median(result.conversion_marginal_rate, axis=0).tolist()
+
+
+def port_return_fan(result: SimResult,
+                    percentiles=DEFAULT_PERCENTILES) -> dict[str, list[float]]:
+    """Percentile fan of REAL annual portfolio return over time."""
+    if result.port_return is None:
+        return {}
+    infl = result.cum_inflation[:, 1:] / result.cum_inflation[:, :-1] - 1.0
+    real_ret = (1 + result.port_return) / (1 + infl) - 1.0
+    return {f"p{p}": np.percentile(real_ret, p, axis=0).tolist() for p in percentiles}
+
+
+def inflation_fan(result: SimResult,
+                  percentiles=DEFAULT_PERCENTILES) -> dict[str, list[float]]:
+    """Percentile fan of the cumulative price level (index, today = 1.0) over the
+    horizon. Inflation is the dominant solo-retiree tail this model encodes — the
+    un-indexed SS provisional-income thresholds make the tax torpedo worsen in real
+    terms by construction — yet the dispersion is otherwise invisible behind 'real' views."""
+    return {f"p{p}": np.percentile(result.cum_inflation, p, axis=0).tolist()
+            for p in percentiles}
+
+
+def lifetime_tax(result: SimResult) -> dict:
+    """Median lifetime real tax for the current plan, and as a share of lifetime
+    delivered spending — the headline number that tells you whether the ladder /
+    withdrawal-ordering machinery is actually working. The same expression
+    roth_vs_trad uses to compare routings, exposed for the live plan."""
+    tax_real = (result.taxes_paid / _flow_deflator(result)).sum(axis=1)
+    spend_real = (result.expenses / _flow_deflator(result)).sum(axis=1)
+    med_tax = float(np.median(tax_real))
+    med_spend = float(np.median(spend_real))
+    return {
+        "median_real": med_tax,
+        "as_pct_of_spending": (med_tax / med_spend) if med_spend > 0 else 0.0,
     }
 
 
@@ -459,6 +538,35 @@ def income_stress(scenario: Scenario, shock_age: int, duration: int,
             "delta": stressed - base, "shock_age": shock_age, "duration": duration}
 
 
+def tax_regime_stress(scenario: Scenario, sunset_age: int, bracket_rate_mult: float = 1.15,
+                      std_deduction_mult: float = 0.5, n_paths: int = 2000) -> dict:
+    """Re-run the plan as if today's tax law reverts at `sunset_age` — ordinary
+    brackets scaled up, the standard deduction cut — on the SAME market paths. This
+    is the TCJA-style policy risk the entire low-bracket Roth-ladder thesis is
+    implicitly betting against; it reports both the hit to success and the rise in
+    lifetime real tax. The multipliers are a documented approximation of a reversion,
+    not an exact pre-2018 bracket table."""
+    base_paths = sample_paths(scenario, n_paths=n_paths)
+    base = run(scenario, paths=base_paths)
+    shock = TaxRegimeShock(sunset_age=sunset_age, bracket_rate_mult=bracket_rate_mult,
+                           std_deduction_mult=std_deduction_mult)
+    stressed = run(scenario, paths=base_paths, tax_regime=shock)
+
+    def life_tax(r) -> float:
+        return float(np.median((r.taxes_paid / _flow_deflator(r)).sum(axis=1)))
+
+    return {
+        "base_success": base.success_rate,
+        "stressed_success": stressed.success_rate,
+        "delta": stressed.success_rate - base.success_rate,
+        "base_lifetime_tax_real": life_tax(base),
+        "stressed_lifetime_tax_real": life_tax(stressed),
+        "sunset_age": sunset_age,
+        "bracket_rate_mult": bracket_rate_mult,
+        "std_deduction_mult": std_deduction_mult,
+    }
+
+
 def _contribution_waterfall(kind: str) -> list[WaterfallStep]:
     """Two contribution orderings that differ only in whether tax-advantaged
     savings go pre-tax (traditional) or post-tax (Roth). Both still grab the
@@ -510,6 +618,18 @@ def healthcare_medians_real(result: SimResult) -> dict[str, list[float]]:
     return out
 
 
+def withdrawal_source_medians_real(result: SimResult) -> dict[str, list[float]]:
+    """Median amount actually withdrawn from each source per year, today's dollars.
+    Unlike `accessibility_real` (what was *available* penalty-free), this is what the
+    withdrawal policy actually *drew* — so you can see the funding sequence the policy
+    order produces, and whether it behaves as configured."""
+    if result.withdrawals is None:
+        return {}
+    deflate = _flow_deflator(result)
+    return {src: np.median(amt / deflate, axis=0).tolist()
+            for src, amt in result.withdrawals.items()}
+
+
 def summarize(result: SimResult) -> dict:
     """The standard metric bundle the API returns alongside the fan."""
     sweep = None  # computed separately (expensive)
@@ -519,6 +639,7 @@ def summarize(result: SimResult) -> dict:
         "pool_medians_real": pool_medians_real(result),
         "survival_curve": survival_curve(result),
         "accessibility_real": accessibility_medians_real(result),
+        "withdrawals_real": withdrawal_source_medians_real(result),
         "ladder_schedule": ladder_schedule(result),
         "rmd_schedule": rmd_schedule(result),
         "taxes_median_real": np.median(
@@ -526,6 +647,12 @@ def summarize(result: SimResult) -> dict:
         "expenses_median_real": np.median(
             result.expenses / _flow_deflator(result), axis=0).tolist(),
         "spending_mult_median": np.median(result.spending_mult, axis=0).tolist(),
+        "ss_income_median_real": ss_income_median_real(result),
+        "marginal_rate_median": marginal_rate_median(result),
+        "port_return_fan": port_return_fan(result),
+        "inflation_fan": inflation_fan(result),
+        "lifetime_tax": lifetime_tax(result),
+        "failure_magnitude": failure_magnitude(result),
         "investing_real": investing_medians_real(result),
         "liability_balance": (
             result.liability_balance.tolist()

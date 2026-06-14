@@ -1,6 +1,6 @@
 import type {
   Category, FreedomResult, MaxSpendResult, RothTradResult, Scenario, SensitivityResult,
-  SimulateResult, Snapshot, StressResult, SurfaceResult, SweepResult,
+  SimulateResult, Snapshot, StressResult, SurfaceResult, SweepResult, TaxRegimeResult,
 } from "./types";
 
 const BASE = `http://127.0.0.1:${(window as any).__FIRE_PORT__ ?? 8765}`;
@@ -52,6 +52,15 @@ export const api = {
   rothVsTrad: (scenario: Scenario, nPaths = 1000) =>
     req<RothTradResult>("/simulate/roth-vs-trad", {
       method: "POST", body: JSON.stringify({ scenario, n_paths: nPaths }),
+    }),
+  taxRegime: (scenario: Scenario, sunsetAge: number,
+              bracketRateMult = 1.15, stdDeductionMult = 0.5, nPaths = 2000) =>
+    req<TaxRegimeResult>("/simulate/tax-regime", {
+      method: "POST",
+      body: JSON.stringify({
+        scenario, sunset_age: sunsetAge, bracket_rate_mult: bracketRateMult,
+        std_deduction_mult: stdDeductionMult, n_paths: nPaths,
+      }),
     }),
   getWorkspace: () => req<Scenario>("/workspace"),
   saveWorkspace: (scenario: Scenario) =>

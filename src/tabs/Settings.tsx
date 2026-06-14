@@ -3,8 +3,7 @@ import { Field, InfoTip, NumberInput, PercentInput, Section } from "../component
 import { useStore } from "../store";
 
 export default function Settings() {
-  const { scenario, axisMode, setAxisMode, display, setDisplay,
-          categories, setCategories } = useStore();
+  const { scenario, categories, setCategories } = useStore();
   const setScenario = useStore((s) => s.setScenario);
   if (!scenario) return null;
   const s = scenario;
@@ -20,23 +19,6 @@ export default function Settings() {
           <Field label="Plan To Age" info="Fixed planning horizon — no mortality table.">
             <NumberInput value={s.profile.horizon_age} step={1} min={50} max={105}
               onChange={(v) => setScenario({ ...s, profile: { ...s.profile, horizon_age: v } })} />
-          </Field>
-        </div>
-      </Section>
-
-      <Section title="Display">
-        <div className="fields">
-          <Field label="Timeline Axis">
-            <select value={axisMode} onChange={(e) => setAxisMode(e.target.value as any)}>
-              <option value="age">My Age</option>
-              <option value="year">Calendar Year</option>
-            </select>
-          </Field>
-          <Field label="Dollars">
-            <select value={display} onChange={(e) => setDisplay(e.target.value as any)}>
-              <option value="real">Today's (Real)</option>
-              <option value="nominal">Nominal</option>
-            </select>
           </Field>
         </div>
       </Section>
@@ -126,9 +108,11 @@ export default function Settings() {
         <p className="hint">
           Every simplifying assumption is documented in <code>docs/ASSUMPTIONS.md</code> —
           annual timestep, five tax pools, federal brackets + flat state rate, Shiller
-          1871–2022 bootstrap, AR(1) inflation, no ACA subsidy modeling, single filer,
-          fixed horizon. The ⓘ markers throughout the app carry the short versions.
-          Refresh the IRS data tables in <code>engine/fire_engine/data/</code> each November.
+          1871–2022 bootstrap, AR(1) inflation, single filer, fixed horizon. Tax modeling
+          includes the Social Security provisional-income torpedo, a lifetime Roth-conversion
+          ladder, RMDs, and pre-65 ACA premium subsidies + 65+ IRMAA surcharges. The ⓘ markers
+          throughout the app carry the short versions. Refresh the IRS data tables in
+          <code>engine/fire_engine/data/</code> each November.
         </p>
       </Section>
     </div>

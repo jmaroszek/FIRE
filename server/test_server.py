@@ -103,6 +103,15 @@ def test_roth_vs_trad_endpoint(client):
         body["roth"]["lifetime_tax_real"] - body["trad"]["lifetime_tax_real"])
 
 
+def test_tax_regime_endpoint(client):
+    s = small_scenario(client)
+    body = client.post("/simulate/tax-regime", json={
+        "scenario": s, "sunset_age": 50, "n_paths": 200,
+    }).json()
+    assert body["stressed_success"] <= body["base_success"] + 1e-9
+    assert body["stressed_lifetime_tax_real"] >= body["base_lifetime_tax_real"]
+
+
 def test_sweep_monotone_ish(client):
     s = small_scenario(client)
     resp = client.post("/simulate/sweep",

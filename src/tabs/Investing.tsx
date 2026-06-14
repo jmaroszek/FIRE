@@ -1,6 +1,6 @@
 import React from "react";
 import { A } from "../assumptions";
-import { AccountBalanceChart, FanChart, InvestingChart } from "../components/charts";
+import { AccountBalanceChart, FanChart, InflationFanChart, InvestingChart } from "../components/charts";
 import {
   Field, Group, InfoTip, NumberInput, PercentInput, Section, fmtMoney, fmtPct,
 } from "../components/ui";
@@ -9,7 +9,7 @@ import { useStore } from "../store";
 import type { Account, AccountType, Scenario, WaterfallStep } from "../types";
 
 export default function Investing() {
-  const { scenario, result, simulating, simError, axisMode, display, setDisplay,
+  const { scenario, result, simulating, simError, axisMode, display,
           snapshots, rothtrad, runRothTrad, rothtradLoading } = useStore();
   const setScenario = useStore((s) => s.setScenario);
   if (!scenario) return null;
@@ -304,6 +304,11 @@ export default function Investing() {
             </Field>
           </div>
           <p className="hint">Bootstrap mode samples inflation jointly with returns from history; these AR(1) settings apply to parametric mode (and to nominal-raise conversion via the mean).</p>
+          {result && (
+            <div style={{ marginTop: 10 }}>
+              <InflationFanChart result={result} axisMode={axisMode} />
+            </div>
+          )}
         </Section>
 
         <Section
@@ -323,10 +328,6 @@ export default function Investing() {
                   Success {fmtPct(result.success_rate)}
                 </span>
               )}
-              <select value={display} onChange={(e) => setDisplay(e.target.value as any)}>
-                <option value="real">Today's $</option>
-                <option value="nominal">Nominal $</option>
-              </select>
             </span>
           }>
           {simError && <p className="error">{simError}</p>}
@@ -343,19 +344,10 @@ export default function Investing() {
           ) : (
             <p className="hint">Running first simulation…</p>
           )}
-          <div className="fields slider-row">
-            <Field label={`Stocks: ${Math.round(s.allocation.stocks * 100)}%`}>
-              <input type="range" min={0} max={100} step={5}
-                value={Math.round(s.allocation.stocks * 100)}
-                onChange={(e) => {
-                  const stocks = parseInt(e.target.value) / 100;
-                  up({
-                    allocation: { stocks, bonds: Math.max(0, 1 - stocks - s.allocation.cash), cash: s.allocation.cash },
-                  });
-                }} />
-            </Field>
-            <span className="hint">Set your planned retirement age on the Freedom tab.</span>
-          </div>
+          <p className="hint">
+            Set your stock/bond/cash mix in Market Model above, and your planned
+            retirement age on the Freedom tab.
+          </p>
         </Section>
       </Group>
     </div>

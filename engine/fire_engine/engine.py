@@ -18,7 +18,7 @@ flows scale with each path's simulated cumulative inflation.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -39,6 +39,7 @@ from .scenario import (
     ROTH_TYPES,
     SS_CLAIMING_FACTORS,
     Scenario,
+    TaxRegimeShock,
     WaterfallStep,
     WithdrawalSource,
 )
@@ -126,6 +127,9 @@ class SimResult:
     # (allocation-weighted stock/bond/cash). Deflate with cum_inflation for real returns.
     aca_subsidy: np.ndarray | None = None  # (P, T) nominal ACA premium subsidy received
     net_health_cost: np.ndarray | None = None  # (P, T) nominal net ACA premium + IRMAA surcharge
+    shortfall: np.ndarray | None = None  # (P, T) nominal unfunded spending need each year
+    # (>1.0 is what trips `fail`); deflate with cum_inflation to size depth-of-ruin.
+    withdrawals: dict[str, np.ndarray] | None = None  # source -> (P, T) nominal amount drawn
 
     @property
     def success_rate(self) -> float:
@@ -304,9 +308,18 @@ def run(
     retirement_age: int | None = None,
     balance_scale: float = 1.0,
     spending_scale: float = 1.0,
+    tax_regime: TaxRegimeShock | None = None,
     deterministic: bool = False,
 ) -> SimResult:
     tables = taxmod.load_tax_tables()
+    # TCJA-sunset / regime-shock tables: same structure, higher ordinary rates
+    # and a smaller standard deduction, applied only from the sunset age forward.
+    tables_sunset = (
+        replace(tables,
+                ordinary_rates=tables.ordinary_rates * tax_regime.bracket_rate_mult,
+                standard_deduction=tables.standard_deduction * tax_regime.std_deduction_mult)
+        if tax_regime is not None else tables
+    )
     rmd_divisors = load_rmd_divisors()
     retirement_age = retirement_age if retirement_age is not None else scenario.retirement_age
 
@@ -361,6 +374,8 @@ def run(
     port_return_out = np.zeros((P, T))
     aca_subsidy_out = np.zeros((P, T))
     net_health_cost_out = np.zeros((P, T))  # net ACA premium + IRMAA surcharge
+    shortfall_out = np.zeros((P, T))  # nominal unfunded need each year (depth of ruin)
+    withdrawals_out: dict[str, np.ndarray] = {}  # source -> (P, T) nominal amount drawn
     accessible_out: dict[str, np.ndarray] = {}
 
     zeros = np.zeros(P)
@@ -368,6 +383,7 @@ def run(
     # guardrails: per-path discretionary spending multiplier and the initial
     # withdrawal rate recorded in the retirement year
     guard = scenario.guardrails
+    strat = scenario.spending_strategy
     t_retire = max(retirement_age - start_age, 0)
     spend_mult = np.ones(P)
     w0: np.ndarray | None = None
@@ -376,6 +392,10 @@ def run(
         age = start_age + t
         regime = regimes[t]
         infl = paths.cum_inflation[:, t]
+        # post-sunset years pay tax under the reverted regime; pre-sunset under
+        # today's law. Only ordinary rates + the standard deduction differ, so
+        # using tables_eff for every tax call below is safe.
+        tables_eff = tables_sunset if (tax_regime is not None and age >= tax_regime.sunset_age) else tables
         state.season_conversions(t)
         portfolio_start = state.total_net_worth()
 
@@ -400,7 +420,27 @@ def run(
             disc_nom = disc_med + (disc_nom - disc_med) * spending_scale
         ess_nom = ess_nom + liab_payments[t]  # loan payments: essential, non-inflating
 
-        if guard.enabled and t >= t_retire:
+        if t >= t_retire and strat.kind != "constant_dollar":
+            # Portfolio-percentage family: discretionary spending is set from the
+            # CURRENT balance each year, so it self-corrects with the market and
+            # never depletes to zero. Essentials (medical + loan payments, already
+            # folded into ess_nom) are funded first; whatever the rule leaves above
+            # them becomes the discretionary budget. spend_mult is recomputed fresh
+            # each year (no ratchet), unlike the guardrail path.
+            if strat.kind == "vpw":
+                # annuity payout factor: rate rises with age as the horizon nears
+                n = max(scenario.profile.horizon_age - age, 1)
+                r = strat.vpw_real_return
+                rate = (r / (1.0 - (1.0 + r) ** (-n))) if r > 0 else 1.0 / n
+            else:
+                rate = strat.rate
+            disc_target = np.maximum(rate * portfolio_start - ess_nom, 0.0)
+            if strat.kind == "floor_ceiling":
+                disc_target = np.clip(disc_target, strat.floor_mult * disc_nom,
+                                      strat.ceiling_mult * disc_nom)
+            spend_mult = np.where(disc_nom > 1.0, disc_target / np.maximum(disc_nom, 1.0),
+                                  np.ones_like(disc_target))
+        elif guard.enabled and t >= t_retire:
             planned = ess_nom + disc_nom
             w = planned / np.maximum(portfolio_start, 1.0)
             if w0 is None:
@@ -443,7 +483,7 @@ def run(
             bracket_top_nom = conv_rule.custom_top * infl
         else:
             bracket_top_nom = taxmod.ordinary_bracket_top(conv_rule.bracket_top, tables, infl)
-        std_nom = tables.standard_deduction * infl
+        std_nom = tables_eff.standard_deduction * infl
 
         # ---- fixed-point: taxes <-> contributions <-> withdrawals <-> conversions
         pretax = zeros
@@ -474,7 +514,7 @@ def run(
             # flat fraction would hide from bracket-management decisions.
             taxable_ss = taxmod.taxable_social_security(ordinary_excl_ss + ltcg, ss_nom, tables)
             ordinary = ordinary_excl_ss + taxable_ss
-            fed, ord_taxable, ltcg_taxable = taxmod.federal_tax(ordinary, ltcg, tables, infl)
+            fed, ord_taxable, ltcg_taxable = taxmod.federal_tax(ordinary, ltcg, tables_eff, infl)
             state_tax = scenario.profile.state_tax_rate * (ord_taxable + ltcg_taxable)
             fica = taxmod.fica_tax(wages, tables, infl)
             penalty = tables.early_penalty * w_penalty
@@ -525,6 +565,9 @@ def run(
         # ---- apply the converged plan
         apply_plan(state, wplan, age)
         fail[:, t] = wplan.shortfall > 1.0
+        shortfall_out[:, t] = wplan.shortfall
+        for _src, _amt in wplan.takes.items():
+            withdrawals_out.setdefault(_src.value, np.zeros((P, T)))[:, t] = _amt
 
         # marginal federal+state tax rate on the next dollar of Roth conversion
         # (ordinary income): captures the bracket, the Social Security
@@ -533,7 +576,7 @@ def run(
         # what filling the bracket one notch higher would actually cost.
         bump = 1000.0 * infl
         ss_bumped = taxmod.taxable_social_security(ordinary_excl_ss + bump + ltcg, ss_nom, tables)
-        fed_b, ot_b, lt_b = taxmod.federal_tax(ordinary_excl_ss + bump + ss_bumped, ltcg, tables, infl)
+        fed_b, ot_b, lt_b = taxmod.federal_tax(ordinary_excl_ss + bump + ss_bumped, ltcg, tables_eff, infl)
         tax_b = fed_b + scenario.profile.state_tax_rate * (ot_b + lt_b)
         conv_marginal_rate[:, t] = (tax_b - (fed + state_tax)) / bump
 
@@ -626,6 +669,8 @@ def run(
         port_return=port_return_out,
         aca_subsidy=aca_subsidy_out,
         net_health_cost=net_health_cost_out,
+        shortfall=shortfall_out,
+        withdrawals=withdrawals_out,
     )
 
 

@@ -19,6 +19,7 @@ from fire_engine.scenario import (
     MarketModel,
     Profile,
     SimSettings,
+    SpendingStrategy,
 )
 
 
@@ -117,11 +118,128 @@ def test_spending_distribution_no_guardrails():
     assert all(c == 0 for c in sd["years_in_cut"])  # guardrails off -> no cuts
 
 
+def _pct_strategy_scenario(balance: float, annual: float, essential: bool,
+                           strategy: SpendingStrategy) -> Scenario:
+    return Scenario(
+        profile=Profile(birth_year=1980, horizon_age=70, state_tax_rate=0.0),
+        accounts=[Account(type=AccountType.taxable, balance=balance, cost_basis=balance)],
+        allocation=Allocation(stocks=1.0, bonds=0.0, cash=0.0),
+        income=Income(gross_salary=0),
+        retirement_age=46,  # = current age (born 1980, start 2026) -> retired at t=0
+        expense_streams=[ExpenseStream(name="living", annual=annual, essential=essential)],
+        spending_strategy=strategy,
+        sim=SimSettings(n_paths=2, start_year=2026),
+        **_frozen_market(stock=0.0, bond=0.0),
+    )
+
+
+def test_constant_pct_spends_fixed_fraction_and_never_depletes():
+    s = _pct_strategy_scenario(1_000_000, 50000, False,
+                               SpendingStrategy(kind="constant_pct", rate=0.04))
+    r = run(s)
+    assert r.expenses[0, 0] == pytest.approx(40000, rel=1e-3)     # 4% of 1M
+    assert r.spending_mult[0, 0] == pytest.approx(0.8, rel=1e-3)  # 40k / 50k plan
+    assert not r.fail.any()                                       # flexes, never runs short
+    assert r.expenses[0, -1] > 0                                  # still spending at the horizon
+
+
+def test_vpw_rate_matches_annuity_factor():
+    n, rr = 70 - 46, 0.03
+    rate = rr / (1 - (1 + rr) ** (-n))  # annuity payout factor at the retirement year
+    s = _pct_strategy_scenario(1_000_000, 50000, False,
+                               SpendingStrategy(kind="vpw", vpw_real_return=0.03))
+    r = run(s)
+    assert r.expenses[0, 0] == pytest.approx(rate * 1_000_000, rel=1e-3)
+
+
+def test_floor_ceiling_clamps_to_plan_fraction():
+    s = _pct_strategy_scenario(500_000, 50000, False, SpendingStrategy(
+        kind="floor_ceiling", rate=0.04, floor_mult=0.75, ceiling_mult=1.25))
+    r = run(s)
+    # 4% of 500k = 20k is below the floor (0.75 × 50k = 37.5k) -> clamped up
+    assert r.spending_mult[0, 0] == pytest.approx(0.75, rel=1e-3)
+    assert r.expenses[0, 0] == pytest.approx(37500, rel=1e-3)
+
+
+def test_constant_pct_still_fails_when_essentials_unfundable():
+    s = _pct_strategy_scenario(100_000, 50000, True,
+                               SpendingStrategy(kind="constant_pct", rate=0.04))
+    r = run(s)
+    assert r.fail.any()  # essentials are funded first; 100k can't cover 50k/yr of them
+
+
 def test_sequence_scatter_shape_and_values():
-    s = _growth_scenario(n_paths=6)
+    s = _growth_scenario(n_paths=6)  # retires at 36 == current age, so anchor t=0
     sc = m.sequence_scatter(run(s))
-    assert sc["window"] == 5
+    assert sc["window"] == 10
+    assert sc["start_age"] == 36
     assert len(sc["first_window_return"]) == 6
     assert np.allclose(sc["first_window_return"], 0.05)  # real return, 0% infl
     assert all(sc["survived"])
     assert np.allclose(sc["ending_real"], 100000 * 1.05 ** s.n_years)
+
+
+def test_sequence_scatter_anchored_at_retirement():
+    """The window starts at the retirement year, not sim-start, so an early
+    retiree's sequence risk is measured over the decade after they stop earning."""
+    s = _growth_scenario(n_paths=6)
+    s.retirement_age = 50  # current age is 36
+    sc = m.sequence_scatter(run(s))
+    assert sc["start_age"] == 50
+
+
+def test_failure_magnitude_all_fail():
+    """1M Roth / 40k yr / 0% -> every path runs short by exactly one year of
+    spending in the final (26th) year; depth-of-ruin reports that, not just the count."""
+    r = run(_spenddown_scenario(10))
+    fm = m.failure_magnitude(r)
+    assert fm["failing_paths"] == 10
+    assert fm["total_paths"] == 10
+    assert fm["median_years_short"] == 1
+    assert fm["median_total_shortfall_real"] == pytest.approx(40000, rel=1e-3)
+
+
+def test_failure_magnitude_no_failures_is_zero():
+    fm = m.failure_magnitude(run(_growth_scenario(n_paths=8, balance=1_000_000)))
+    assert fm["failing_paths"] == 0
+    assert fm["median_total_shortfall_real"] == 0.0
+    assert fm["median_years_short"] == 0.0
+
+
+def test_lifetime_tax_roth_only_is_zero():
+    """Spending from Roth basis with no other income -> zero lifetime tax."""
+    lt = m.lifetime_tax(run(_spenddown_scenario(6)))
+    assert lt["median_real"] == pytest.approx(0.0)
+    assert lt["as_pct_of_spending"] == pytest.approx(0.0)
+
+
+def test_port_return_and_inflation_fans():
+    s = _growth_scenario(n_paths=8)
+    r = run(s)
+    pf = m.port_return_fan(r)
+    assert len(pf["p50"]) == s.n_years          # per-year flow
+    assert np.allclose(pf["p50"], 0.05)          # 100% stock @ 5% real, 0% infl
+    inf = m.inflation_fan(r)
+    assert len(inf["p50"]) == s.n_years + 1      # price level incl. t0
+    assert np.allclose(inf["p50"], 1.0)          # 0% inflation -> flat index
+
+
+def test_ss_income_median_real_zero_when_no_benefit():
+    ss = m.ss_income_median_real(run(_spenddown_scenario(4)))
+    assert all(x == 0 for x in ss)
+
+
+def test_withdrawal_source_medians_record_actual_draws():
+    """1M Roth / 40k yr / 0% -> spending is funded ~40k/yr from Roth contributions."""
+    r = run(_spenddown_scenario(4))
+    w = m.withdrawal_source_medians_real(r)
+    assert "roth_basis" in w
+    assert w["roth_basis"][0] == pytest.approx(40000, rel=1e-3)
+
+
+def test_summarize_carries_new_keys():
+    r = run(_growth_scenario(8))
+    s = m.summarize(r)
+    for key in ("ss_income_median_real", "marginal_rate_median", "port_return_fan",
+                "inflation_fan", "lifetime_tax", "failure_magnitude"):
+        assert key in s

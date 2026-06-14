@@ -1,10 +1,12 @@
 """Decision-surface analyses: max-sustainable-spend bisection, the 2D success
 surface, the sensitivity tornado, and the income-shock stress test."""
 
+import numpy as np
 import pytest
 
 from fire_engine import Scenario, example_scenario, run
 from fire_engine import metrics as m
+from fire_engine.sampling import sample_paths
 from fire_engine.scenario import (
     Account,
     AccountType,
@@ -14,6 +16,7 @@ from fire_engine.scenario import (
     MarketModel,
     Profile,
     SimSettings,
+    TaxRegimeShock,
 )
 
 
@@ -95,3 +98,24 @@ def test_roth_vs_trad_structure_and_determinism():
     assert res["trad"]["lifetime_tax_real"] != res["roth"]["lifetime_tax_real"]
     # same shared paths -> re-running gives identical numbers
     assert m.roth_vs_trad(s, n_paths=300)["tax_diff"] == pytest.approx(res["tax_diff"])
+
+
+def test_tax_regime_identity_when_multipliers_are_one():
+    """A no-op shock (rates ×1, deduction ×1) must reproduce the baseline exactly."""
+    s = example_scenario()
+    s.sim.n_paths = 50
+    p = sample_paths(s, n_paths=50)
+    base = run(s, paths=p)
+    noop = run(s, paths=p, tax_regime=TaxRegimeShock(
+        sunset_age=s.start_age, bracket_rate_mult=1.0, std_deduction_mult=1.0))
+    assert np.allclose(base.taxes_paid, noop.taxes_paid)
+
+
+def test_tax_regime_reversion_raises_tax_and_cannot_raise_success():
+    """A TCJA-style reversion at retirement can only raise lifetime tax and can
+    only hurt (never help) the success rate."""
+    s = example_scenario()
+    s.sim.n_paths = 300
+    res = m.tax_regime_stress(s, sunset_age=s.retirement_age, n_paths=300)
+    assert res["stressed_lifetime_tax_real"] >= res["base_lifetime_tax_real"]
+    assert res["stressed_success"] <= res["base_success"] + 1e-9

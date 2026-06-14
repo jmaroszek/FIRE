@@ -1,6 +1,9 @@
 import React, { useEffect } from "react";
 import { A } from "../assumptions";
-import { AccessibilityChart, SurfaceHeatmap, SweepChart, TornadoChart } from "../components/charts";
+import {
+  AccessibilityChart, SsIncomeChart, SurfaceHeatmap, SweepChart, TornadoChart,
+  WithdrawalSourceChart,
+} from "../components/charts";
 import {
   Field, Group, InfoTip, NumberInput, PercentInput, ProgressBar, Section, Stat,
   fmtMoney, fmtPct,
@@ -30,18 +33,7 @@ export default function Freedom() {
   if (!scenario) return null;
   const s = scenario;
   const up = (patch: Partial<Scenario>) => setScenario({ ...s, ...patch });
-  // The conversion strategy is presented as one dropdown; "Custom Target" maps
-  // to a fill_bracket with a custom ceiling, so derive the selection from both.
-  const cr = s.conversion_rule;
-  const convStrategy =
-    cr.kind === "none" ? "none"
-    : cr.kind === "fill_bracket" && cr.bracket_top === "custom" ? "custom"
-    : "fill_bracket";
-  const setConvStrategy = (v: string) => {
-    if (v === "none") up({ conversion_rule: { ...cr, kind: "none" } });
-    else if (v === "custom") up({ conversion_rule: { ...cr, kind: "fill_bracket", bracket_top: "custom" } });
-    else up({ conversion_rule: { ...cr, kind: "fill_bracket", bracket_top: cr.bracket_top === "custom" ? "12" : cr.bracket_top } });
-  };
+  const ss = s.spending_strategy;
   const startAge = s.sim.start_year - s.profile.birth_year;
   // earliest age clearing the success threshold, from the MC retirement-age sweep
   const suggestedAge =
@@ -144,6 +136,32 @@ export default function Freedom() {
             </button>
           )}
         </Section>
+
+        <Section title="Headroom" info={A.headroom}>
+          {result ? (
+            <Stat label="Median Ending Net Worth"
+              value={fmtMoney(result.fan.real.p50[result.fan.real.p50.length - 1] ?? 0)}
+              sub="today's $ — unconsumed margin, not a goal" info={A.headroom} />
+          ) : (
+            <p className="hint">Simulation pending…</p>
+          )}
+        </Section>
+
+        <Section title="One More Year" info={A.oneMoreYear}>
+          {sweep ? (() => {
+            const cur = sweep.sweep[String(s.retirement_age)];
+            const next = sweep.sweep[String(s.retirement_age + 1)];
+            if (cur == null || next == null)
+              return <p className="hint">Planned age is outside the computed sweep range.</p>;
+            return (
+              <Stat label={`Work To ${s.retirement_age + 1} Instead Of ${s.retirement_age}`}
+                value={`${next - cur >= 0 ? "+" : ""}${fmtPct(next - cur)} success`}
+                sub={`${fmtPct(cur)} → ${fmtPct(next)}`} />
+            );
+          })() : (
+            <p className="hint">Compute the success curve (Years To Retirement) to see what one more year buys.</p>
+          )}
+        </Section>
       </div>
 
       <Section title="Liquidity: Can You Bridge To 59½?"
@@ -166,7 +184,8 @@ export default function Freedom() {
           </button>
         )}>
         {surface ? (
-          <SurfaceHeatmap data={surface} axisMode={axisMode} birthYear={s.profile.birth_year} />
+          <SurfaceHeatmap data={surface} axisMode={axisMode} birthYear={s.profile.birth_year}
+            currentAge={s.retirement_age} />
         ) : (
           <button onClick={runSurface} disabled={surfaceLoading}>
             {surfaceLoading ? "Computing…" : "Compute Surface"}
@@ -189,90 +208,7 @@ export default function Freedom() {
         )}
       </Section>
 
-      <Group title="Retirement Income & Spending">
-        <Section title="Roth Conversion Ladder"
-          info={A.ladder + " Conversions are capped by the traditional balance each year — 401k money counts because leaving work lets you roll it into a traditional IRA, where conversions start. Amounts are the median across paths."}>
-          <div className="fields" style={{ marginBottom: 10 }}>
-            <Field label="Strategy">
-              <select value={convStrategy} onChange={(e) => setConvStrategy(e.target.value)}>
-                <option value="none">None</option>
-                <option value="fill_bracket">Fill To Bracket Top</option>
-                <option value="custom">Custom Target</option>
-              </select>
-            </Field>
-            {convStrategy === "fill_bracket" && (
-              <Field label="Bracket Top">
-                <select value={cr.bracket_top}
-                  onChange={(e) => up({ conversion_rule: { ...cr, bracket_top: e.target.value as any } })}>
-                  <option value="std_deduction">Std Deduction (0%)</option>
-                  <option value="10">10% Top</option>
-                  <option value="12">12% Top</option>
-                  <option value="22">22% Top</option>
-                </select>
-              </Field>
-            )}
-            {convStrategy === "custom" && (
-              <Field label="Taxable-Income Target"
-                info="Fill ordinary income to this taxable-income level each year (today's $), net of RMDs, Social Security, and traditional spending withdrawals — the same smart fill as the bracket presets, just to a line you choose. Lands you between the brackets: the 12% bracket tops out at $50,400 of taxable income, the 22% at $105,700. Watch the Next $ Taxed At column to see what going higher costs.">
-                <NumberInput value={cr.custom_top ?? 0} step={1000}
-                  onChange={(v) => up({ conversion_rule: { ...cr, custom_top: v } })} />
-              </Field>
-            )}
-            <Field label="From / Until Age"
-              info="Defaults: start at retirement, stop at 72. The ladder does two jobs: before 59½ each rung becomes penalty-free after 5 years to fund the bridge; from 59½ to ~72 it keeps draining traditional at a low bracket to shrink the balance that drives RMDs (forced at 75). Conversions auto-stop once RMDs and other income already fill your chosen bracket — watch the Next $ Taxed At column.">
-              <span className="pair agecell">
-                <NumberInput value={s.conversion_rule.start_age ?? s.retirement_age} step={1}
-                  onChange={(v) => up({ conversion_rule: { ...s.conversion_rule, start_age: v } })} />
-                –
-                <NumberInput value={s.conversion_rule.end_age ?? 72} step={1}
-                  onChange={(v) => up({ conversion_rule: { ...s.conversion_rule, end_age: v } })} />
-              </span>
-            </Field>
-            {cr.start_age != null && cr.start_age !== s.retirement_age && (
-              <button type="button" className="link-action"
-                onClick={() => up({ conversion_rule: { ...cr, start_age: null } })}
-                title="Reset the ladder's start age back to your retirement age, and keep it in sync if you change the retirement age later.">
-                ↺ Reset Start To Retirement ({s.retirement_age})
-              </button>
-            )}
-          </div>
-          {result && result.ladder_schedule.length > 0 ? (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Year</th><th>Age</th><th>Convert (Today's $)</th>
-                  <th>Penalty-Free In</th>
-                  <th>Next $ Taxed At<InfoTip text="Marginal federal + state rate the NEXT dollar of conversion would face on the median path: your bracket rate, amplified where it drags more Social Security into tax (the 'torpedo') or pushes long-term gains out of the 0% bracket. Much higher than your bracket target's headline rate → stop filling; still low → room to convert more." /></th>
-                  <th>Traditional Left<InfoTip text="Median traditional (IRA + rolled-over 401k) balance remaining after that year's conversion and growth, in today's dollars." /></th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.ladder_schedule.map((r) => {
-                  // penalty-free at the earlier of 5-year seasoning or turning 60
-                  // (at 59½ all conversion principal is penalty-free regardless)
-                  const penaltyFree = r.age >= 60
-                    ? "Immediate"
-                    : Math.min(r.matures, s.profile.birth_year + 60);
-                  return (
-                    <tr key={r.year}>
-                      <td>{r.year}</td>
-                      <td>{r.age}</td>
-                      <td>{fmtMoney(r.amount_real)}</td>
-                      <td>{penaltyFree}</td>
-                      <td>{fmtPct(r.marginal_rate, 0)}</td>
-                      <td>{fmtMoney(r.trad_remaining_real)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          ) : (
-            <p className="hint">
-              No conversions in the median path. Pick a strategy above to build
-              penalty-free income for the bridge years.
-            </p>
-          )}
-        </Section>
+      <Group title="Withdrawal & Spending Policy">
         <div className="group-col">
         <Section title="Withdrawal Policy"
           info={A.policy + " Two phases: before 59½, traditional and Roth earnings are penalty-locked, so the bridge runs on cash, taxable, and Roth contributions/conversions. At 59½ everything opens up — putting traditional ahead of Roth then lets the Roth keep compounding tax-free."}>
@@ -326,71 +262,101 @@ export default function Freedom() {
               </Field>
             </div>
           </div>
-        </Section>
-
-        <Section title="Spending Guardrails"
-          info={A.guardrails + " Guardrails act only after retirement — while working, spending is funded by salary and never flexed."}>
-          <div className="fields">
-            <Field label="Enabled">
-              <input type="checkbox" checked={s.guardrails.enabled}
-                onChange={(e) => up({ guardrails: { ...s.guardrails, enabled: e.target.checked } })} />
-            </Field>
-            <Field label="Guard Band (± Around Initial Rate)">
-              <PercentInput value={s.guardrails.band} step={5}
-                onChange={(v) => up({ guardrails: { ...s.guardrails, band: v } })} />
-            </Field>
-            <Field label="Cut Step">
-              <PercentInput value={s.guardrails.cut} step={2.5}
-                onChange={(v) => up({ guardrails: { ...s.guardrails, cut: v } })} />
-            </Field>
-            <Field label="Restore Step">
-              <PercentInput value={s.guardrails.boost} step={2.5}
-                onChange={(v) => up({ guardrails: { ...s.guardrails, boost: v } })} />
-            </Field>
-            <Field label="Floor (Min % Of Planned Discretionary)">
-              <PercentInput value={s.guardrails.floor_mult} step={5}
-                onChange={(v) => up({ guardrails: { ...s.guardrails, floor_mult: v } })} />
-            </Field>
+          <div style={{ marginTop: 8 }}>
+            <div className="card-head"><h3 style={{ fontSize: 13, margin: 0 }}>
+              Spending Funded By Source<InfoTip text={A.withdrawalSource} />
+            </h3></div>
+            {result ? (
+              <WithdrawalSourceChart result={result} axisMode={axisMode} />
+            ) : (
+              <p className="hint">Simulation pending…</p>
+            )}
           </div>
-          <p className="hint">
-            Cuts apply only to streams not marked Essential in the Cash Flow Expenses table.
-          </p>
         </Section>
-        </div>
-      </Group>
 
-      <Group title="Required Minimum Distributions">
-        <Section title="Projected RMDs"
-          info="From age 75 the IRS forces a minimum withdrawal from traditional accounts each year (balance ÷ an age-based divisor), taxed as ordinary income whether you need it or not. This is the scoreboard for your conversion ladder: if these land in a high bracket, lower the Bracket Top / Custom Target above so you drain more traditional before 75. Median path, today's dollars.">
-          {result && result.rmd_schedule && result.rmd_schedule.length > 0 ? (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Year</th><th>Age</th><th>RMD (Today's $)</th>
-                  <th>Taxed At<InfoTip text="Marginal federal + state rate on the next ordinary dollar that year — the bracket your RMD, stacked with Social Security, pushes you into. High here means convert more (to a lower target) before 75." /></th>
-                  <th>Traditional Left<InfoTip text="Median traditional (IRA + rolled-over 401k) balance remaining after that year's RMD and growth, in today's dollars." /></th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.rmd_schedule.map((r) => (
-                  <tr key={r.year}>
-                    <td>{r.year}</td>
-                    <td>{r.age}</td>
-                    <td>{fmtMoney(r.amount_real)}</td>
-                    <td>{fmtPct(r.marginal_rate, 0)}</td>
-                    <td>{fmtMoney(r.trad_remaining_real)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <Section title="Spending Strategy" info={A.spendingStrategy}>
+          <div className="fields">
+            <Field label="Strategy"
+              info="How much to spend each retirement year — separate from the Withdrawal Policy above, which only chooses which account to tap.">
+              <select value={ss.kind}
+                onChange={(e) => up({ spending_strategy: { ...ss, kind: e.target.value as any } })}>
+                <option value="constant_dollar">Constant Dollar (Plan + Guardrails)</option>
+                <option value="constant_pct">Constant % Of Portfolio</option>
+                <option value="vpw">Variable % (VPW — Rises With Age)</option>
+                <option value="floor_ceiling">Floor &amp; Ceiling (Bounded %)</option>
+              </select>
+            </Field>
+            {(ss.kind === "constant_pct" || ss.kind === "floor_ceiling") && (
+              <Field label="Withdrawal Rate (% Of Portfolio)">
+                <PercentInput value={ss.rate} step={0.25}
+                  onChange={(v) => up({ spending_strategy: { ...ss, rate: v } })} />
+              </Field>
+            )}
+            {ss.kind === "vpw" && (
+              <Field label="VPW Assumed Real Return"
+                info="The real return baked into the annuity payout factor. Higher → larger early withdrawals; the rate still rises with age and spends the balance down by the horizon.">
+                <PercentInput value={ss.vpw_real_return} step={0.25}
+                  onChange={(v) => up({ spending_strategy: { ...ss, vpw_real_return: v } })} />
+              </Field>
+            )}
+            {ss.kind === "floor_ceiling" && (
+              <>
+                <Field label="Floor (% Of Plan Discretionary)">
+                  <PercentInput value={ss.floor_mult} step={5}
+                    onChange={(v) => up({ spending_strategy: { ...ss, floor_mult: v } })} />
+                </Field>
+                <Field label="Ceiling (% Of Plan Discretionary)">
+                  <PercentInput value={ss.ceiling_mult} step={5}
+                    onChange={(v) => up({ spending_strategy: { ...ss, ceiling_mult: v } })} />
+                </Field>
+              </>
+            )}
+          </div>
+
+          {ss.kind === "constant_dollar" ? (
+            <>
+              <div className="fields">
+                <Field label="Guardrails Enabled"
+                  info={A.guardrails + " Guardrails act only after retirement — while working, spending is funded by salary and never flexed."}>
+                  <input type="checkbox" checked={s.guardrails.enabled}
+                    onChange={(e) => up({ guardrails: { ...s.guardrails, enabled: e.target.checked } })} />
+                </Field>
+                <Field label="Guard Band (± Around Initial Rate)">
+                  <PercentInput value={s.guardrails.band} step={5}
+                    onChange={(v) => up({ guardrails: { ...s.guardrails, band: v } })} />
+                </Field>
+                <Field label="Cut Step">
+                  <PercentInput value={s.guardrails.cut} step={2.5}
+                    onChange={(v) => up({ guardrails: { ...s.guardrails, cut: v } })} />
+                </Field>
+                <Field label="Restore Step">
+                  <PercentInput value={s.guardrails.boost} step={2.5}
+                    onChange={(v) => up({ guardrails: { ...s.guardrails, boost: v } })} />
+                </Field>
+                <Field label="Floor (Min % Of Planned Discretionary)">
+                  <PercentInput value={s.guardrails.floor_mult} step={5}
+                    onChange={(v) => up({ guardrails: { ...s.guardrails, floor_mult: v } })} />
+                </Field>
+                <Field label="Ceiling (Max % Of Planned Discretionary)"
+                  info="Cap on restored spending. Default 100% = never spend above plan. Raise it above 100% to let good markets fund extra lifestyle — directly relevant with no bequest goal, where leftover money is unconsumed margin.">
+                  <PercentInput value={s.guardrails.cap_mult} step={5}
+                    onChange={(v) => up({ guardrails: { ...s.guardrails, cap_mult: v } })} />
+                </Field>
+              </div>
+              <p className="hint">
+                Cuts apply only to streams not marked Essential in the Cash Flow Expenses table.
+              </p>
+            </>
           ) : (
             <p className="hint">
-              No projected RMDs — either your horizon ends before age 75, or your
-              traditional balance is drained before then (a sign your ladder has
-              fully defused the RMD bomb).
+              This portfolio-percentage strategy replaces the guardrails: discretionary
+              spending tracks your balance each year (essentials — medical and loan
+              payments — are always funded first). See the realized path on the Risk tab's
+              Spending Level chart.
             </p>
           )}
         </Section>
+        </div>
       </Group>
 
       <Group title="Social Security">
@@ -421,6 +387,10 @@ export default function Freedom() {
               </select>
             </Field>
           </div>
+          {result && s.social_security.monthly_at_fra > 0 && (
+            <SsIncomeChart result={result} axisMode={axisMode}
+              claimingAge={s.social_security.claiming_age} birthYear={s.profile.birth_year} />
+          )}
         </Section>
       </Group>
     </div>

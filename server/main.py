@@ -169,6 +169,22 @@ def stress(req: StressRequest) -> dict:
                            duration=req.duration, n_paths=req.n_paths)
 
 
+class TaxRegimeRequest(BaseModel):
+    scenario: Scenario
+    sunset_age: int
+    bracket_rate_mult: float = 1.15
+    std_deduction_mult: float = 0.5
+    n_paths: int = 2000
+
+
+@app.post("/simulate/tax-regime")
+def tax_regime(req: TaxRegimeRequest) -> dict:
+    return m.tax_regime_stress(req.scenario, sunset_age=req.sunset_age,
+                               bracket_rate_mult=req.bracket_rate_mult,
+                               std_deduction_mult=req.std_deduction_mult,
+                               n_paths=req.n_paths)
+
+
 class RothTradRequest(BaseModel):
     scenario: Scenario
     n_paths: int = 1000

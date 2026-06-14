@@ -62,6 +62,14 @@ export interface GuardrailRule {
   cap_mult: number;
 }
 
+export interface SpendingStrategy {
+  kind: "constant_dollar" | "constant_pct" | "vpw" | "floor_ceiling";
+  rate: number;
+  vpw_real_return: number;
+  floor_mult: number;
+  ceiling_mult: number;
+}
+
 export interface WaterfallStep {
   account: AccountType;
   kind: "to_match" | "max" | "fixed";
@@ -163,6 +171,7 @@ export interface Scenario {
   social_security: SocialSecurity;
   hsa: HSARule;
   guardrails: GuardrailRule;
+  spending_strategy: SpendingStrategy;
   aca: ACAConfig;
   irmaa: IRMAAConfig;
   events: FireEvent[];
@@ -179,6 +188,7 @@ export interface SimulateResult {
   pool_medians_real: Record<string, number[]>;
   survival_curve: number[];
   accessibility_real: Record<string, number[]>;
+  withdrawals_real: Record<string, number[]>;
   ladder_schedule: {
     year: number; age: number; amount_real: number; matures: number;
     trad_remaining_real: number; marginal_rate: number;
@@ -201,10 +211,21 @@ export interface SimulateResult {
   max_drawdown: number[];
   sequence_scatter: {
     first_window_return: number[]; ending_real: number[];
-    survived: boolean[]; window: number;
+    survived: boolean[]; window: number; start_age: number;
   };
   success_ci: { rate: number; lo: number; hi: number; n_paths: number };
   healthcare: { net_cost_real?: number[]; subsidy_real?: number[] };
+  // lifetime tax / income / inflation surfacing (ride every /simulate)
+  ss_income_median_real: number[];
+  marginal_rate_median: number[];
+  port_return_fan: FanSeries;
+  inflation_fan: FanSeries;
+  lifetime_tax: { median_real: number; as_pct_of_spending: number };
+  failure_magnitude: {
+    failing_paths: number; total_paths: number;
+    median_total_shortfall_real: number; p90_total_shortfall_real: number;
+    median_years_short: number;
+  };
   ages: number[];
   years: number[];
   scenario_name: string;
@@ -267,6 +288,17 @@ export interface StressResult {
   delta: number;
   shock_age: number;
   duration: number;
+}
+
+export interface TaxRegimeResult {
+  base_success: number;
+  stressed_success: number;
+  delta: number;
+  base_lifetime_tax_real: number;
+  stressed_lifetime_tax_real: number;
+  sunset_age: number;
+  bracket_rate_mult: number;
+  std_deduction_mult: number;
 }
 
 export interface RothTradVariant {

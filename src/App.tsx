@@ -3,6 +3,7 @@ import { useStore, type Tab } from "./store";
 import Dashboard from "./tabs/Dashboard";
 import CashFlow from "./tabs/CashFlow";
 import Investing from "./tabs/Investing";
+import Taxes from "./tabs/Taxes";
 import Freedom from "./tabs/Freedom";
 import Risk from "./tabs/Risk";
 import Compare from "./tabs/Compare";
@@ -12,11 +13,31 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
   { id: "cashflow", label: "Cash Flow" },
   { id: "investing", label: "Investing" },
+  { id: "taxes", label: "Taxes" },
   { id: "freedom", label: "Freedom" },
   { id: "risk", label: "Risk" },
   { id: "compare", label: "Compare" },
   { id: "settings", label: "Settings" },
 ];
+
+/** The single, always-visible home for the real/nominal and age/year toggles —
+ * previously duplicated on Investing, Risk, and Settings. */
+function DisplayControls() {
+  const { axisMode, setAxisMode, display, setDisplay, scenario } = useStore();
+  if (!scenario) return null;
+  return (
+    <span className="display-controls pair">
+      <select value={display} onChange={(e) => setDisplay(e.target.value as "real" | "nominal")}>
+        <option value="real">Today's $</option>
+        <option value="nominal">Nominal $</option>
+      </select>
+      <select value={axisMode} onChange={(e) => setAxisMode(e.target.value as "age" | "year")}>
+        <option value="age">My Age</option>
+        <option value="year">Calendar Year</option>
+      </select>
+    </span>
+  );
+}
 
 function ScenarioBar() {
   const { scenario, savedAs, dirty, savedScenarios, saveAs, load, remove } = useStore();
@@ -33,7 +54,17 @@ function ScenarioBar() {
         {savedScenarios.map((n) => <option key={n} value={n}>{n}</option>)}
       </select>
       <span className="scenario-name">
-        {scenario.name}{dirty && <span className="dirty" title="unsaved changes"> ●</span>}
+        {scenario.name}
+        {dirty ? (
+          <span className="dirty"
+            title="Edited since your last named save. Your edits are auto-saved to the workspace continuously — Save stores them under this name.">
+            {" "}● Unsaved
+          </span>
+        ) : savedAs ? (
+          <span className="saved-chip" title="No changes since the last save under this name."> · Saved</span>
+        ) : (
+          <span className="saved-chip" title="Auto-saved to the workspace. Use Save As… to name it."> · Autosaved</span>
+        )}
       </span>
       {naming ? (
         <span className="pair">
@@ -95,12 +126,14 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <DisplayControls />
         <ScenarioBar />
       </header>
       <main>
         {tab === "dashboard" && <Dashboard />}
         {tab === "cashflow" && <CashFlow />}
         {tab === "investing" && <Investing />}
+        {tab === "taxes" && <Taxes />}
         {tab === "freedom" && <Freedom />}
         {tab === "risk" && <Risk />}
         {tab === "compare" && <Compare />}

@@ -143,6 +143,42 @@ class GuardrailRule(BaseModel):
     cap_mult: float = 1.0  # never spend above plan (no lifestyle inflation)
 
 
+class TaxRegimeShock(BaseModel):
+    """A documented 'what if today's tax law doesn't last' stress. From
+    `sunset_age` onward, ordinary bracket rates are scaled by `bracket_rate_mult`
+    and the standard deduction by `std_deduction_mult` — modeling a TCJA-style
+    reversion that the whole low-bracket Roth-ladder thesis is implicitly betting
+    against. NOT part of the saved Scenario; passed to run() by the stress endpoint.
+    """
+    sunset_age: int
+    bracket_rate_mult: float = 1.15   # ordinary marginal rates ×1.15 (≈ pre-TCJA)
+    std_deduction_mult: float = 0.5   # standard deduction roughly halves on reversion
+
+
+class SpendingStrategy(BaseModel):
+    """How much to spend each retirement year — distinct from the Withdrawal
+    Policy (which only chooses *which account* to tap).
+
+    - `constant_dollar` (default): fund the plan's expense streams, optionally
+      flexed by the Guyton-Klinger guardrails. Preserves the original behavior.
+    - `constant_pct`: discretionary spending = `rate` × current portfolio, so it
+      self-corrects with the market and never depletes to zero (at the cost of
+      income variability).
+    - `vpw`: like constant_pct but the rate rises with age via an annuity payout
+      factor (assumes `vpw_real_return`), deliberately drawing the balance down.
+    - `floor_ceiling`: constant_pct bounded to [floor_mult, ceiling_mult] × the
+      plan's discretionary amount, trading some self-correction for a stable floor.
+
+    In every portfolio-% mode, essentials (medical + loan payments) are funded
+    first; a path still fails if the portfolio can't cover them.
+    """
+    kind: Literal["constant_dollar", "constant_pct", "vpw", "floor_ceiling"] = "constant_dollar"
+    rate: float = 0.04             # constant_pct / floor_ceiling: share of current portfolio
+    vpw_real_return: float = 0.03  # vpw: assumed real return in the annuity payout factor
+    floor_mult: float = 0.75       # floor_ceiling: min fraction of plan discretionary
+    ceiling_mult: float = 1.25     # floor_ceiling: max fraction of plan discretionary
+
+
 class WaterfallStep(BaseModel):
     account: AccountType
     kind: Literal["to_match", "max", "fixed"] = "max"
@@ -347,6 +383,7 @@ class Scenario(BaseModel):
     social_security: SocialSecurity = SocialSecurity()
     hsa: HSARule = HSARule()
     guardrails: GuardrailRule = GuardrailRule()
+    spending_strategy: SpendingStrategy = SpendingStrategy()
     aca: ACAConfig = ACAConfig()
     irmaa: IRMAAConfig = IRMAAConfig()
     events: list[Event] = Field(default_factory=list)
