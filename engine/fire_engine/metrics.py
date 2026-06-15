@@ -200,9 +200,10 @@ def accessibility_fan(result: SimResult,
 
 def bridge_analysis(result: SimResult) -> dict:
     """Liquidity diagnostics for the bridge — early retirement to the 59½ penalty-
-    free age (modeled as 60). The headline success rate blends the bridge with
-    longevity risk and counts a path that survives only by paying early-withdrawal
-    penalties as a 'success'; this isolates both. Every window is over ages < 60.
+    free age (modeled as 60). The headline success rate blends the bridge crunch
+    with late-life longevity risk; this isolates the two and sizes the early-
+    withdrawal-penalty leakage within the bridge (itself a failure globally — see
+    engine fail predicate). Every window is over ages < 60.
 
     Rides every /simulate:
       - bridge_break_rate: paths whose penalty-free money proved insufficient before
@@ -232,9 +233,14 @@ def bridge_analysis(result: SimResult) -> dict:
     if not has_bridge:
         return out
 
-    # --- failure split: bridge liquidity crunch vs late-life longevity shortfall
-    failed_any = result.fail.any(axis=1)
-    bridge_fail = result.fail[:, bridge_cols].any(axis=1)
+    # --- failure split: bridge liquidity crunch vs late-life longevity shortfall.
+    # Use the HARD shortfall signal (spending went unfunded), not result.fail — the
+    # global fail flag now also counts early-penalty reliance as failure, but this
+    # split must keep "ran dry" distinct from "leaned on the penalty" (captured by
+    # paid_penalty below; bridge_break re-unites them).
+    hard_fail = (result.shortfall > 1.0) if result.shortfall is not None else result.fail
+    failed_any = hard_fail.any(axis=1)
+    bridge_fail = hard_fail[:, bridge_cols].any(axis=1)
     longevity_fail = failed_any & ~bridge_fail
 
     # --- early-penalty leakage (the cost a binary "success" hides)
@@ -381,9 +387,11 @@ def spending_distribution(result: SimResult) -> dict[str, list[float]]:
 
 
 def age_at_ruin(result: SimResult) -> dict:
-    """Histogram of the age at which each failing path first runs short, plus the
-    count that never failed. 'When do plans die?' is more actionable than a single
-    success number."""
+    """Histogram of the age at which each failing path first fails — a hard
+    shortfall, or the first lean on a penalized early traditional draw — plus the
+    count that never failed. Uses the global fail flag, so it agrees with the
+    survival curve and headline success rate. 'When do plans die?' is more
+    actionable than a single success number."""
     failed = result.fail.any(axis=1)
     first_idx = result.fail.argmax(axis=1)  # 0 for never-failed; masked out below
     ruin_ages = result.ages[first_idx][failed]
@@ -438,12 +446,15 @@ def sequence_scatter(result: SimResult, window: int = 10) -> dict:
 
 
 def failure_magnitude(result: SimResult) -> dict:
-    """Depth-of-ruin among the paths that fail: a binary success rate treats a
-    $500 miss at 89 and a collapse at 70 identically. For each failing path, the
-    total real unfunded spending (sum of the deflated annual shortfall) and the
-    number of years it spent short — so a 'late, survivable trim' reads differently
-    from an 'early, catastrophic' failure."""
-    failed = result.fail.any(axis=1)
+    """Depth-of-ruin among the paths that actually run short of money: a binary
+    success rate treats a $500 miss at 89 and a collapse at 70 identically. Sized
+    on the HARD shortfall, not the global fail flag — the latter now also counts
+    early-penalty reliance, where spending was met and the dollar shortfall is
+    zero, and including those paths would dilute the severity. For each path that
+    runs short, the total real unfunded spending (sum of the deflated annual
+    shortfall) and the number of years it spent short."""
+    hard_short = (result.shortfall > 1.0) if result.shortfall is not None else result.fail
+    failed = hard_short.any(axis=1)
     n_fail = int(failed.sum())
     if n_fail == 0 or result.shortfall is None:
         return {"failing_paths": n_fail, "total_paths": int(result.fail.shape[0]),
@@ -451,7 +462,7 @@ def failure_magnitude(result: SimResult) -> dict:
                 "p90_total_shortfall_real": 0.0}
     short_real = (result.shortfall / _flow_deflator(result))[failed]
     total = short_real.sum(axis=1)
-    years_short = result.fail[failed].sum(axis=1)
+    years_short = hard_short[failed].sum(axis=1)
     return {
         "failing_paths": n_fail,
         "total_paths": int(result.fail.shape[0]),

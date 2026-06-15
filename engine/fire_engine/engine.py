@@ -131,7 +131,8 @@ class SimResult:
     # (>1.0 is what trips `fail`); deflate with cum_inflation to size depth-of-ruin.
     withdrawals: dict[str, np.ndarray] | None = None  # source -> (P, T) nominal amount drawn
     penalty_paid: np.ndarray | None = None  # (P, T) nominal 10% early-withdrawal penalty paid
-    # (trad/HSA tapped before the penalty-free age); the cost an overall "success" hides.
+    # (trad tapped before the penalty-free age). Relying on this is now itself a
+    # failure (see the fail predicate below), so it no longer hides inside "success".
     spending_need: np.ndarray | None = None  # (P, T) nominal gross withdrawal need each year
     # (the negative cash flow withdrawals must cover, taxes included) — sizes the bridge demand.
 
@@ -570,7 +571,14 @@ def run(
 
         # ---- apply the converged plan
         apply_plan(state, wplan, age)
-        fail[:, t] = wplan.shortfall > 1.0
+        # A path fails if spending went unfunded (hard shortfall) OR it could only
+        # be funded by tapping traditional accounts before 59.5 and eating the 10%
+        # penalty. Relying on the early-withdrawal penalty is a planning failure,
+        # not a success the headline rate should hide — so the global success rate
+        # now agrees with the bridge's break definition (metrics.bridge_analysis).
+        # penalty_base is nonzero only before PENALTY_FREE_AGE, so post-60 years
+        # are unaffected.
+        fail[:, t] = (wplan.shortfall > 1.0) | (wplan.penalty_base > 1.0)
         shortfall_out[:, t] = wplan.shortfall
         # `need` holds the converged pre-withdrawal cash-flow gap (taxes included);
         # penalty_base is the early trad/HSA draw the 10% penalty falls on.
