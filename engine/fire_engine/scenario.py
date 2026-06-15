@@ -426,6 +426,11 @@ class Scenario(BaseModel):
     income_streams: list[IncomeStream] = Field(default_factory=list)
     retirement_age: int = 65
     expense_streams: list[ExpenseStream] = Field(default_factory=list)
+    # HSA-eligible out-of-pocket medical spending, kept in its own section rather
+    # than mixed into the general expense table with a per-row checkbox. Always
+    # essential medical; drives HSA utilization. The per-stream is_medical flag on
+    # expense_streams is deprecated but still honored as a fallback for old data.
+    medical_streams: list[ExpenseStream] = Field(default_factory=list)
     liabilities: list[Liability] = Field(default_factory=list)
     waterfall: list[WaterfallStep] = Field(default_factory=default_waterfall)
     # Optional age-keyed overrides of `waterfall` (e.g. divert from 401k to taxable

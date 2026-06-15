@@ -202,7 +202,10 @@ def _precompute_regimes(scenario: Scenario, retirement_age: int) -> list[YearReg
 def _expenses_for_year(scenario: Scenario, t: int, age: int,
                        cum_infl: np.ndarray) -> tuple[np.ndarray, ...]:
     """(essential, discretionary, essential_medical, discretionary_medical),
-    each (P,) nominal. Discretionary streams are subject to guardrail cuts."""
+    each (P,) nominal. Discretionary streams are subject to guardrail cuts.
+
+    General expense_streams may still flag is_medical (deprecated fallback);
+    dedicated medical_streams are always essential medical and HSA-eligible."""
     ess = np.zeros_like(cum_infl)
     disc = np.zeros_like(cum_infl)
     ess_med = np.zeros_like(cum_infl)
@@ -222,6 +225,15 @@ def _expenses_for_year(scenario: Scenario, t: int, age: int,
             disc = disc + nominal
             if s.is_medical:
                 disc_med = disc_med + nominal
+    for s in scenario.medical_streams:
+        if s.start_age is not None and age < s.start_age:
+            continue
+        if s.end_age is not None and age > s.end_age:
+            continue
+        amount = s.annual * (1 + s.extra_inflation) ** t
+        nominal = amount * cum_infl if s.inflates else np.full_like(cum_infl, amount)
+        ess = ess + nominal
+        ess_med = ess_med + nominal
     return ess, disc, ess_med, disc_med
 
 
