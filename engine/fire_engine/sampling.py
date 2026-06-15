@@ -42,6 +42,10 @@ class MarketPaths:
     cash: np.ndarray
     inflation: np.ndarray
     cum_inflation: np.ndarray
+    # Standard-normal shocks (n_paths, n_years) shared across income streams that
+    # carry volatility; each stream scales it by its own sigma. None = no income
+    # noise (deterministic mode, or no variable streams). See engine wages calc.
+    income_z: np.ndarray | None = None
 
     @property
     def n_paths(self) -> int:
@@ -162,5 +166,8 @@ def sample_paths(scenario: Scenario, n_paths: int | None = None,
 
     cum = np.ones((stock.shape[0], n_years + 1))
     np.cumprod(1 + inflation, axis=1, out=cum[:, 1:])
+    # Per-path income shocks for any volatile income streams (engine applies the
+    # per-stream sigma). Deterministic projections stay noise-free.
+    income_z = None if deterministic else rng.standard_normal((stock.shape[0], n_years))
     return MarketPaths(stock=stock, bond=bond, cash=cash,
-                       inflation=inflation, cum_inflation=cum)
+                       inflation=inflation, cum_inflation=cum, income_z=income_z)

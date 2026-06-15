@@ -220,6 +220,29 @@ def _expenses_for_year(scenario: Scenario, t: int, age: int,
     return ess, disc, ess_med, disc_med
 
 
+def _secondary_income_schedule(scenario: Scenario, mean_infl: float
+                               ) -> list[list[tuple[float, float]]]:
+    """Per simulation year, the list of (real_value, vol) for each secondary
+    income stream active that year. Real values compound from the stream's start
+    at its own growth; nominal conversion and per-path volatility are applied in
+    the loop. Empty inner lists (the default, no streams) reproduce single-salary
+    behavior exactly."""
+    T = scenario.n_years
+    start_age = scenario.start_age
+    by_year: list[list[tuple[float, float]]] = [[] for _ in range(T)]
+    for stream in scenario.income_streams:
+        g = stream.effective_real_growth(mean_infl)
+        s_age = stream.start_age if stream.start_age is not None else start_age
+        e_age = stream.end_age if stream.end_age is not None else scenario.profile.horizon_age
+        t_start = max(s_age - start_age, 0)
+        for t in range(T):
+            age = start_age + t
+            if s_age <= age <= e_age:
+                real_val = stream.annual * (1 + g) ** max(t - t_start, 0)
+                by_year[t].append((real_val, stream.vol))
+    return by_year
+
+
 def _contribution_limits(age: int, infl: np.ndarray, coverage: str) -> dict[str, np.ndarray]:
     lim = load_limits()
     k401 = lim["employee_401k"]
@@ -251,12 +274,17 @@ def _allocate_waterfall(
     match_pct: float,
     wages: np.ndarray,
     infl: np.ndarray,
+    match_wages: np.ndarray | None = None,
 ) -> tuple[dict[AccountType, np.ndarray], np.ndarray, np.ndarray]:
     """Allocate positive free cash flow down the waterfall.
 
     Returns (contributions by account type, pretax total, employer match).
     Pure function of the inputs; capped by group limits and available cash.
+    The employer match is keyed off `match_wages` (the primary salary) so
+    secondary income streams don't inflate the match; defaults to `wages`.
     """
+    if match_wages is None:
+        match_wages = wages
     remaining = np.maximum(available, 0.0).copy()
     group_left = {k: v.copy() for k, v in limits.items()}
     contrib: dict[AccountType, np.ndarray] = {}
@@ -265,7 +293,7 @@ def _allocate_waterfall(
         group = _LIMIT_GROUP.get(step.account)
         cap = group_left[group] if group else np.full_like(remaining, np.inf)
         if step.kind == "to_match":
-            want = np.minimum(match_pct * wages, cap)
+            want = np.minimum(match_pct * match_wages, cap)
         elif step.kind == "fixed":
             want = np.minimum((step.amount or 0.0) * infl, cap)
         else:  # max
@@ -284,7 +312,7 @@ def _allocate_waterfall(
         (v for k, v in contrib.items() if k in (AccountType.trad_401k, AccountType.roth_401k)),
         start=np.zeros_like(remaining),
     )
-    match = np.where(employee_401k > 0, match_pct * wages, 0.0)
+    match = np.where(employee_401k > 0, match_pct * match_wages, 0.0)
     return contrib, pretax, match
 
 
@@ -334,6 +362,10 @@ def run(
     start_age = scenario.start_age
     state = PortfolioState(scenario, P, balance_scale=balance_scale)
     regimes = _precompute_regimes(scenario, retirement_age)
+    # secondary income streams (side hustles, rental, barista) layered on the
+    # primary salary; empty list -> single-salary behavior, unchanged.
+    secondary_income = _secondary_income_schedule(scenario, scenario.inflation.mean)
+    income_z = paths.income_z
 
     # group one-time flow events by sim year
     onetime: dict[int, list] = {}
@@ -406,7 +438,17 @@ def run(
         state.season_conversions(t)
         portfolio_start = state.total_net_worth()
 
-        wages = regime.salary_real * infl
+        primary_wages = regime.salary_real * infl
+        # secondary streams: nominal value with optional per-path lognormal noise
+        # (mean-1, so the expected income is unchanged); primary stays predictable.
+        secondary_wages = zeros
+        for real_val, vol in secondary_income[t]:
+            if vol > 0.0 and income_z is not None:
+                mult = np.exp(income_z[:, t] * vol - 0.5 * vol * vol)
+            else:
+                mult = 1.0
+            secondary_wages = secondary_wages + real_val * infl * mult
+        wages = primary_wages + secondary_wages
         ss_nom = ss_annual_real * infl if age >= ss.claiming_age else zeros
 
         # RMD comes out of traditional accounts before anything else
@@ -551,7 +593,8 @@ def run(
             # rule); without wages, surplus flows to the unlimited steps (taxable)
             limits_eff = {k: np.minimum(v, wages) for k, v in limits.items()}
             contrib, pretax, match = _allocate_waterfall(
-                available, scenario.waterfall, limits_eff, regime.match_pct, wages, infl
+                available, scenario.waterfall, limits_eff, regime.match_pct, wages, infl,
+                match_wages=primary_wages,
             )
 
             wplan = plan_withdrawals(

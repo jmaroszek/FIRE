@@ -100,6 +100,34 @@ class Income(BaseModel):
         return self.real_growth
 
 
+class IncomeStream(BaseModel):
+    """A secondary income source layered on top of the primary salary (`income`):
+    a side hustle, rental, consulting, or a spouse's wages. Unlike the primary
+    salary it does NOT carry the employer 401k match (the match anchors to
+    `income`), but it does count as earned income that raises the IRA/401k
+    contribution headroom while it is active.
+
+    Active over [start_age, end_age] (inclusive; defaults: from sim start, to
+    horizon), so a stream can run before, during, or after retirement — modeling
+    barista-FI income as a post-retirement stream, for instance. `vol` adds
+    per-path lognormal income variability (0 = steady); side income is where the
+    variance usually lives, while the primary salary stays predictable.
+    """
+
+    name: str = "Side Income"
+    annual: float = 0.0  # today's dollars
+    start_age: Optional[int] = None  # None = from simulation start
+    end_age: Optional[int] = None  # None = until horizon (inclusive bounds)
+    real_growth: float = 0.0
+    growth_mode: Literal["nominal", "real"] = "nominal"
+    vol: float = 0.0  # per-path lognormal volatility of this stream's annual income
+
+    def effective_real_growth(self, mean_inflation: float) -> float:
+        if self.growth_mode == "nominal":
+            return (1 + self.real_growth) / (1 + mean_inflation) - 1
+        return self.real_growth
+
+
 class ExpenseStream(BaseModel):
     name: str
     annual: float
@@ -374,6 +402,9 @@ class Scenario(BaseModel):
     market: MarketModel = MarketModel()
     inflation: InflationModel = InflationModel()
     income: Income = Income()
+    # Additional income sources beyond the primary salary (side hustles, rental,
+    # spouse). Empty = single-salary behavior (back-compatible).
+    income_streams: list[IncomeStream] = Field(default_factory=list)
     retirement_age: int = 65
     expense_streams: list[ExpenseStream] = Field(default_factory=list)
     liabilities: list[Liability] = Field(default_factory=list)
