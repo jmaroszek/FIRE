@@ -13,7 +13,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # v2: income_streams, waterfall_schedule, medical_streams, Liability.start_age
 
 
 class AccountType(str, Enum):

@@ -127,6 +127,8 @@ class SimResult:
     contrib_pools: dict[str, np.ndarray] | None = None  # destination -> (P, T) nominal
     liability_balance: np.ndarray | None = None  # (T+1,) nominal outstanding debt
     conversion_marginal_rate: np.ndarray | None = None  # (P, T) marginal tax on next conversion $
+    effective_rate: np.ndarray | None = None  # (P, T) avg fed+state income tax / taxable income
+    # (the much-lower companion to the marginal rate — what you actually pay on average)
     rmds: np.ndarray | None = None  # (P, T) nominal required minimum distributions
     port_return: np.ndarray | None = None  # (P, T) nominal blended portfolio return that year
     # (allocation-weighted stock/bond/cash). Deflate with cum_inflation for real returns.
@@ -441,6 +443,7 @@ def run(
     spending_mult_out = np.ones((P, T))
     conversions_out = np.zeros((P, T))
     conv_marginal_rate = np.zeros((P, T))
+    effective_rate_out = np.zeros((P, T))
     rmds_out = np.zeros((P, T))
     contrib_pool_names = ("taxable", "trad", "roth", "hsa", "cash", "match")
     contrib_pools_out = {n: np.zeros((P, T)) for n in contrib_pool_names}
@@ -680,6 +683,13 @@ def run(
         tax_b = fed_b + scenario.profile.state_tax_rate * (ot_b + lt_b)
         conv_marginal_rate[:, t] = (tax_b - (fed + state_tax)) / bump
 
+        # average (effective) fed+state income-tax rate on the year's taxable
+        # income — the much-lower companion line to the marginal rate, which is
+        # what people actually pay and tends to match a personal tax sheet.
+        income_base = ordinary + ltcg
+        effective_rate_out[:, t] = np.divide(
+            fed + state_tax, income_base, out=np.zeros(P), where=income_base > 1.0)
+
         leftover = available
         for acc_type, amount in contrib.items():
             leftover = leftover - amount
@@ -765,6 +775,7 @@ def run(
         contrib_pools=contrib_pools_out,
         liability_balance=liab_balance,
         conversion_marginal_rate=conv_marginal_rate,
+        effective_rate=effective_rate_out,
         rmds=rmds_out,
         port_return=port_return_out,
         aca_subsidy=aca_subsidy_out,

@@ -485,6 +485,15 @@ def marginal_rate_median(result: SimResult) -> list[float]:
     return np.median(result.conversion_marginal_rate, axis=0).tolist()
 
 
+def effective_rate_median(result: SimResult) -> list[float]:
+    """Median effective (average) fed+state income-tax rate per year — the
+    much-lower companion to the marginal rate: total income tax over taxable
+    income, which is what actually lands on a personal tax sheet."""
+    if result.effective_rate is None:
+        return []
+    return np.median(result.effective_rate, axis=0).tolist()
+
+
 def port_return_fan(result: SimResult,
                     percentiles=DEFAULT_PERCENTILES) -> dict[str, list[float]]:
     """Percentile fan of REAL annual portfolio return over time."""
@@ -837,6 +846,7 @@ def summarize(result: SimResult) -> dict:
         "spending_mult_median": np.median(result.spending_mult, axis=0).tolist(),
         "ss_income_median_real": ss_income_median_real(result),
         "marginal_rate_median": marginal_rate_median(result),
+        "effective_rate_median": effective_rate_median(result),
         "port_return_fan": port_return_fan(result),
         "inflation_fan": inflation_fan(result),
         "lifetime_tax": lifetime_tax(result),

@@ -1,4 +1,4 @@
-// TypeScript mirror of engine/fire_engine/scenario.py (SCHEMA_VERSION 1)
+// TypeScript mirror of engine/fire_engine/scenario.py (SCHEMA_VERSION 2)
 
 export type AccountType =
   | "taxable" | "trad_401k" | "trad_ira" | "roth_ira" | "roth_401k" | "hsa" | "cash";
@@ -35,6 +35,18 @@ export interface Income {
   employer_match_pct: number;
 }
 
+/** A secondary income source layered on the primary salary (side hustle, rental,
+ *  spouse). No employer match; active over [start_age, end_age]; optional vol. */
+export interface IncomeStream {
+  name: string;
+  annual: number;
+  start_age?: number | null;
+  end_age?: number | null;
+  real_growth: number;
+  growth_mode: "nominal" | "real";
+  vol: number;
+}
+
 export interface ExpenseStream {
   name: string;
   annual: number;
@@ -51,6 +63,8 @@ export interface Liability {
   balance: number;
   interest_rate: number;
   annual_payment: number;
+  /** Future loan: begins amortizing at this age; null = present-day debt. */
+  start_age?: number | null;
 }
 
 export interface GuardrailRule {
@@ -74,6 +88,13 @@ export interface WaterfallStep {
   account: AccountType;
   kind: "to_match" | "max" | "fixed";
   amount?: number | null;
+}
+
+/** An age-keyed override of the base waterfall (e.g. divert to taxable while
+ *  saving for a house). Applies from start_age until the next segment. */
+export interface WaterfallSegment {
+  start_age: number;
+  steps: WaterfallStep[];
 }
 
 export type WithdrawalSource =
@@ -162,10 +183,17 @@ export interface Scenario {
   market: MarketModel;
   inflation: InflationModel;
   income: Income;
+  /** Secondary income beyond the primary salary; empty = single-salary. */
+  income_streams: IncomeStream[];
   retirement_age: number;
   expense_streams: ExpenseStream[];
+  /** HSA-eligible out-of-pocket medical spending, kept out of the expense table.
+   *  Always essential medical; drives HSA utilization. */
+  medical_streams: ExpenseStream[];
   liabilities: Liability[];
   waterfall: WaterfallStep[];
+  /** Age-keyed overrides of `waterfall`; empty = the base waterfall every year. */
+  waterfall_schedule: WaterfallSegment[];
   withdrawal_policy: WithdrawalPolicy;
   conversion_rule: ConversionRule;
   social_security: SocialSecurity;
@@ -249,6 +277,7 @@ export interface SimulateResult {
   ss_income_median_real: number[];
   rmds_median_real: number[];
   marginal_rate_median: number[];
+  effective_rate_median: number[];
   port_return_fan: FanSeries;
   inflation_fan: FanSeries;
   lifetime_tax: { median_real: number; as_pct_of_spending: number };
