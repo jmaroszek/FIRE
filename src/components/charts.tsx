@@ -237,6 +237,8 @@ export function SweepChart(props: {
 export function FrontierChart(props: {
   sweep: SweepResult; axisMode: "age" | "year"; birthYear: number;
   retirementMarker?: number | null; height?: number;
+  // when given, the estate hover also reads as "≈N yr of spending unspent"
+  annualExpenses?: number | null;
 }) {
   const e50 = props.sweep.estate_p50;
   if (!e50)
@@ -248,15 +250,22 @@ export function FrontierChart(props: {
   const estate = ages.map((a) => e50[String(a)]);
   const lo = ages.map((a) => props.sweep.estate_p25?.[String(a)] ?? e50[String(a)]);
   const hi = ages.map((a) => props.sweep.estate_p75?.[String(a)] ?? e50[String(a)]);
+  const ae = props.annualExpenses && props.annualExpenses > 0 ? props.annualExpenses : null;
+  const estateTrace: Data = ae
+    ? { x, y: estate, yaxis: "y2", type: "scatter", mode: "lines+markers",
+        name: "Median Estate Left", line: { color: "#f0883e", width: 2.5 },
+        customdata: estate.map((e) => e / ae),
+        hovertemplate: "%{x}: %{y:$,.3s} (≈%{customdata:.0f} yr unspent)<extra></extra>" }
+    : { x, y: estate, yaxis: "y2", type: "scatter", mode: "lines+markers",
+        name: "Median Estate Left", line: { color: "#f0883e", width: 2.5 },
+        hovertemplate: "%{x}: %{y:$,.3s}<extra></extra>" };
   const data: Data[] = [
     { x, y: lo, yaxis: "y2", type: "scatter", mode: "lines", line: { width: 0 },
       hoverinfo: "skip", showlegend: false },
     { x, y: hi, yaxis: "y2", type: "scatter", mode: "lines", fill: "tonexty",
       fillcolor: "rgba(240,136,62,0.15)", line: { width: 0 }, name: "Estate 25–75%",
       hoverinfo: "skip" },
-    { x, y: estate, yaxis: "y2", type: "scatter", mode: "lines+markers",
-      name: "Median Estate Left", line: { color: "#f0883e", width: 2.5 },
-      hovertemplate: "%{x}: %{y:$,.3s}<extra></extra>" },
+    estateTrace,
     { x, y: success, yaxis: "y1", type: "scatter", mode: "lines+markers",
       name: "Success", line: { color: "#3fb950", width: 2.5 },
       hovertemplate: "%{x}: %{y:.1%}<extra></extra>" },
@@ -271,6 +280,16 @@ export function FrontierChart(props: {
     showarrow: false, text: `${Math.round(props.sweep.threshold * 100)}% target`,
     font: { color: "#3fb950", size: 10 },
   }];
+  // sweet spot: earliest retirement age clearing the success threshold — anything
+  // later mostly trades years of life for estate you won't spend.
+  const crossIdx = success.findIndex((s) => s >= props.sweep.threshold);
+  if (crossIdx >= 0) {
+    const cx = x[crossIdx];
+    shapes.push({ type: "line", x0: cx, x1: cx, y0: 0, y1: 1, yref: "paper",
+      line: { color: "#3fb950", width: 1.5, dash: "dot" } });
+    annotations.push({ x: cx, y: 0.5, yref: "paper", yanchor: "bottom", xanchor: "left",
+      showarrow: false, text: " Earliest safe", font: { color: "#3fb950", size: 10 } });
+  }
   if (props.retirementMarker != null) {
     shapes.push({ type: "line", x0: props.retirementMarker, x1: props.retirementMarker,
       y0: 0, y1: 1, yref: "paper", line: { color: "#8b949e", width: 1.5, dash: "dash" } });
@@ -282,11 +301,13 @@ export function FrontierChart(props: {
       data={data}
       layout={{
         ...baseLayout, height: props.height ?? 360, hovermode: "x unified",
+        margin: { ...baseLayout.margin, r: 64 },  // room for the right-axis title + ticks
         shapes, annotations: annotations as Layout["annotations"],
-        yaxis: { ...baseLayout.yaxis, tickformat: ".0%", range: [-0.02, 1.05],
+        yaxis: { ...baseLayout.yaxis, tickformat: ".0%", range: [-0.02, 1.05], automargin: true,
           title: { text: "Success", font: { color: "#3fb950" } } },
         yaxis2: { tickformat: "$.3~s", overlaying: "y", side: "right", rangemode: "tozero",
-          gridcolor: "transparent", title: { text: "Estate Left", font: { color: "#f0883e" } } },
+          gridcolor: "transparent", automargin: true,
+          title: { text: "Estate Left", font: { color: "#f0883e" }, standoff: 8 } },
         xaxis: { ...baseLayout.xaxis,
           title: { text: props.axisMode === "age" ? "Retirement Age" : "Retirement Year" } },
         title: { text: "Over-Saving Frontier: Success vs Estate You Leave", font: { size: 14 } },

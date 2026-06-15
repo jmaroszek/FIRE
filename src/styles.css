@@ -124,6 +124,25 @@ main { padding: 18px; max-width: 1500px; width: 100%; margin: 0 auto; }
 }
 .card-head h3 { margin: 0; font-size: 15px; }
 
+/* Collapsible card: a <details> styled like a card, body hidden until opened. */
+.collapsible > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.collapsible > summary::-webkit-details-marker { display: none; }
+.collapsible > summary h3 { margin: 0; margin-right: auto; font-size: 15px; }
+.collapsible > summary .chev {
+  color: var(--muted, #8b949e);
+  font-size: 12px;
+  transition: transform 0.15s ease;
+}
+.collapsible[open] > summary { margin-bottom: 12px; }
+.collapsible[open] > summary .chev { transform: rotate(90deg); }
+
 button {
   background: #21262d;
   border: 1px solid var(--border);

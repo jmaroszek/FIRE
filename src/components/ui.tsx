@@ -29,6 +29,32 @@ export function Section(props: {
   );
 }
 
+/** A card whose body collapses behind its title — for "set once a year" inputs
+ * that shouldn't dominate the Plan tab. Native <details> (free keyboard + a11y),
+ * collapsed by default. Actions in the header don't toggle the panel. */
+export function Collapsible(props: {
+  title: string; info?: string; children: React.ReactNode;
+  actions?: React.ReactNode; defaultOpen?: boolean;
+}) {
+  return (
+    <details className="card collapsible" open={props.defaultOpen ?? false}>
+      <summary>
+        <h3>
+          {props.title}
+          {props.info && <InfoTip text={props.info} />}
+        </h3>
+        {props.actions && (
+          <span className="collapsible-actions" onClick={(e) => e.stopPropagation()}>
+            {props.actions}
+          </span>
+        )}
+        <span className="chev" aria-hidden="true">▸</span>
+      </summary>
+      <div className="collapsible-body">{props.children}</div>
+    </details>
+  );
+}
+
 /** A titled row of content-sized cards within a tab. */
 export function Group(props: { title: string; children: React.ReactNode }) {
   return (
