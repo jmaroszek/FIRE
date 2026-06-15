@@ -1,6 +1,6 @@
 import React from "react";
 import { A } from "../assumptions";
-import { AccountBalanceChart, FanChart, InflationFanChart, InvestingChart } from "../components/charts";
+import { AccountBalanceChart, InvestingChart } from "../components/charts";
 import {
   Field, Group, InfoTip, NumberInput, PercentInput, Section, fmtMoney, fmtPct,
 } from "../components/ui";
@@ -304,51 +304,8 @@ export default function Investing() {
             </Field>
           </div>
           <p className="hint">Bootstrap mode samples inflation jointly with returns from history; these AR(1) settings apply to parametric mode (and to nominal-raise conversion via the mean).</p>
-          {result && (
-            <div style={{ marginTop: 10 }}>
-              <InflationFanChart result={result} axisMode={axisMode} />
-            </div>
-          )}
         </Section>
 
-        <Section
-          className="full"
-          title="Projection"
-          info={A.successRate}
-          actions={
-            <span className="pair">
-              {simulating && <span className="badge">Simulating…</span>}
-              {s.guardrails.enabled && (
-                <span className="badge" title="Spending guardrails active — discretionary spending flexes with market performance">
-                  Guardrails On
-                </span>
-              )}
-              {result && (
-                <span className="badge success">
-                  Success {fmtPct(result.success_rate)}
-                </span>
-              )}
-            </span>
-          }>
-          {simError && <p className="error">{simError}</p>}
-          {result ? (
-            <FanChart
-              result={result}
-              axisMode={axisMode}
-              display={display}
-              retirementMarker={retMarker}
-              snapshots={snapshots}
-              startYear={s.sim.start_year}
-              birthYear={s.profile.birth_year}
-            />
-          ) : (
-            <p className="hint">Running first simulation…</p>
-          )}
-          <p className="hint">
-            Set your stock/bond/cash mix in Market Model above, and your planned
-            retirement age on the Freedom tab.
-          </p>
-        </Section>
       </Group>
     </div>
   );

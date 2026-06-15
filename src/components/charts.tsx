@@ -959,43 +959,6 @@ export function RuinAgeChart(props: {
   );
 }
 
-/** Scatter of each path's mean real return over its first window of years vs.
- * its ending wealth, colored by survival — the sequence-of-returns story. */
-export function SequenceScatter(props: {
-  data: SimulateResult["sequence_scatter"]; height?: number;
-}) {
-  const { first_window_return, ending_real, survived, window } = props.data;
-  if (!first_window_return.length) return <p className="hint">Sequence data unavailable.</p>;
-  const split = (keep: boolean) => {
-    const xs: number[] = [], ys: number[] = [];
-    survived.forEach((s, i) => {
-      if (s === keep) { xs.push(first_window_return[i]); ys.push(ending_real[i]); }
-    });
-    return { xs, ys };
-  };
-  const win = split(true), lose = split(false);
-  const tip = (label: string) =>
-    `First-${window}yr real return %{x:.1%}<br>Ending %{y:$,.0f}<extra>${label}</extra>`;
-  return (
-    <Plot
-      data={[
-        { x: lose.xs, y: lose.ys, type: "scatter", mode: "markers", name: "Ran short",
-          marker: { color: "rgba(255,123,114,0.55)", size: 5 }, hovertemplate: tip("Ran short") },
-        { x: win.xs, y: win.ys, type: "scatter", mode: "markers", name: "Survived",
-          marker: { color: "rgba(63,185,80,0.55)", size: 5 }, hovertemplate: tip("Survived") },
-      ]}
-      layout={{
-        ...baseLayout, height: props.height ?? 340,
-        xaxis: { ...baseLayout.xaxis, tickformat: ".0%", title: { text: `Mean Real Return, First ${window} Years` } },
-        yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero", title: { text: "Ending Net Worth (Today's $)" } },
-        title: { text: "Sequence-Of-Returns Risk", font: { size: 14 } },
-      }}
-      config={config}
-      style={{ width: "100%" }}
-    />
-  );
-}
-
 /** Heatmap of success rate over (retirement age × spending scale). */
 export function SurfaceHeatmap(props: {
   data: SurfaceResult; axisMode: "age" | "year"; birthYear: number;
@@ -1412,30 +1375,3 @@ export function SpendingDepthChart(props: {
   );
 }
 
-export function RealizedReturnFan(props: {
-  result: SimulateResult; axisMode: "age" | "year"; retirementAge: number; birthYear?: number;
-}) {
-  if (!props.result.port_return_fan?.p50?.length)
-    return <p className="hint">Return data unavailable.</p>;
-  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
-  return (
-    <PercentileFanChart x={x} fan={props.result.port_return_fan} axisMode={props.axisMode}
-      yFormat="percent" color="#58a6ff"
-      refLines={[{ value: 0, label: "0%", color: "#8b949e" }]}
-      markers={lifeStageMarkers(props.axisMode, props.birthYear, [{ age: props.retirementAge, label: "Retire", color: "#d29922" }])}
-      title="Realized Real Portfolio Return — Percentile Fan" />
-  );
-}
-
-export function InflationFanChart(props: {
-  result: SimulateResult; axisMode: "age" | "year";
-}) {
-  if (!props.result.inflation_fan?.p50?.length) return null;
-  const x = xValues(props.result, props.axisMode); // price level carries T+1 points
-  return (
-    <PercentileFanChart x={x} fan={props.result.inflation_fan} axisMode={props.axisMode}
-      yFormat="multiplier" color="#d29922"
-      refLines={[{ value: 1, label: "Today", color: "#8b949e" }]}
-      title="Cumulative Inflation — Price Level vs Today" />
-  );
-}

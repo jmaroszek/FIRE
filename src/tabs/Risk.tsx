@@ -1,8 +1,7 @@
 import React, { useState } from "react";
 import { A } from "../assumptions";
 import {
-  HistogramChart, RealizedReturnFan, RuinAgeChart, SequenceScatter,
-  SpendingDepthChart, SurvivalChart,
+  HistogramChart, RuinAgeChart, SpendingDepthChart, SurvivalChart,
 } from "../components/charts";
 import { Field, NumberInput, Section, Stat, fmtMoney, fmtPct } from "../components/ui";
 import { useStore } from "../store";
@@ -97,24 +96,9 @@ export default function Risk() {
         )}
       </Section>
 
-      <Section title="Sequence-Of-Returns Risk" info={A.sequenceRisk}>
-        <SequenceScatter data={result.sequence_scatter} />
-      </Section>
-
-      <Section title="Realized Real Return" info={A.realizedReturn}>
-        <RealizedReturnFan result={result} axisMode={axisMode}
-          retirementAge={scenario.retirement_age} birthYear={scenario.profile.birth_year} />
-      </Section>
-
       <Section title="Maximum Drawdown (Real)" info={A.drawdown}>
         <HistogramChart values={result.max_drawdown} unit="percent" color="rgba(210,153,34,0.55)"
           title="" xTitle="Deepest Peak-To-Trough Fall In Real Net Worth" />
-      </Section>
-
-      <Section title="Lifetime Spending Delivered" info={A.spendingDelivered}>
-        <HistogramChart values={result.spending_distribution.total_real} unit="money"
-          color="rgba(63,185,80,0.5)" title=""
-          xTitle="Total Real Spending Funded Over The Plan (Today's $)" />
       </Section>
 
       <Section title="Realized Spending Level" info={A.spendingDepth}>
