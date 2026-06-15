@@ -18,7 +18,8 @@ export const baseLayout: Partial<Layout> = {
   plot_bgcolor: "transparent",
   font: { color: FG, size: 12 },
   margin: { l: 70, r: 20, t: 30, b: 45 },
-  xaxis: { gridcolor: GRID, zeroline: false },
+  // themed hover spikeline (was an off-theme white/red default under x-unified hover)
+  xaxis: { gridcolor: GRID, zeroline: false, spikecolor: "#6e7681", spikethickness: 1, spikedash: "dot" },
   yaxis: { gridcolor: GRID, zeroline: false },
   showlegend: true,
   legend: { orientation: "h", y: -0.18 },
@@ -169,7 +170,13 @@ export function FanChart(props: {
           // re-renders; reset only when the scale itself changes (real↔nominal,
           // age↔year). Without this, drag-to-zoom is wiped on every mouse move.
           uirevision: `${props.display}-${props.axisMode}`,
-          yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero" },
+          // Default the view to the likely range (~p75 + headroom) so the long
+          // p95 tail doesn't stretch the axis to tens of millions. The full fan
+          // is still drawn — double-click or drag to zoom out to it.
+          yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s",
+            range: [0, Math.max(...fan.p75.filter((v) => isFinite(v)),
+                                ...fan.p50.filter((v) => isFinite(v))) * 1.1],
+            autorange: false },
           xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
           title: { text: `Net Worth (${props.display === "real" ? "Today's" : "Nominal"} $)`, font: { size: 14 } },
         }}

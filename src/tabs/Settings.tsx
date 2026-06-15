@@ -9,7 +9,8 @@ export default function Settings() {
   const s = scenario;
 
   return (
-    <div className="grid2">
+    <div className="stack">
+      <div className="stat-grid">
       <Section title="Profile">
         <div className="fields">
           <Field label="Birth Year">
@@ -45,6 +46,7 @@ export default function Settings() {
           </Field>
         </div>
       </Section>
+      </div>
 
       <Section
         title="Spending Categories"
