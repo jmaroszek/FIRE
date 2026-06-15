@@ -1,21 +1,19 @@
 import React, { useEffect, useState } from "react";
 import { useStore, type Tab } from "./store";
 import Dashboard from "./tabs/Dashboard";
-import CashFlow from "./tabs/CashFlow";
-import Investing from "./tabs/Investing";
+import Plan from "./tabs/Plan";
+import Timeline from "./tabs/Timeline";
 import Taxes from "./tabs/Taxes";
-import Freedom from "./tabs/Freedom";
 import Risk from "./tabs/Risk";
 import Compare from "./tabs/Compare";
 import Settings from "./tabs/Settings";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
-  { id: "cashflow", label: "Cash Flow" },
-  { id: "investing", label: "Investing" },
-  { id: "taxes", label: "Taxes" },
-  { id: "freedom", label: "Freedom" },
+  { id: "plan", label: "Plan" },
+  { id: "timeline", label: "Timeline" },
   { id: "risk", label: "Risk" },
+  { id: "taxes", label: "Accounts & Taxes" },
   { id: "compare", label: "Compare" },
   { id: "settings", label: "Settings" },
 ];
@@ -131,11 +129,10 @@ export default function App() {
       </header>
       <main>
         {tab === "dashboard" && <Dashboard />}
-        {tab === "cashflow" && <CashFlow />}
-        {tab === "investing" && <Investing />}
-        {tab === "taxes" && <Taxes />}
-        {tab === "freedom" && <Freedom />}
+        {tab === "plan" && <Plan />}
+        {tab === "timeline" && <Timeline />}
         {tab === "risk" && <Risk />}
+        {tab === "taxes" && <Taxes />}
         {tab === "compare" && <Compare />}
         {tab === "settings" && <Settings />}
       </main>
