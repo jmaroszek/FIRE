@@ -1396,3 +1396,172 @@ export function SpendingDepthChart(props: {
   );
 }
 
+// ---- Phase 2C composites (merge several scattered charts into one) --------
+
+/** Retirement Spending: living expenses + net healthcare (ACA/IRMAA) on one
+ * age axis — merges the old Spending Trajectory and Healthcare Cost charts. */
+export function RetirementSpendingChart(props: {
+  result: SimulateResult; axisMode: "age" | "year"; retirementAge: number;
+  coverageEndAge?: number; birthYear?: number; height?: number;
+}) {
+  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
+  const hc = props.result.healthcare?.net_cost_real;
+  const series = [
+    { name: "Living Expenses", values: props.result.expenses_median_real, color: ACCENT, fill: true },
+  ];
+  if (hc?.some((v) => v > 1))
+    series.push({ name: "Net Healthcare", values: hc, color: "#bc8cff", fill: false });
+  const marks: LifeMark[] = [{ age: props.retirementAge, label: "Retire", color: "#d29922" }];
+  if (props.coverageEndAge)
+    marks.push({ age: props.coverageEndAge, label: `Medicare ${props.coverageEndAge}`, color: "#bc8cff" });
+  return (
+    <SeriesChart x={[...x]} axisMode={props.axisMode} yFormat="money" legend height={props.height}
+      series={series}
+      markers={lifeStageMarkers(props.axisMode, props.birthYear, marks)}
+      title="Retirement Spending — Living + Net Healthcare, Today's $" />
+  );
+}
+
+/** Wealth & Flows: stacked tax-pool balances (left axis) with annual
+ * contributions (up) and withdrawals (down) as bars on the right axis — merges
+ * the Account Balances, Annual Investing, and Spending-By-Source charts. */
+export function WealthFlowsChart(props: {
+  result: SimulateResult; axisMode: "age" | "year"; height?: number;
+}) {
+  const xPools = xValues(props.result, props.axisMode); // T+1 (carries "today")
+  const xFlow = props.axisMode === "age" ? [...props.result.ages] : [...props.result.years]; // T
+  const pools = props.result.pool_medians_real ?? {};
+  const inv = props.result.investing_real ?? {};
+  const wd = props.result.withdrawals_real ?? {};
+  const poolKeys = POOL_ORDER.filter((k) => pools[k]?.some((v) => v > 1));
+  const data: Data[] = poolKeys.map((k) => ({
+    x: xPools, y: pools[k], type: "scatter" as const, mode: "lines" as const,
+    stackgroup: "bal", name: POOL_LABELS[k], yaxis: "y1",
+    line: { width: 0.5, color: POOL_COLORS[k] }, fillcolor: POOL_COLORS[k] + "55",
+    hovertemplate: "%{y:$,.0f}",
+  }));
+  const contribTotal = xFlow.map((_, i) =>
+    Object.values(inv).reduce((s, arr) => s + (arr[i] ?? 0), 0));
+  const wdTotal = xFlow.map((_, i) =>
+    Object.values(wd).reduce((s, arr) => s + (arr[i] ?? 0), 0));
+  data.push(
+    { x: xFlow, y: contribTotal, type: "bar", name: "Contributions", yaxis: "y2",
+      marker: { color: "rgba(63,185,80,0.5)" }, hovertemplate: "Contributed %{y:$,.0f}<extra></extra>" },
+    { x: xFlow, y: wdTotal.map((v) => -v), type: "bar", name: "Withdrawals", yaxis: "y2",
+      marker: { color: "rgba(248,81,73,0.5)" }, hovertemplate: "Withdrew %{y:$,.0f}<extra></extra>" },
+  );
+  return (
+    <Plot
+      data={data}
+      layout={{
+        ...baseLayout, height: props.height ?? 380, hovermode: "x unified", barmode: "relative",
+        margin: { ...baseLayout.margin, r: 64 },
+        legend: { ...baseLayout.legend, traceorder: "reversed" },
+        yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero",
+          title: { text: "Balance (Today's $)" } },
+        yaxis2: { tickformat: "$.3~s", overlaying: "y", side: "right", gridcolor: "transparent",
+          automargin: true, zeroline: true, title: { text: "Annual Flow", standoff: 8 } },
+        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
+        title: { text: "Wealth & Flows — Balances, Contributions, Withdrawals", font: { size: 14 } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
+/** Taxes over time: annual tax dollars (bars, left) with the marginal and
+ * effective rates (lines, right) — merges Annual Taxes and Marginal Rate, and
+ * adds the effective line that answers "why is marginal so high?". */
+export function AnnualTaxRateChart(props: {
+  result: SimulateResult; axisMode: "age" | "year"; retirementAge: number;
+  claimingAge?: number; birthYear?: number; height?: number;
+}) {
+  const x = props.axisMode === "age" ? [...props.result.ages] : [...props.result.years];
+  const marks: LifeMark[] = [
+    { age: props.retirementAge, label: "Retire", color: "#d29922" },
+    { age: 75, label: "RMD 75", color: "#8b949e" },
+  ];
+  if (props.claimingAge) marks.push({ age: props.claimingAge, label: "SS", color: "#56d364" });
+  const lsm = lifeStageMarkers(props.axisMode, props.birthYear, marks);
+  const data: Data[] = [
+    { x, y: props.result.taxes_median_real, type: "bar", name: "Annual Tax ($)", yaxis: "y1",
+      marker: { color: "rgba(88,166,255,0.45)" }, hovertemplate: "Tax %{y:$,.0f}<extra></extra>" },
+    { x, y: props.result.marginal_rate_median ?? [], type: "scatter", mode: "lines",
+      name: "Marginal Rate", yaxis: "y2", line: { color: "#f0883e", width: 2 },
+      hovertemplate: "Marginal %{y:.1%}<extra></extra>" },
+    { x, y: props.result.effective_rate_median ?? [], type: "scatter", mode: "lines",
+      name: "Effective Rate", yaxis: "y2", line: { color: "#3fb950", width: 2 },
+      hovertemplate: "Effective %{y:.1%}<extra></extra>" },
+  ];
+  return (
+    <Plot
+      data={data}
+      layout={{
+        ...baseLayout, height: props.height ?? 340, hovermode: "x unified",
+        margin: { ...baseLayout.margin, r: 64 },
+        shapes: lsm.shapes, annotations: lsm.annotations as Layout["annotations"],
+        yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero",
+          title: { text: "Annual Tax" } },
+        yaxis2: { tickformat: ".0%", overlaying: "y", side: "right", rangemode: "tozero",
+          gridcolor: "transparent", automargin: true, title: { text: "Rate", standoff: 8 } },
+        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
+        title: { text: "Taxes Over Time — Annual $ vs Marginal & Effective Rate", font: { size: 14 } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
+/** When can I retire: the success-vs-retirement-age curve (left) with the gain
+ * from working one more year as bars (right) and the earliest-safe marker —
+ * replaces the separate Years-to-Retirement and One-More-Year tiles. */
+export function SweepGainChart(props: {
+  sweep: SweepResult; axisMode: "age" | "year"; birthYear: number; height?: number;
+}) {
+  const ages = Object.keys(props.sweep.sweep).map(Number).sort((a, b) => a - b);
+  const x = props.axisMode === "age" ? ages : ages.map((a) => a + props.birthYear);
+  const success = ages.map((a) => props.sweep.sweep[String(a)]);
+  const gain = success.map((s, i) => (i === 0 ? 0 : s - success[i - 1]));
+  const data: Data[] = [
+    { x, y: gain, type: "bar", name: "Gain From One More Year", yaxis: "y2",
+      marker: { color: "rgba(88,166,255,0.5)" },
+      hovertemplate: "+%{y:.1%} vs prior age<extra></extra>" },
+    { x, y: success, type: "scatter", mode: "lines+markers", name: "Success", yaxis: "y1",
+      line: { color: "#3fb950", width: 2.5 }, hovertemplate: "%{x}: %{y:.1%}<extra></extra>" },
+  ];
+  const shapes: Partial<Shape>[] = [{
+    type: "line", xref: "x", x0: x[0], x1: x[x.length - 1],
+    y0: props.sweep.threshold, y1: props.sweep.threshold, yref: "y",
+    line: { color: "#3fb950", width: 1, dash: "dot" },
+  }];
+  const annotations: any[] = [];
+  const crossIdx = success.findIndex((s) => s >= props.sweep.threshold);
+  if (crossIdx >= 0) {
+    shapes.push({ type: "line", x0: x[crossIdx], x1: x[crossIdx], y0: 0, y1: 1, yref: "paper",
+      line: { color: "#3fb950", width: 1.5, dash: "dot" } });
+    annotations.push({ x: x[crossIdx], y: 1, yref: "paper", yanchor: "bottom", xanchor: "left",
+      showarrow: false, text: " Earliest safe", font: { color: "#3fb950", size: 10 } });
+  }
+  return (
+    <Plot
+      data={data}
+      layout={{
+        ...baseLayout, height: props.height ?? 340, hovermode: "x unified",
+        margin: { ...baseLayout.margin, r: 64 },
+        shapes, annotations: annotations as Layout["annotations"],
+        yaxis: { ...baseLayout.yaxis, tickformat: ".0%", range: [-0.02, 1.05], automargin: true,
+          title: { text: "Success" } },
+        yaxis2: { tickformat: ".1%", overlaying: "y", side: "right", rangemode: "tozero",
+          gridcolor: "transparent", automargin: true, title: { text: "Gain / Year", standoff: 8 } },
+        xaxis: { ...baseLayout.xaxis,
+          title: { text: props.axisMode === "age" ? "Retirement Age" : "Retirement Year" } },
+        title: { text: "When Can I Retire — Success & The Gain From One More Year", font: { size: 14 } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
