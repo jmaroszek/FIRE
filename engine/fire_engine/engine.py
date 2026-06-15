@@ -89,10 +89,15 @@ def _liability_schedule(scenario: Scenario, T: int) -> tuple[np.ndarray, np.ndar
     """
     payments = np.zeros(T)
     balance = np.zeros(T + 1)
+    start_age = scenario.start_age
     for liab in scenario.liabilities:
+        # future loans begin amortizing at start_age; present-day debt at t=0
+        t_start = max(liab.start_age - start_age, 0) if liab.start_age is not None else 0
+        if t_start > T:
+            continue
         bal = max(liab.balance, 0.0)
-        balance[0] += bal
-        for t in range(T):
+        balance[t_start] += bal
+        for t in range(t_start, T):
             if bal <= 1e-9:
                 break
             bal *= 1.0 + liab.interest_rate

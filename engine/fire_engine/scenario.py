@@ -146,12 +146,20 @@ class Liability(BaseModel):
     amortization (balance grows by interest, shrinks by the payment) reaches
     zero. The outstanding balance is subtracted from reported net worth but
     plays no role in withdrawals or failure — only the payment does.
+
+    `start_age` schedules a FUTURE loan (e.g. a mortgage taken on at 40): the
+    balance and payments don't exist until that age, and once it amortizes to
+    zero the payment stream stops, dropping expenses. None = present-day debt.
+    The offsetting asset (a home) is not modeled, so a future loan's origination
+    shows as a step down in reported net worth — net worth here is financial,
+    non-home wealth net of debt.
     """
 
     name: str
-    balance: float  # outstanding principal today
+    balance: float  # outstanding principal at start_age (or today if start_age is None)
     interest_rate: float = 0.0  # annual nominal rate
     annual_payment: float = 0.0  # fixed nominal payment per year
+    start_age: Optional[int] = None  # None = present-day; else the loan begins at this age
 
 
 class GuardrailRule(BaseModel):

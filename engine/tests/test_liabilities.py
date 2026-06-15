@@ -70,6 +70,38 @@ def test_net_worth_netted_and_payments_are_expenses():
     assert r1.liability_balance[10] == 0
 
 
+def test_future_loan_starts_amortizing_at_start_age():
+    """A mortgage taken on at age 45 (birth 1990 -> sim year 2026, start age 36):
+    no balance or payments before 45, amortizes after, expenses drop at payoff."""
+    s = base_scenario(liabilities=[
+        Liability(name="Future Mortgage", balance=90000, interest_rate=0.0,
+                  annual_payment=30000, start_age=45)])
+    payments, balance = _liability_schedule(s, 40)
+    start_age = s.start_age  # 2026 - 1990 = 36
+    t45 = 45 - start_age      # sim-year index of age 45
+    assert np.allclose(payments[:t45], 0.0)             # nothing before the loan starts
+    assert np.allclose(balance[:t45], 0.0)
+    assert balance[t45] == 90000                        # opening balance appears at 45
+    assert payments[t45] == 30000 and payments[t45 + 2] == 30000
+    assert np.allclose(payments[t45 + 3:], 0.0)         # paid off after 3 years
+    assert balance[t45 + 3] == 0.0
+
+
+def test_future_loan_expense_drop_after_payoff():
+    plain = base_scenario()
+    fut = base_scenario(liabilities=[
+        Liability(name="Mortgage", balance=60000, interest_rate=0.0,
+                  annual_payment=20000, start_age=45)])
+    r0 = run(plain, deterministic=True)
+    r1 = run(fut, deterministic=True)
+    start_age = fut.start_age
+    t45 = 45 - start_age
+    # no expense bump before the loan, +20k during it, back to baseline after payoff
+    assert np.allclose(r1.expenses[:, t45 - 1], r0.expenses[:, t45 - 1])
+    assert np.allclose(r1.expenses[:, t45] - r0.expenses[:, t45], 20000)
+    assert np.allclose(r1.expenses[:, t45 + 3], r0.expenses[:, t45 + 3])
+
+
 def test_years_to_fi_requires_sustained_crossing():
     sweep = {40: 0.5, 41: 0.95, 42: 0.97, 43: 0.6, 44: 0.91, 45: 0.93}
     assert m.years_to_fi(sweep, 0.90, 30) == 14  # age 44, not the 41-42 peak
