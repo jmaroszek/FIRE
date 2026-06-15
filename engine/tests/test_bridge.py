@@ -54,18 +54,22 @@ def test_no_bridge_when_retiring_after_penalty_free_age():
 def test_locked_traditional_breaks_bridge_via_early_penalty():
     """Money trapped in traditional with last-resort early withdrawals on: no hard
     shortfall (trad is huge), but the bridge only survives by paying the 10%
-    penalty — exactly the fragility a binary success rate hides."""
+    penalty. The bridge split keeps "ran dry" (bridge_fail) distinct from "leaned
+    on the penalty", while the headline success rate now counts the penalty lean
+    as a failure too — it is no longer hidden."""
     s = _early_retiree(
         [Account(type=AccountType.trad_401k, balance=2_000_000),
          Account(type=AccountType.cash, balance=20000)],
         allow_early_trad=True)
     r = run(s)
     b = m.bridge_analysis(r)
-    assert b["bridge_fail_rate"] == 0.0           # trad covers the need, so no shortfall
+    assert b["bridge_fail_rate"] == 0.0           # trad covers the need, so no hard shortfall
     assert b["early_penalty_rate"] == 1.0         # ...but only by paying the penalty
     assert b["bridge_break_rate"] == 1.0          # break captures the penalty-only case
     assert b["median_penalty_real"] > 0.0
     assert r.penalty_paid[:, : 60 - s.start_age].sum() > 0.0
+    # the penalty lean is a global failure now, not a hidden "success"
+    assert r.success_rate == 0.0
     # most of the portfolio is penalty-locked entering retirement
     assert b["at_retirement"]["pct_accessible"] < 0.10
 

@@ -18,7 +18,8 @@ export const baseLayout: Partial<Layout> = {
   plot_bgcolor: "transparent",
   font: { color: FG, size: 12 },
   margin: { l: 70, r: 20, t: 30, b: 45 },
-  xaxis: { gridcolor: GRID, zeroline: false },
+  // themed hover spikeline (was an off-theme white/red default under x-unified hover)
+  xaxis: { gridcolor: GRID, zeroline: false, spikecolor: "#6e7681", spikethickness: 1, spikedash: "dot" },
   yaxis: { gridcolor: GRID, zeroline: false },
   showlegend: true,
   legend: { orientation: "h", y: -0.18 },
@@ -169,7 +170,13 @@ export function FanChart(props: {
           // re-renders; reset only when the scale itself changes (real↔nominal,
           // age↔year). Without this, drag-to-zoom is wiped on every mouse move.
           uirevision: `${props.display}-${props.axisMode}`,
-          yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero" },
+          // Default the view to the likely range (~p75 + headroom) so the long
+          // p95 tail doesn't stretch the axis to tens of millions. The full fan
+          // is still drawn — double-click or drag to zoom out to it.
+          yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s",
+            range: [0, Math.max(...fan.p75.filter((v) => isFinite(v)),
+                                ...fan.p50.filter((v) => isFinite(v))) * 1.1],
+            autorange: false },
           xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
           title: { text: `Net Worth (${props.display === "real" ? "Today's" : "Nominal"} $)`, font: { size: 14 } },
         }}
@@ -237,6 +244,8 @@ export function SweepChart(props: {
 export function FrontierChart(props: {
   sweep: SweepResult; axisMode: "age" | "year"; birthYear: number;
   retirementMarker?: number | null; height?: number;
+  // when given, the estate hover also reads as "≈N yr of spending unspent"
+  annualExpenses?: number | null;
 }) {
   const e50 = props.sweep.estate_p50;
   if (!e50)
@@ -248,15 +257,22 @@ export function FrontierChart(props: {
   const estate = ages.map((a) => e50[String(a)]);
   const lo = ages.map((a) => props.sweep.estate_p25?.[String(a)] ?? e50[String(a)]);
   const hi = ages.map((a) => props.sweep.estate_p75?.[String(a)] ?? e50[String(a)]);
+  const ae = props.annualExpenses && props.annualExpenses > 0 ? props.annualExpenses : null;
+  const estateTrace: Data = ae
+    ? { x, y: estate, yaxis: "y2", type: "scatter", mode: "lines+markers",
+        name: "Median Estate Left", line: { color: "#f0883e", width: 2.5 },
+        customdata: estate.map((e) => e / ae),
+        hovertemplate: "%{x}: %{y:$,.3s} (≈%{customdata:.0f} yr unspent)<extra></extra>" }
+    : { x, y: estate, yaxis: "y2", type: "scatter", mode: "lines+markers",
+        name: "Median Estate Left", line: { color: "#f0883e", width: 2.5 },
+        hovertemplate: "%{x}: %{y:$,.3s}<extra></extra>" };
   const data: Data[] = [
     { x, y: lo, yaxis: "y2", type: "scatter", mode: "lines", line: { width: 0 },
       hoverinfo: "skip", showlegend: false },
     { x, y: hi, yaxis: "y2", type: "scatter", mode: "lines", fill: "tonexty",
       fillcolor: "rgba(240,136,62,0.15)", line: { width: 0 }, name: "Estate 25–75%",
       hoverinfo: "skip" },
-    { x, y: estate, yaxis: "y2", type: "scatter", mode: "lines+markers",
-      name: "Median Estate Left", line: { color: "#f0883e", width: 2.5 },
-      hovertemplate: "%{x}: %{y:$,.3s}<extra></extra>" },
+    estateTrace,
     { x, y: success, yaxis: "y1", type: "scatter", mode: "lines+markers",
       name: "Success", line: { color: "#3fb950", width: 2.5 },
       hovertemplate: "%{x}: %{y:.1%}<extra></extra>" },
@@ -271,6 +287,16 @@ export function FrontierChart(props: {
     showarrow: false, text: `${Math.round(props.sweep.threshold * 100)}% target`,
     font: { color: "#3fb950", size: 10 },
   }];
+  // sweet spot: earliest retirement age clearing the success threshold — anything
+  // later mostly trades years of life for estate you won't spend.
+  const crossIdx = success.findIndex((s) => s >= props.sweep.threshold);
+  if (crossIdx >= 0) {
+    const cx = x[crossIdx];
+    shapes.push({ type: "line", x0: cx, x1: cx, y0: 0, y1: 1, yref: "paper",
+      line: { color: "#3fb950", width: 1.5, dash: "dot" } });
+    annotations.push({ x: cx, y: 0.5, yref: "paper", yanchor: "bottom", xanchor: "left",
+      showarrow: false, text: " Earliest safe", font: { color: "#3fb950", size: 10 } });
+  }
   if (props.retirementMarker != null) {
     shapes.push({ type: "line", x0: props.retirementMarker, x1: props.retirementMarker,
       y0: 0, y1: 1, yref: "paper", line: { color: "#8b949e", width: 1.5, dash: "dash" } });
@@ -282,11 +308,13 @@ export function FrontierChart(props: {
       data={data}
       layout={{
         ...baseLayout, height: props.height ?? 360, hovermode: "x unified",
+        margin: { ...baseLayout.margin, r: 64 },  // room for the right-axis title + ticks
         shapes, annotations: annotations as Layout["annotations"],
-        yaxis: { ...baseLayout.yaxis, tickformat: ".0%", range: [-0.02, 1.05],
+        yaxis: { ...baseLayout.yaxis, tickformat: ".0%", range: [-0.02, 1.05], automargin: true,
           title: { text: "Success", font: { color: "#3fb950" } } },
         yaxis2: { tickformat: "$.3~s", overlaying: "y", side: "right", rangemode: "tozero",
-          gridcolor: "transparent", title: { text: "Estate Left", font: { color: "#f0883e" } } },
+          gridcolor: "transparent", automargin: true,
+          title: { text: "Estate Left", font: { color: "#f0883e" }, standoff: 8 } },
         xaxis: { ...baseLayout.xaxis,
           title: { text: props.axisMode === "age" ? "Retirement Age" : "Retirement Year" } },
         title: { text: "Over-Saving Frontier: Success vs Estate You Leave", font: { size: 14 } },
@@ -521,65 +549,6 @@ export function WithdrawalSourceChart(props: {
   );
 }
 
-const INVEST_LABELS: Record<string, string> = {
-  trad: "Traditional",
-  match: "Employer Match",
-  hsa: "HSA",
-  roth: "Roth",
-  taxable: "Brokerage",
-  cash: "Cash Savings",
-};
-const INVEST_COLORS: Record<string, string> = {
-  trad: "#d29922",
-  match: "#e3b341",
-  hsa: "#bc8cff",
-  roth: "#3fb950",
-  taxable: "#58a6ff",
-  cash: "#8b949e",
-};
-const INVEST_ORDER = ["trad", "match", "hsa", "roth", "taxable", "cash"];
-
-export function InvestingChart(props: {
-  result: SimulateResult; axisMode: "age" | "year"; height?: number;
-}) {
-  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
-  const inv = props.result.investing_real ?? {};
-  const keys = INVEST_ORDER.filter((k) => inv[k]?.some((v) => v > 1));
-  const data: Data[] = keys.map((k) => ({
-    x: [...x],
-    y: inv[k],
-    type: "bar" as const,
-    name: INVEST_LABELS[k],
-    marker: { color: INVEST_COLORS[k] },
-    hovertemplate: `${INVEST_LABELS[k]}: %{y:$,.0f}<extra></extra>`,
-  }));
-  // Transparent overlay trace so the unified hover gets a "Total" row summing
-  // every destination at that year; sits at the top of the stack, draws nothing.
-  const totals = [...x].map((_, i) => keys.reduce((sum, k) => sum + (inv[k]?.[i] ?? 0), 0));
-  data.push({
-    x: [...x], y: totals, type: "scatter", mode: "lines", name: "Total",
-    line: { width: 0 }, showlegend: false,
-    hovertemplate: "Total: %{y:$,.0f}<extra></extra>",
-  });
-  return (
-    <Plot
-      data={data}
-      layout={{
-        ...baseLayout,
-        height: props.height ?? 380,
-        barmode: "stack",
-        bargap: 0.15,
-        hovermode: "x unified",
-        yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s" },
-        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
-        title: { text: "Annual Saving & Investing By Destination — Median Path, Today's $", font: { size: 14 } },
-      }}
-      config={config}
-      style={{ width: "100%" }}
-    />
-  );
-}
-
 const POOL_LABELS: Record<string, string> = {
   taxable: "Brokerage", trad: "Traditional", roth: "Roth", hsa: "HSA", cash: "Cash",
 };
@@ -587,49 +556,6 @@ const POOL_COLORS: Record<string, string> = {
   taxable: "#58a6ff", trad: "#d29922", roth: "#3fb950", hsa: "#bc8cff", cash: "#8b949e",
 };
 const POOL_ORDER = ["taxable", "trad", "roth", "hsa", "cash"];
-
-/** Median balance of each tax pool over time (today's $), stacked — shows how
- * the mix shifts across accumulation, conversions, and drawdown. */
-export function AccountBalanceChart(props: {
-  result: SimulateResult; axisMode: "age" | "year"; height?: number;
-}) {
-  const x = xValues(props.result, props.axisMode); // pools carry T+1 points
-  const pools = props.result.pool_medians_real ?? {};
-  const keys = POOL_ORDER.filter((k) => pools[k]?.some((v) => v > 1));
-  const data: Data[] = keys.map((k) => ({
-    x,
-    y: pools[k],
-    type: "scatter" as const,
-    mode: "lines" as const,
-    stackgroup: "one",
-    name: POOL_LABELS[k],
-    line: { width: 0.5, color: POOL_COLORS[k] },
-    fillcolor: POOL_COLORS[k] + "66",
-    hovertemplate: "%{y:$,.0f}",
-  }));
-  const totals = x.map((_, i) => keys.reduce((sum, k) => sum + (pools[k]?.[i] ?? 0), 0));
-  data.push({
-    x, y: totals, type: "scatter", mode: "lines", name: "Total",
-    line: { width: 0 }, showlegend: false,
-    hovertemplate: "Total: %{y:$,.0f}<extra></extra>",
-  });
-  return (
-    <Plot
-      data={data}
-      layout={{
-        ...baseLayout,
-        height: props.height ?? 360,
-        hovermode: "x unified",
-        legend: { ...baseLayout.legend, traceorder: "reversed" },
-        yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero" },
-        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
-        title: { text: "Account Balances Over Time — Median Path, Today's $", font: { size: 14 } },
-      }}
-      config={config}
-      style={{ width: "100%" }}
-    />
-  );
-}
 
 const SPEND_PALETTE = [
   "#58a6ff", "#3fb950", "#d29922", "#bc8cff", "#f0883e", "#ff7b72",
@@ -695,33 +621,6 @@ export function SpendingActualsChart(props: {
           font: { color: "#d29922", size: 11 },
         }] as Layout["annotations"] : [],
         title: { text: "Spending Actuals By Category — Today's $", font: { size: 14 } },
-      }}
-      config={config}
-      style={{ width: "100%" }}
-    />
-  );
-}
-
-export function TaxesChart(props: {
-  result: SimulateResult; axisMode: "age" | "year"; height?: number;
-}) {
-  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
-  return (
-    <Plot
-      data={[
-        { x: [...x], y: props.result.taxes_median_real, type: "scatter",
-          mode: "lines", name: "Taxes", fill: "tozeroy",
-          line: { color: "#f0883e", width: 2 }, fillcolor: "rgba(240,136,62,0.18)",
-          hovertemplate: "Taxes: %{y:$,.0f}<extra></extra>" },
-      ]}
-      layout={{
-        ...baseLayout,
-        height: props.height ?? 300,
-        hovermode: "x unified",
-        showlegend: false,
-        yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero" },
-        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
-        title: { text: "Federal + State + FICA + Penalties — Median Path, Today's $", font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}
@@ -959,43 +858,6 @@ export function RuinAgeChart(props: {
   );
 }
 
-/** Scatter of each path's mean real return over its first window of years vs.
- * its ending wealth, colored by survival — the sequence-of-returns story. */
-export function SequenceScatter(props: {
-  data: SimulateResult["sequence_scatter"]; height?: number;
-}) {
-  const { first_window_return, ending_real, survived, window } = props.data;
-  if (!first_window_return.length) return <p className="hint">Sequence data unavailable.</p>;
-  const split = (keep: boolean) => {
-    const xs: number[] = [], ys: number[] = [];
-    survived.forEach((s, i) => {
-      if (s === keep) { xs.push(first_window_return[i]); ys.push(ending_real[i]); }
-    });
-    return { xs, ys };
-  };
-  const win = split(true), lose = split(false);
-  const tip = (label: string) =>
-    `First-${window}yr real return %{x:.1%}<br>Ending %{y:$,.0f}<extra>${label}</extra>`;
-  return (
-    <Plot
-      data={[
-        { x: lose.xs, y: lose.ys, type: "scatter", mode: "markers", name: "Ran short",
-          marker: { color: "rgba(255,123,114,0.55)", size: 5 }, hovertemplate: tip("Ran short") },
-        { x: win.xs, y: win.ys, type: "scatter", mode: "markers", name: "Survived",
-          marker: { color: "rgba(63,185,80,0.55)", size: 5 }, hovertemplate: tip("Survived") },
-      ]}
-      layout={{
-        ...baseLayout, height: props.height ?? 340,
-        xaxis: { ...baseLayout.xaxis, tickformat: ".0%", title: { text: `Mean Real Return, First ${window} Years` } },
-        yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero", title: { text: "Ending Net Worth (Today's $)" } },
-        title: { text: "Sequence-Of-Returns Risk", font: { size: 14 } },
-      }}
-      config={config}
-      style={{ width: "100%" }}
-    />
-  );
-}
-
 /** Heatmap of success rate over (retirement age × spending scale). */
 export function SurfaceHeatmap(props: {
   data: SurfaceResult; axisMode: "age" | "year"; birthYear: number;
@@ -1216,40 +1078,6 @@ export function PercentileFanChart(props: {
 
 // ---- named wrappers consuming summarize() series -------------------------
 
-export function MarginalRateChart(props: {
-  result: SimulateResult; axisMode: "age" | "year";
-  retirementAge: number; claimingAge?: number; birthYear?: number; height?: number;
-}) {
-  if (!props.result.marginal_rate_median?.length)
-    return <p className="hint">No conversion-rate data.</p>;
-  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
-  const marks: LifeMark[] = [
-    { age: props.retirementAge, label: "Retire", color: "#d29922" },
-    { age: 60, label: "59½", color: "#f0883e" },
-    { age: 75, label: "RMD 75", color: "#8b949e" },
-  ];
-  if (props.claimingAge) marks.push({ age: props.claimingAge, label: "SS", color: "#56d364" });
-  return (
-    <SeriesChart x={x} axisMode={props.axisMode} yFormat="percent" height={props.height}
-      series={[{ name: "Next $ Taxed At", values: props.result.marginal_rate_median, color: "#f0883e", fill: true }]}
-      refLines={[{ value: 0.12, label: "12%" }, { value: 0.22, label: "22%" }, { value: 0.24, label: "24%" }]}
-      markers={lifeStageMarkers(props.axisMode, props.birthYear, marks)}
-      title="Marginal Tax Rate On The Next Conversion Dollar — Median Path" />
-  );
-}
-
-export function SpendingTrajectoryChart(props: {
-  result: SimulateResult; axisMode: "age" | "year"; retirementAge: number; birthYear?: number;
-}) {
-  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
-  return (
-    <SeriesChart x={x} axisMode={props.axisMode} yFormat="money"
-      series={[{ name: "Planned Spending", values: props.result.expenses_median_real, color: ACCENT, fill: true }]}
-      markers={lifeStageMarkers(props.axisMode, props.birthYear, [{ age: props.retirementAge, label: "Retire", color: "#d29922" }])}
-      title="Planned Spending — Median Path, Today's $" />
-  );
-}
-
 /** Bill-Perkins-style enjoyment decay: a dollar buys full living through the
  * go-go years, then less as health and energy fade. Full to `goGoEnd` (75),
  * tapering linearly to `floor` (0.3) by `taperEnd` (90), flat thereafter. */
@@ -1339,40 +1167,6 @@ export function TradOverfundingChart(props: {
   );
 }
 
-export function HealthcareTrajectoryChart(props: {
-  result: SimulateResult; axisMode: "age" | "year";
-  retirementAge: number; coverageEndAge: number; birthYear?: number;
-}) {
-  const hc = props.result.healthcare;
-  if (!hc?.net_cost_real && !hc?.subsidy_real)
-    return <p className="hint">Enable ACA or IRMAA above to chart net healthcare cost over time.</p>;
-  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
-  const series: { name: string; values: number[]; color: string; fill?: boolean }[] = [];
-  if (hc.net_cost_real) series.push({ name: "Net Cost (After Subsidy)", values: hc.net_cost_real, color: "#f0883e", fill: true });
-  if (hc.subsidy_real) series.push({ name: "ACA Subsidy", values: hc.subsidy_real, color: "#3fb950" });
-  return (
-    <SeriesChart x={x} axisMode={props.axisMode} yFormat="money" legend
-      series={series}
-      markers={lifeStageMarkers(props.axisMode, props.birthYear, [
-        { age: props.retirementAge, label: "Retire", color: "#d29922" },
-        { age: props.coverageEndAge, label: `Medicare ${props.coverageEndAge}`, color: "#bc8cff" },
-      ])}
-      title="Healthcare Cost & ACA Subsidy — Median Path, Today's $" />
-  );
-}
-
-export function SsIncomeChart(props: {
-  result: SimulateResult; axisMode: "age" | "year"; claimingAge: number; birthYear?: number;
-}) {
-  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
-  return (
-    <SeriesChart x={x} axisMode={props.axisMode} yFormat="money"
-      series={[{ name: "Social Security", values: props.result.ss_income_median_real, color: "#56d364", fill: true }]}
-      markers={lifeStageMarkers(props.axisMode, props.birthYear, [{ age: props.claimingAge, label: `Claim ${props.claimingAge}`, color: "#56d364" }])}
-      title="Social Security Income — Median Path, Today's $" />
-  );
-}
-
 export function SurvivalChart(props: {
   result: SimulateResult; axisMode: "age" | "year";
   retirementAge: number; threshold?: number; birthYear?: number;
@@ -1412,30 +1206,172 @@ export function SpendingDepthChart(props: {
   );
 }
 
-export function RealizedReturnFan(props: {
-  result: SimulateResult; axisMode: "age" | "year"; retirementAge: number; birthYear?: number;
+// ---- Phase 2C composites (merge several scattered charts into one) --------
+
+/** Retirement Spending: living expenses + net healthcare (ACA/IRMAA) on one
+ * age axis — merges the old Spending Trajectory and Healthcare Cost charts. */
+export function RetirementSpendingChart(props: {
+  result: SimulateResult; axisMode: "age" | "year"; retirementAge: number;
+  coverageEndAge?: number; birthYear?: number; height?: number;
 }) {
-  if (!props.result.port_return_fan?.p50?.length)
-    return <p className="hint">Return data unavailable.</p>;
   const x = props.axisMode === "age" ? props.result.ages : props.result.years;
+  const hc = props.result.healthcare?.net_cost_real;
+  const series = [
+    { name: "Living Expenses", values: props.result.expenses_median_real, color: ACCENT, fill: true },
+  ];
+  if (hc?.some((v) => v > 1))
+    series.push({ name: "Net Healthcare", values: hc, color: "#bc8cff", fill: false });
+  const marks: LifeMark[] = [{ age: props.retirementAge, label: "Retire", color: "#d29922" }];
+  if (props.coverageEndAge)
+    marks.push({ age: props.coverageEndAge, label: `Medicare ${props.coverageEndAge}`, color: "#bc8cff" });
   return (
-    <PercentileFanChart x={x} fan={props.result.port_return_fan} axisMode={props.axisMode}
-      yFormat="percent" color="#58a6ff"
-      refLines={[{ value: 0, label: "0%", color: "#8b949e" }]}
-      markers={lifeStageMarkers(props.axisMode, props.birthYear, [{ age: props.retirementAge, label: "Retire", color: "#d29922" }])}
-      title="Realized Real Portfolio Return — Percentile Fan" />
+    <SeriesChart x={[...x]} axisMode={props.axisMode} yFormat="money" legend height={props.height}
+      series={series}
+      markers={lifeStageMarkers(props.axisMode, props.birthYear, marks)}
+      title="Retirement Spending — Living + Net Healthcare, Today's $" />
   );
 }
 
-export function InflationFanChart(props: {
-  result: SimulateResult; axisMode: "age" | "year";
+/** Wealth & Flows: stacked tax-pool balances (left axis) with annual
+ * contributions (up) and withdrawals (down) as bars on the right axis — merges
+ * the Account Balances, Annual Investing, and Spending-By-Source charts. */
+export function WealthFlowsChart(props: {
+  result: SimulateResult; axisMode: "age" | "year"; height?: number;
 }) {
-  if (!props.result.inflation_fan?.p50?.length) return null;
-  const x = xValues(props.result, props.axisMode); // price level carries T+1 points
+  const xPools = xValues(props.result, props.axisMode); // T+1 (carries "today")
+  const xFlow = props.axisMode === "age" ? [...props.result.ages] : [...props.result.years]; // T
+  const pools = props.result.pool_medians_real ?? {};
+  const inv = props.result.investing_real ?? {};
+  const wd = props.result.withdrawals_real ?? {};
+  const poolKeys = POOL_ORDER.filter((k) => pools[k]?.some((v) => v > 1));
+  const data: Data[] = poolKeys.map((k) => ({
+    x: xPools, y: pools[k], type: "scatter" as const, mode: "lines" as const,
+    stackgroup: "bal", name: POOL_LABELS[k], yaxis: "y1",
+    line: { width: 0.5, color: POOL_COLORS[k] }, fillcolor: POOL_COLORS[k] + "55",
+    hovertemplate: "%{y:$,.0f}",
+  }));
+  const contribTotal = xFlow.map((_, i) =>
+    Object.values(inv).reduce((s, arr) => s + (arr[i] ?? 0), 0));
+  const wdTotal = xFlow.map((_, i) =>
+    Object.values(wd).reduce((s, arr) => s + (arr[i] ?? 0), 0));
+  data.push(
+    { x: xFlow, y: contribTotal, type: "bar", name: "Contributions", yaxis: "y2",
+      marker: { color: "rgba(63,185,80,0.5)" }, hovertemplate: "Contributed %{y:$,.0f}<extra></extra>" },
+    { x: xFlow, y: wdTotal.map((v) => -v), type: "bar", name: "Withdrawals", yaxis: "y2",
+      marker: { color: "rgba(248,81,73,0.5)" }, hovertemplate: "Withdrew %{y:$,.0f}<extra></extra>" },
+  );
   return (
-    <PercentileFanChart x={x} fan={props.result.inflation_fan} axisMode={props.axisMode}
-      yFormat="multiplier" color="#d29922"
-      refLines={[{ value: 1, label: "Today", color: "#8b949e" }]}
-      title="Cumulative Inflation — Price Level vs Today" />
+    <Plot
+      data={data}
+      layout={{
+        ...baseLayout, height: props.height ?? 380, hovermode: "x unified", barmode: "relative",
+        margin: { ...baseLayout.margin, r: 64 },
+        legend: { ...baseLayout.legend, traceorder: "reversed" },
+        yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero",
+          title: { text: "Balance (Today's $)" } },
+        yaxis2: { tickformat: "$.3~s", overlaying: "y", side: "right", gridcolor: "transparent",
+          automargin: true, zeroline: true, title: { text: "Annual Flow", standoff: 8 } },
+        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
+        title: { text: "Wealth & Flows — Balances, Contributions, Withdrawals", font: { size: 14 } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
   );
 }
+
+/** Taxes over time: annual tax dollars (bars, left) with the marginal and
+ * effective rates (lines, right) — merges Annual Taxes and Marginal Rate, and
+ * adds the effective line that answers "why is marginal so high?". */
+export function AnnualTaxRateChart(props: {
+  result: SimulateResult; axisMode: "age" | "year"; retirementAge: number;
+  claimingAge?: number; birthYear?: number; height?: number;
+}) {
+  const x = props.axisMode === "age" ? [...props.result.ages] : [...props.result.years];
+  const marks: LifeMark[] = [
+    { age: props.retirementAge, label: "Retire", color: "#d29922" },
+    { age: 75, label: "RMD 75", color: "#8b949e" },
+  ];
+  if (props.claimingAge) marks.push({ age: props.claimingAge, label: "SS", color: "#56d364" });
+  const lsm = lifeStageMarkers(props.axisMode, props.birthYear, marks);
+  const data: Data[] = [
+    { x, y: props.result.taxes_median_real, type: "bar", name: "Annual Tax ($)", yaxis: "y1",
+      marker: { color: "rgba(88,166,255,0.45)" }, hovertemplate: "Tax %{y:$,.0f}<extra></extra>" },
+    { x, y: props.result.marginal_rate_median ?? [], type: "scatter", mode: "lines",
+      name: "Marginal Rate", yaxis: "y2", line: { color: "#f0883e", width: 2 },
+      hovertemplate: "Marginal %{y:.1%}<extra></extra>" },
+    { x, y: props.result.effective_rate_median ?? [], type: "scatter", mode: "lines",
+      name: "Effective Rate", yaxis: "y2", line: { color: "#3fb950", width: 2 },
+      hovertemplate: "Effective %{y:.1%}<extra></extra>" },
+  ];
+  return (
+    <Plot
+      data={data}
+      layout={{
+        ...baseLayout, height: props.height ?? 340, hovermode: "x unified",
+        margin: { ...baseLayout.margin, r: 64 },
+        shapes: lsm.shapes, annotations: lsm.annotations as Layout["annotations"],
+        yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero",
+          title: { text: "Annual Tax" } },
+        yaxis2: { tickformat: ".0%", overlaying: "y", side: "right", rangemode: "tozero",
+          gridcolor: "transparent", automargin: true, title: { text: "Rate", standoff: 8 } },
+        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
+        title: { text: "Taxes Over Time — Annual $ vs Marginal & Effective Rate", font: { size: 14 } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
+/** When can I retire: the success-vs-retirement-age curve (left) with the gain
+ * from working one more year as bars (right) and the earliest-safe marker —
+ * replaces the separate Years-to-Retirement and One-More-Year tiles. */
+export function SweepGainChart(props: {
+  sweep: SweepResult; axisMode: "age" | "year"; birthYear: number; height?: number;
+}) {
+  const ages = Object.keys(props.sweep.sweep).map(Number).sort((a, b) => a - b);
+  const x = props.axisMode === "age" ? ages : ages.map((a) => a + props.birthYear);
+  const success = ages.map((a) => props.sweep.sweep[String(a)]);
+  const gain = success.map((s, i) => (i === 0 ? 0 : s - success[i - 1]));
+  const data: Data[] = [
+    { x, y: gain, type: "bar", name: "Gain From One More Year", yaxis: "y2",
+      marker: { color: "rgba(88,166,255,0.5)" },
+      hovertemplate: "+%{y:.1%} vs prior age<extra></extra>" },
+    { x, y: success, type: "scatter", mode: "lines+markers", name: "Success", yaxis: "y1",
+      line: { color: "#3fb950", width: 2.5 }, hovertemplate: "%{x}: %{y:.1%}<extra></extra>" },
+  ];
+  const shapes: Partial<Shape>[] = [{
+    type: "line", xref: "x", x0: x[0], x1: x[x.length - 1],
+    y0: props.sweep.threshold, y1: props.sweep.threshold, yref: "y",
+    line: { color: "#3fb950", width: 1, dash: "dot" },
+  }];
+  const annotations: any[] = [];
+  const crossIdx = success.findIndex((s) => s >= props.sweep.threshold);
+  if (crossIdx >= 0) {
+    shapes.push({ type: "line", x0: x[crossIdx], x1: x[crossIdx], y0: 0, y1: 1, yref: "paper",
+      line: { color: "#3fb950", width: 1.5, dash: "dot" } });
+    annotations.push({ x: x[crossIdx], y: 1, yref: "paper", yanchor: "bottom", xanchor: "left",
+      showarrow: false, text: " Earliest safe", font: { color: "#3fb950", size: 10 } });
+  }
+  return (
+    <Plot
+      data={data}
+      layout={{
+        ...baseLayout, height: props.height ?? 340, hovermode: "x unified",
+        margin: { ...baseLayout.margin, r: 64 },
+        shapes, annotations: annotations as Layout["annotations"],
+        yaxis: { ...baseLayout.yaxis, tickformat: ".0%", range: [-0.02, 1.05], automargin: true,
+          title: { text: "Success" } },
+        yaxis2: { tickformat: ".1%", overlaying: "y", side: "right", rangemode: "tozero",
+          gridcolor: "transparent", automargin: true, title: { text: "Gain / Year", standoff: 8 } },
+        xaxis: { ...baseLayout.xaxis,
+          title: { text: props.axisMode === "age" ? "Retirement Age" : "Retirement Year" } },
+        title: { text: "When Can I Retire — Success & The Gain From One More Year", font: { size: 14 } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
+  );
+}
+

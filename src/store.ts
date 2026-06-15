@@ -6,7 +6,7 @@ import type {
   TaxRegimeResult,
 } from "./types";
 
-export type Tab = "dashboard" | "cashflow" | "investing" | "taxes" | "freedom" | "risk" | "compare" | "settings";
+export type Tab = "dashboard" | "plan" | "timeline" | "risk" | "taxes" | "compare" | "settings";
 
 export interface CompareSlot {
   name: string;

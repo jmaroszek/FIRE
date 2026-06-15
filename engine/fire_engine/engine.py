@@ -89,10 +89,15 @@ def _liability_schedule(scenario: Scenario, T: int) -> tuple[np.ndarray, np.ndar
     """
     payments = np.zeros(T)
     balance = np.zeros(T + 1)
+    start_age = scenario.start_age
     for liab in scenario.liabilities:
+        # future loans begin amortizing at start_age; present-day debt at t=0
+        t_start = max(liab.start_age - start_age, 0) if liab.start_age is not None else 0
+        if t_start > T:
+            continue
         bal = max(liab.balance, 0.0)
-        balance[0] += bal
-        for t in range(T):
+        balance[t_start] += bal
+        for t in range(t_start, T):
             if bal <= 1e-9:
                 break
             bal *= 1.0 + liab.interest_rate
@@ -122,6 +127,8 @@ class SimResult:
     contrib_pools: dict[str, np.ndarray] | None = None  # destination -> (P, T) nominal
     liability_balance: np.ndarray | None = None  # (T+1,) nominal outstanding debt
     conversion_marginal_rate: np.ndarray | None = None  # (P, T) marginal tax on next conversion $
+    effective_rate: np.ndarray | None = None  # (P, T) avg fed+state income tax / taxable income
+    # (the much-lower companion to the marginal rate — what you actually pay on average)
     rmds: np.ndarray | None = None  # (P, T) nominal required minimum distributions
     port_return: np.ndarray | None = None  # (P, T) nominal blended portfolio return that year
     # (allocation-weighted stock/bond/cash). Deflate with cum_inflation for real returns.
@@ -131,7 +138,8 @@ class SimResult:
     # (>1.0 is what trips `fail`); deflate with cum_inflation to size depth-of-ruin.
     withdrawals: dict[str, np.ndarray] | None = None  # source -> (P, T) nominal amount drawn
     penalty_paid: np.ndarray | None = None  # (P, T) nominal 10% early-withdrawal penalty paid
-    # (trad/HSA tapped before the penalty-free age); the cost an overall "success" hides.
+    # (trad tapped before the penalty-free age). Relying on this is now itself a
+    # failure (see the fail predicate below), so it no longer hides inside "success".
     spending_need: np.ndarray | None = None  # (P, T) nominal gross withdrawal need each year
     # (the negative cash flow withdrawals must cover, taxes included) — sizes the bridge demand.
 
@@ -196,7 +204,10 @@ def _precompute_regimes(scenario: Scenario, retirement_age: int) -> list[YearReg
 def _expenses_for_year(scenario: Scenario, t: int, age: int,
                        cum_infl: np.ndarray) -> tuple[np.ndarray, ...]:
     """(essential, discretionary, essential_medical, discretionary_medical),
-    each (P,) nominal. Discretionary streams are subject to guardrail cuts."""
+    each (P,) nominal. Discretionary streams are subject to guardrail cuts.
+
+    General expense_streams may still flag is_medical (deprecated fallback);
+    dedicated medical_streams are always essential medical and HSA-eligible."""
     ess = np.zeros_like(cum_infl)
     disc = np.zeros_like(cum_infl)
     ess_med = np.zeros_like(cum_infl)
@@ -216,7 +227,59 @@ def _expenses_for_year(scenario: Scenario, t: int, age: int,
             disc = disc + nominal
             if s.is_medical:
                 disc_med = disc_med + nominal
+    for s in scenario.medical_streams:
+        if s.start_age is not None and age < s.start_age:
+            continue
+        if s.end_age is not None and age > s.end_age:
+            continue
+        amount = s.annual * (1 + s.extra_inflation) ** t
+        nominal = amount * cum_infl if s.inflates else np.full_like(cum_infl, amount)
+        ess = ess + nominal
+        ess_med = ess_med + nominal
     return ess, disc, ess_med, disc_med
+
+
+def _secondary_income_schedule(scenario: Scenario, mean_infl: float
+                               ) -> list[list[tuple[float, float]]]:
+    """Per simulation year, the list of (real_value, vol) for each secondary
+    income stream active that year. Real values compound from the stream's start
+    at its own growth; nominal conversion and per-path volatility are applied in
+    the loop. Empty inner lists (the default, no streams) reproduce single-salary
+    behavior exactly."""
+    T = scenario.n_years
+    start_age = scenario.start_age
+    by_year: list[list[tuple[float, float]]] = [[] for _ in range(T)]
+    for stream in scenario.income_streams:
+        g = stream.effective_real_growth(mean_infl)
+        s_age = stream.start_age if stream.start_age is not None else start_age
+        e_age = stream.end_age if stream.end_age is not None else scenario.profile.horizon_age
+        t_start = max(s_age - start_age, 0)
+        for t in range(T):
+            age = start_age + t
+            if s_age <= age <= e_age:
+                real_val = stream.annual * (1 + g) ** max(t - t_start, 0)
+                by_year[t].append((real_val, stream.vol))
+    return by_year
+
+
+def _waterfall_for_years(scenario: Scenario, T: int) -> list[list[WaterfallStep]]:
+    """The active contribution waterfall per simulation year. The base
+    `scenario.waterfall` applies until the first scheduled segment's start_age,
+    then each segment overrides from its start_age onward. Empty schedule (the
+    default) -> the base waterfall every year, unchanged."""
+    start_age = scenario.start_age
+    segments = sorted(scenario.waterfall_schedule, key=lambda s: s.start_age)
+    by_year: list[list[WaterfallStep]] = []
+    for t in range(T):
+        age = start_age + t
+        steps = scenario.waterfall
+        for seg in segments:
+            if seg.start_age <= age:
+                steps = seg.steps
+            else:
+                break
+        by_year.append(steps)
+    return by_year
 
 
 def _contribution_limits(age: int, infl: np.ndarray, coverage: str) -> dict[str, np.ndarray]:
@@ -250,12 +313,17 @@ def _allocate_waterfall(
     match_pct: float,
     wages: np.ndarray,
     infl: np.ndarray,
+    match_wages: np.ndarray | None = None,
 ) -> tuple[dict[AccountType, np.ndarray], np.ndarray, np.ndarray]:
     """Allocate positive free cash flow down the waterfall.
 
     Returns (contributions by account type, pretax total, employer match).
     Pure function of the inputs; capped by group limits and available cash.
+    The employer match is keyed off `match_wages` (the primary salary) so
+    secondary income streams don't inflate the match; defaults to `wages`.
     """
+    if match_wages is None:
+        match_wages = wages
     remaining = np.maximum(available, 0.0).copy()
     group_left = {k: v.copy() for k, v in limits.items()}
     contrib: dict[AccountType, np.ndarray] = {}
@@ -264,7 +332,7 @@ def _allocate_waterfall(
         group = _LIMIT_GROUP.get(step.account)
         cap = group_left[group] if group else np.full_like(remaining, np.inf)
         if step.kind == "to_match":
-            want = np.minimum(match_pct * wages, cap)
+            want = np.minimum(match_pct * match_wages, cap)
         elif step.kind == "fixed":
             want = np.minimum((step.amount or 0.0) * infl, cap)
         else:  # max
@@ -283,7 +351,7 @@ def _allocate_waterfall(
         (v for k, v in contrib.items() if k in (AccountType.trad_401k, AccountType.roth_401k)),
         start=np.zeros_like(remaining),
     )
-    match = np.where(employee_401k > 0, match_pct * wages, 0.0)
+    match = np.where(employee_401k > 0, match_pct * match_wages, 0.0)
     return contrib, pretax, match
 
 
@@ -333,6 +401,12 @@ def run(
     start_age = scenario.start_age
     state = PortfolioState(scenario, P, balance_scale=balance_scale)
     regimes = _precompute_regimes(scenario, retirement_age)
+    # secondary income streams (side hustles, rental, barista) layered on the
+    # primary salary; empty list -> single-salary behavior, unchanged.
+    secondary_income = _secondary_income_schedule(scenario, scenario.inflation.mean)
+    income_z = paths.income_z
+    # contribution waterfall per year (age-keyed overrides; empty schedule is a no-op)
+    waterfall_by_year = _waterfall_for_years(scenario, T)
 
     # group one-time flow events by sim year
     onetime: dict[int, list] = {}
@@ -369,6 +443,7 @@ def run(
     spending_mult_out = np.ones((P, T))
     conversions_out = np.zeros((P, T))
     conv_marginal_rate = np.zeros((P, T))
+    effective_rate_out = np.zeros((P, T))
     rmds_out = np.zeros((P, T))
     contrib_pool_names = ("taxable", "trad", "roth", "hsa", "cash", "match")
     contrib_pools_out = {n: np.zeros((P, T)) for n in contrib_pool_names}
@@ -405,7 +480,17 @@ def run(
         state.season_conversions(t)
         portfolio_start = state.total_net_worth()
 
-        wages = regime.salary_real * infl
+        primary_wages = regime.salary_real * infl
+        # secondary streams: nominal value with optional per-path lognormal noise
+        # (mean-1, so the expected income is unchanged); primary stays predictable.
+        secondary_wages = zeros
+        for real_val, vol in secondary_income[t]:
+            if vol > 0.0 and income_z is not None:
+                mult = np.exp(income_z[:, t] * vol - 0.5 * vol * vol)
+            else:
+                mult = 1.0
+            secondary_wages = secondary_wages + real_val * infl * mult
+        wages = primary_wages + secondary_wages
         ss_nom = ss_annual_real * infl if age >= ss.claiming_age else zeros
 
         # RMD comes out of traditional accounts before anything else
@@ -550,7 +635,8 @@ def run(
             # rule); without wages, surplus flows to the unlimited steps (taxable)
             limits_eff = {k: np.minimum(v, wages) for k, v in limits.items()}
             contrib, pretax, match = _allocate_waterfall(
-                available, scenario.waterfall, limits_eff, regime.match_pct, wages, infl
+                available, waterfall_by_year[t], limits_eff, regime.match_pct, wages, infl,
+                match_wages=primary_wages,
             )
 
             wplan = plan_withdrawals(
@@ -570,7 +656,14 @@ def run(
 
         # ---- apply the converged plan
         apply_plan(state, wplan, age)
-        fail[:, t] = wplan.shortfall > 1.0
+        # A path fails if spending went unfunded (hard shortfall) OR it could only
+        # be funded by tapping traditional accounts before 59.5 and eating the 10%
+        # penalty. Relying on the early-withdrawal penalty is a planning failure,
+        # not a success the headline rate should hide — so the global success rate
+        # now agrees with the bridge's break definition (metrics.bridge_analysis).
+        # penalty_base is nonzero only before PENALTY_FREE_AGE, so post-60 years
+        # are unaffected.
+        fail[:, t] = (wplan.shortfall > 1.0) | (wplan.penalty_base > 1.0)
         shortfall_out[:, t] = wplan.shortfall
         # `need` holds the converged pre-withdrawal cash-flow gap (taxes included);
         # penalty_base is the early trad/HSA draw the 10% penalty falls on.
@@ -589,6 +682,13 @@ def run(
         fed_b, ot_b, lt_b = taxmod.federal_tax(ordinary_excl_ss + bump + ss_bumped, ltcg, tables_eff, infl)
         tax_b = fed_b + scenario.profile.state_tax_rate * (ot_b + lt_b)
         conv_marginal_rate[:, t] = (tax_b - (fed + state_tax)) / bump
+
+        # average (effective) fed+state income-tax rate on the year's taxable
+        # income — the much-lower companion line to the marginal rate, which is
+        # what people actually pay and tends to match a personal tax sheet.
+        income_base = ordinary + ltcg
+        effective_rate_out[:, t] = np.divide(
+            fed + state_tax, income_base, out=np.zeros(P), where=income_base > 1.0)
 
         leftover = available
         for acc_type, amount in contrib.items():
@@ -675,6 +775,7 @@ def run(
         contrib_pools=contrib_pools_out,
         liability_balance=liab_balance,
         conversion_marginal_rate=conv_marginal_rate,
+        effective_rate=effective_rate_out,
         rmds=rmds_out,
         port_return=port_return_out,
         aca_subsidy=aca_subsidy_out,

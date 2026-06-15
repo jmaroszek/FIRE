@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { A } from "../assumptions";
-import { FanChart, percentileAt } from "../components/charts";
+import { FanChart, SpendingActualsChart, percentileAt } from "../components/charts";
 import { Field, InfoTip, NumberInput, Section, Stat, fmtMoney, fmtPct } from "../components/ui";
 import { useStore } from "../store";
 
@@ -46,6 +46,7 @@ export default function Dashboard() {
   const retMarker = axisMode === "age"
     ? scenario.retirement_age
     : scenario.profile.birth_year + scenario.retirement_age;
+  const startAge = scenario.sim.start_year - scenario.profile.birth_year;
 
   // Where the latest snapshot lands in the original projection cone for its year.
   // Compared in nominal $ (the fan's nominal series), so the CPI deflator cancels;
@@ -212,6 +213,25 @@ export default function Dashboard() {
           />
         ) : (
           <p className="hint">Simulation pending…</p>
+        )}
+      </Section>
+
+      <Section title="Lifestyle Creep"
+        info="Your recorded annual spending by category, converted to today's dollars using the assumed mean inflation, against the dashed line of what your plan budgets. Creep is the bars climbing past the line in real terms.">
+        {snapshots.some((sn) => sn.spending && Object.values(sn.spending).some((v) => v > 0)) ? (
+          <SpendingActualsChart
+            snapshots={snapshots}
+            categories={categories}
+            inflationMean={scenario.inflation.mean}
+            planTotal={scenario.expense_streams
+              .filter((e) => (e.start_age ?? 0) <= startAge && startAge <= (e.end_age ?? 999))
+              .reduce((a, e) => a + e.annual, 0)}
+          />
+        ) : (
+          <p className="hint">
+            No spending recorded yet. Use Record A Snapshot above and fill the Annual Spending
+            section with the category totals from your budget — once a year is enough to see the trend.
+          </p>
         )}
       </Section>
     </div>

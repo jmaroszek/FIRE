@@ -13,7 +13,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # v2: income_streams, waterfall_schedule, medical_streams, Liability.start_age
 
 
 class AccountType(str, Enum):
@@ -100,6 +100,34 @@ class Income(BaseModel):
         return self.real_growth
 
 
+class IncomeStream(BaseModel):
+    """A secondary income source layered on top of the primary salary (`income`):
+    a side hustle, rental, consulting, or a spouse's wages. Unlike the primary
+    salary it does NOT carry the employer 401k match (the match anchors to
+    `income`), but it does count as earned income that raises the IRA/401k
+    contribution headroom while it is active.
+
+    Active over [start_age, end_age] (inclusive; defaults: from sim start, to
+    horizon), so a stream can run before, during, or after retirement — modeling
+    barista-FI income as a post-retirement stream, for instance. `vol` adds
+    per-path lognormal income variability (0 = steady); side income is where the
+    variance usually lives, while the primary salary stays predictable.
+    """
+
+    name: str = "Side Income"
+    annual: float = 0.0  # today's dollars
+    start_age: Optional[int] = None  # None = from simulation start
+    end_age: Optional[int] = None  # None = until horizon (inclusive bounds)
+    real_growth: float = 0.0
+    growth_mode: Literal["nominal", "real"] = "nominal"
+    vol: float = 0.0  # per-path lognormal volatility of this stream's annual income
+
+    def effective_real_growth(self, mean_inflation: float) -> float:
+        if self.growth_mode == "nominal":
+            return (1 + self.real_growth) / (1 + mean_inflation) - 1
+        return self.real_growth
+
+
 class ExpenseStream(BaseModel):
     name: str
     annual: float
@@ -118,12 +146,20 @@ class Liability(BaseModel):
     amortization (balance grows by interest, shrinks by the payment) reaches
     zero. The outstanding balance is subtracted from reported net worth but
     plays no role in withdrawals or failure — only the payment does.
+
+    `start_age` schedules a FUTURE loan (e.g. a mortgage taken on at 40): the
+    balance and payments don't exist until that age, and once it amortizes to
+    zero the payment stream stops, dropping expenses. None = present-day debt.
+    The offsetting asset (a home) is not modeled, so a future loan's origination
+    shows as a step down in reported net worth — net worth here is financial,
+    non-home wealth net of debt.
     """
 
     name: str
-    balance: float  # outstanding principal today
+    balance: float  # outstanding principal at start_age (or today if start_age is None)
     interest_rate: float = 0.0  # annual nominal rate
     annual_payment: float = 0.0  # fixed nominal payment per year
+    start_age: Optional[int] = None  # None = present-day; else the loan begins at this age
 
 
 class GuardrailRule(BaseModel):
@@ -193,6 +229,17 @@ def default_waterfall() -> list[WaterfallStep]:
         WaterfallStep(account=AccountType.trad_401k, kind="max"),
         WaterfallStep(account=AccountType.taxable, kind="max"),  # spillover, unlimited
     ]
+
+
+class WaterfallSegment(BaseModel):
+    """A contribution waterfall that takes effect from `start_age` onward (until
+    the next segment overrides it). Lets contribution routing change over time —
+    e.g. stop maxing the 401k and divert to taxable while saving for a house, or
+    shift toward liquid savings approaching an early-retirement date. Before the
+    first segment's start_age, the scenario's base `waterfall` applies."""
+
+    start_age: int
+    steps: list[WaterfallStep] = Field(default_factory=default_waterfall)
 
 
 class WithdrawalSource(str, Enum):
@@ -374,10 +421,21 @@ class Scenario(BaseModel):
     market: MarketModel = MarketModel()
     inflation: InflationModel = InflationModel()
     income: Income = Income()
+    # Additional income sources beyond the primary salary (side hustles, rental,
+    # spouse). Empty = single-salary behavior (back-compatible).
+    income_streams: list[IncomeStream] = Field(default_factory=list)
     retirement_age: int = 65
     expense_streams: list[ExpenseStream] = Field(default_factory=list)
+    # HSA-eligible out-of-pocket medical spending, kept in its own section rather
+    # than mixed into the general expense table with a per-row checkbox. Always
+    # essential medical; drives HSA utilization. The per-stream is_medical flag on
+    # expense_streams is deprecated but still honored as a fallback for old data.
+    medical_streams: list[ExpenseStream] = Field(default_factory=list)
     liabilities: list[Liability] = Field(default_factory=list)
     waterfall: list[WaterfallStep] = Field(default_factory=default_waterfall)
+    # Optional age-keyed overrides of `waterfall` (e.g. divert from 401k to taxable
+    # while saving for a house). Empty = the base waterfall applies for all years.
+    waterfall_schedule: list[WaterfallSegment] = Field(default_factory=list)
     withdrawal_policy: WithdrawalPolicy = WithdrawalPolicy()
     conversion_rule: ConversionRule = ConversionRule()
     social_security: SocialSecurity = SocialSecurity()
