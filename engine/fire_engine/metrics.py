@@ -772,6 +772,7 @@ def roth_vs_trad(scenario: Scenario, n_paths: int = 1000) -> dict:
     def variant(kind: str) -> dict:
         s = scenario.model_copy(deep=True)
         s.waterfall = _contribution_waterfall(kind)
+        s.waterfall_schedule = []  # compare the pure routing, ignore age-keyed overrides
         r = run(s, paths=paths)
         lifetime_tax = float(np.median((r.taxes_paid / _flow_deflator(r)).sum(axis=1)))
         ending = float(np.median(r.net_worth[:, -1] / r.cum_inflation[:, -1]))

@@ -243,6 +243,26 @@ def _secondary_income_schedule(scenario: Scenario, mean_infl: float
     return by_year
 
 
+def _waterfall_for_years(scenario: Scenario, T: int) -> list[list[WaterfallStep]]:
+    """The active contribution waterfall per simulation year. The base
+    `scenario.waterfall` applies until the first scheduled segment's start_age,
+    then each segment overrides from its start_age onward. Empty schedule (the
+    default) -> the base waterfall every year, unchanged."""
+    start_age = scenario.start_age
+    segments = sorted(scenario.waterfall_schedule, key=lambda s: s.start_age)
+    by_year: list[list[WaterfallStep]] = []
+    for t in range(T):
+        age = start_age + t
+        steps = scenario.waterfall
+        for seg in segments:
+            if seg.start_age <= age:
+                steps = seg.steps
+            else:
+                break
+        by_year.append(steps)
+    return by_year
+
+
 def _contribution_limits(age: int, infl: np.ndarray, coverage: str) -> dict[str, np.ndarray]:
     lim = load_limits()
     k401 = lim["employee_401k"]
@@ -366,6 +386,8 @@ def run(
     # primary salary; empty list -> single-salary behavior, unchanged.
     secondary_income = _secondary_income_schedule(scenario, scenario.inflation.mean)
     income_z = paths.income_z
+    # contribution waterfall per year (age-keyed overrides; empty schedule is a no-op)
+    waterfall_by_year = _waterfall_for_years(scenario, T)
 
     # group one-time flow events by sim year
     onetime: dict[int, list] = {}
@@ -593,7 +615,7 @@ def run(
             # rule); without wages, surplus flows to the unlimited steps (taxable)
             limits_eff = {k: np.minimum(v, wages) for k, v in limits.items()}
             contrib, pretax, match = _allocate_waterfall(
-                available, scenario.waterfall, limits_eff, regime.match_pct, wages, infl,
+                available, waterfall_by_year[t], limits_eff, regime.match_pct, wages, infl,
                 match_wages=primary_wages,
             )
 

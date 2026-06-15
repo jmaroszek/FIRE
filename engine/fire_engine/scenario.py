@@ -223,6 +223,17 @@ def default_waterfall() -> list[WaterfallStep]:
     ]
 
 
+class WaterfallSegment(BaseModel):
+    """A contribution waterfall that takes effect from `start_age` onward (until
+    the next segment overrides it). Lets contribution routing change over time —
+    e.g. stop maxing the 401k and divert to taxable while saving for a house, or
+    shift toward liquid savings approaching an early-retirement date. Before the
+    first segment's start_age, the scenario's base `waterfall` applies."""
+
+    start_age: int
+    steps: list[WaterfallStep] = Field(default_factory=default_waterfall)
+
+
 class WithdrawalSource(str, Enum):
     cash = "cash"
     taxable = "taxable"
@@ -409,6 +420,9 @@ class Scenario(BaseModel):
     expense_streams: list[ExpenseStream] = Field(default_factory=list)
     liabilities: list[Liability] = Field(default_factory=list)
     waterfall: list[WaterfallStep] = Field(default_factory=default_waterfall)
+    # Optional age-keyed overrides of `waterfall` (e.g. divert from 401k to taxable
+    # while saving for a house). Empty = the base waterfall applies for all years.
+    waterfall_schedule: list[WaterfallSegment] = Field(default_factory=list)
     withdrawal_policy: WithdrawalPolicy = WithdrawalPolicy()
     conversion_rule: ConversionRule = ConversionRule()
     social_security: SocialSecurity = SocialSecurity()
