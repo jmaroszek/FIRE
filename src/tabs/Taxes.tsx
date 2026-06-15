@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { A } from "../assumptions";
-import { MarginalRateChart, TaxesChart } from "../components/charts";
+import { MarginalRateChart, TaxesChart, TradOverfundingChart } from "../components/charts";
 import {
   Field, Group, InfoTip, NumberInput, PercentInput, Section, Stat, fmtMoney, fmtPct,
 } from "../components/ui";
@@ -216,6 +216,36 @@ export default function Taxes() {
           )}
         </Section>
       </Group>
+
+      <Section title="Traditional Over-Funding" info={A.tradOverfunding}>
+        {result ? (
+          <>
+            {result.rmd_schedule.length > 0 && (() => {
+              const startAge = s.sim.start_year - s.profile.birth_year;
+              const first = result.rmd_schedule[0];
+              const spendThen = result.expenses_median_real[first.age - startAge] ?? 0;
+              const overshoot = first.amount_real - spendThen;
+              return (
+                <div className="stat-grid">
+                  <Stat label={`First RMD (Age ${first.age})`}
+                    value={fmtMoney(first.amount_real)}
+                    sub={`spending that year ≈ ${fmtMoney(spendThen)}`}
+                    info={A.tradOverfunding} />
+                  <Stat label="Forced Beyond Spending"
+                    value={overshoot > 0 ? fmtMoney(overshoot) : "—"}
+                    sub={overshoot > 0
+                      ? "ordinary income you must realize but don't need"
+                      : "the RMD stays within your spending"} />
+                </div>
+              );
+            })()}
+            <TradOverfundingChart result={result} axisMode={axisMode}
+              birthYear={s.profile.birth_year} />
+          </>
+        ) : (
+          <p className="hint">Simulation pending…</p>
+        )}
+      </Section>
     </div>
   );
 }

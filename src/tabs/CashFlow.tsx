@@ -1,11 +1,11 @@
 import React, { useState } from "react";
 import { A } from "../assumptions";
 import {
-  HealthcareTrajectoryChart, SpendingActualsChart, SpendingTrajectoryChart,
+  FulfillmentChart, HealthcareTrajectoryChart, SpendingActualsChart, SpendingTrajectoryChart,
 } from "../components/charts";
 import TimelineEditor from "../components/TimelineEditor";
 import {
-  Field, Group, InfoTip, NumberInput, PercentInput, Section, fmtMoney,
+  Field, Group, InfoTip, NumberInput, PercentInput, Section, Stat, fmtMoney, fmtPct,
 } from "../components/ui";
 import { KIND_META, KIND_ORDER, displayKindOf, newEventOf, type DisplayKind } from "../events";
 import { useStore } from "../store";
@@ -103,6 +103,8 @@ export default function CashFlow() {
   const { scenario, result, axisMode, snapshots, categories } = useStore();
   const setScenario = useStore((s) => s.setScenario);
   const [addKind, setAddKind] = useState<DisplayKind>("expense");
+  const [goGoEnd, setGoGoEnd] = useState(75);
+  const [enjoyFloor, setEnjoyFloor] = useState(0.3);
   if (!scenario) return null;
   const s = scenario;
   const up = (patch: Partial<Scenario>) => setScenario({ ...s, ...patch });
@@ -283,6 +285,45 @@ export default function CashFlow() {
             <SpendingTrajectoryChart result={result} axisMode={axisMode}
               retirementAge={s.retirement_age} birthYear={s.profile.birth_year} />
           ) : (
+            <p className="hint">Simulation pending…</p>
+          )}
+        </Section>
+
+        <Section wide title="Spending vs Ability To Enjoy It" info={A.fulfillment}>
+          {result ? (() => {
+            const ages = result.ages;
+            const spend = result.expenses_median_real;
+            const total = spend.reduce((a, b) => a + b, 0);
+            const shareWhere = (pred: (age: number) => boolean) =>
+              total > 0 ? spend.reduce((acc, v, i) => acc + (pred(ages[i]) ? v : 0), 0) / total : 0;
+            const goGo = shareWhere((a) => a <= goGoEnd);
+            const slowGo = shareWhere((a) => a > goGoEnd && a <= 85);
+            const noGo = shareWhere((a) => a > 85);
+            return (
+              <>
+                <div className="fields">
+                  <Field label="Go-Go Years End At Age"
+                    info="Through this age a dollar is assumed to buy full enjoyment; after it, enjoyment tapers as health and energy fade.">
+                    <NumberInput value={goGoEnd} step={1} min={s.retirement_age} max={90}
+                      onChange={setGoGoEnd} />
+                  </Field>
+                  <Field label="Late-Life Enjoyment Floor"
+                    info="How much a dollar is still worth from age 90 on, relative to the go-go years. Perkins' rough default is 30%.">
+                    <PercentInput value={enjoyFloor} step={5} onChange={setEnjoyFloor} />
+                  </Field>
+                </div>
+                <div className="stat-grid">
+                  <Stat label="Spent In Go-Go Years" value={fmtPct(goGo, 0)}
+                    sub={`through age ${goGoEnd}`} info={A.fulfillment} />
+                  <Stat label="Slow-Go" value={fmtPct(slowGo, 0)} sub={`${goGoEnd + 1}–85`} />
+                  <Stat label="No-Go" value={fmtPct(noGo, 0)} sub="86+" />
+                </div>
+                <FulfillmentChart result={result} axisMode={axisMode}
+                  retirementAge={s.retirement_age} birthYear={s.profile.birth_year}
+                  goGoEnd={goGoEnd} floor={enjoyFloor} />
+              </>
+            );
+          })() : (
             <p className="hint">Simulation pending…</p>
           )}
         </Section>

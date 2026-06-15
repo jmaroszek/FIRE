@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { A } from "../assumptions";
 import {
-  AccessibilityChart, AccessibilityFanChart, HistogramChart, SsIncomeChart,
+  AccessibilityChart, AccessibilityFanChart, FrontierChart, HistogramChart, SsIncomeChart,
   SurfaceHeatmap, SweepChart, TornadoChart, WithdrawalSourceChart,
 } from "../components/charts";
 import {
@@ -142,9 +142,16 @@ export default function Freedom() {
 
         <Section title="Headroom" info={A.headroom}>
           {result ? (
-            <Stat label="Median Ending Net Worth"
-              value={fmtMoney(result.fan.real.p50[result.fan.real.p50.length - 1] ?? 0)}
-              sub="today's $ — unconsumed margin, not a goal" info={A.headroom} />
+            <>
+              <Stat label="Median Ending Net Worth"
+                value={fmtMoney(result.fan.real.p50[result.fan.real.p50.length - 1] ?? 0)}
+                sub="today's $ — unconsumed margin, not a goal" info={A.headroom} />
+              {freedom && freedom.annual_retirement_expenses > 0 && (
+                <Stat label="≈ Years Of Spending Unspent"
+                  value={`${Math.round((result.fan.real.p50[result.fan.real.p50.length - 1] ?? 0) / freedom.annual_retirement_expenses)} yr`}
+                  sub="median estate ÷ annual retirement spending" info={A.estateYears} />
+              )}
+            </>
           ) : (
             <p className="hint">Simulation pending…</p>
           )}
@@ -166,6 +173,23 @@ export default function Freedom() {
           )}
         </Section>
       </div>
+
+      <Section title="Over-Saving Frontier" info={A.frontier}
+        actions={sweep && (
+          <button className="ghost" onClick={runSweep} disabled={sweeping}>
+            {sweeping ? "Computing…" : "Recompute"}
+          </button>
+        )}>
+        {sweep ? (
+          <FrontierChart sweep={sweep} axisMode={axisMode} birthYear={s.profile.birth_year}
+            retirementMarker={axisMode === "age"
+              ? s.retirement_age : s.profile.birth_year + s.retirement_age} />
+        ) : (
+          <button onClick={runSweep} disabled={sweeping}>
+            {sweeping ? "Computing…" : "Compute Frontier"}
+          </button>
+        )}
+      </Section>
 
       <Section title="Liquidity: Can You Bridge To 59½?"
         info={A.accessibility + " This is the balance you could tap penalty-free in each year — a stock, not a surplus over spending. A Roth conversion doesn't add spendable income here; it relocates money into the Roth, which becomes penalty-free five years later (and at 59½ regardless). The bridge is the gap between the Retire and 59½ markers."}>

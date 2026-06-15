@@ -247,6 +247,7 @@ export interface SimulateResult {
   healthcare: { net_cost_real?: number[]; subsidy_real?: number[] };
   // lifetime tax / income / inflation surfacing (ride every /simulate)
   ss_income_median_real: number[];
+  rmds_median_real: number[];
   marginal_rate_median: number[];
   port_return_fan: FanSeries;
   inflation_fan: FanSeries;
@@ -265,6 +266,11 @@ export interface SweepResult {
   sweep: Record<string, number>;
   threshold: number;
   years_to_fi: number | null;
+  // die-with-zero companion: median (+ p25/p75) real ending estate per retire age
+  estate_p25?: Record<string, number>;
+  estate_p50?: Record<string, number>;
+  estate_p75?: Record<string, number>;
+  horizon_age?: number;
 }
 
 export interface FreedomResult {

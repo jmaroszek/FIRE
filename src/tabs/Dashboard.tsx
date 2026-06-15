@@ -198,7 +198,7 @@ export default function Dashboard() {
         </Section>
       </div>
 
-      <Section title="Actuals vs Projection" info={A.actualsVsProjection}>
+      <Section title="Actuals vs Projection" info={A.actualsVsProjection + " " + A.glidepath}>
         {result ? (
           <FanChart
             result={result}
@@ -208,6 +208,7 @@ export default function Dashboard() {
             snapshots={snapshots}
             startYear={scenario.sim.start_year}
             birthYear={scenario.profile.birth_year}
+            glidepathToZero
           />
         ) : (
           <p className="hint">Simulation pending…</p>

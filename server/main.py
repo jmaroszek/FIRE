@@ -90,12 +90,17 @@ class SweepRequest(BaseModel):
 
 @app.post("/simulate/sweep")
 def sweep(req: SweepRequest) -> dict:
-    sweep_result = m.retirement_sweep(req.scenario, ages=req.ages, n_paths=req.n_paths)
+    full = m.retirement_sweep_full(req.scenario, ages=req.ages, n_paths=req.n_paths)
+    success = full["success"]
     threshold = req.scenario.sim.success_threshold
     return {
-        "sweep": sweep_result,
+        "sweep": success,
+        "estate_p25": full["estate_p25"],
+        "estate_p50": full["estate_p50"],
+        "estate_p75": full["estate_p75"],
         "threshold": threshold,
-        "years_to_fi": m.years_to_fi(sweep_result, threshold, req.scenario.start_age),
+        "years_to_fi": m.years_to_fi(success, threshold, req.scenario.start_age),
+        "horizon_age": req.scenario.profile.horizon_age,
     }
 
 

@@ -53,20 +53,41 @@ def survival_curve(result: SimResult) -> list[float]:
     return (1.0 - result.fail.cumsum(axis=1).astype(bool).mean(axis=0)).tolist()
 
 
-def retirement_sweep(scenario: Scenario, ages: list[int] | None = None,
-                     n_paths: int | None = None) -> dict[int, float]:
-    """Success probability for each candidate retirement age, reusing one set
-    of sampled market paths across all candidates."""
+def retirement_sweep_full(scenario: Scenario, ages: list[int] | None = None,
+                          n_paths: int | None = None) -> dict:
+    """For each candidate retirement age: success probability AND the median (with
+    p25/p75) real ending estate — the die-with-zero companion to the success curve.
+
+    The estate you accumulate by working longer is the explicit price of one more
+    year; pairing it with success exposes the over-saving zone, where a later age
+    barely lifts success but balloons the estate you'll never spend. One shared set
+    of market paths across every candidate age, so both curves are noise-free."""
     start_age = scenario.start_age
     if ages is None:
         ages = list(range(start_age, 71))
     paths = sample_paths(scenario, n_paths=n_paths)
-    out: dict[int, float] = {}
+    success: dict[int, float] = {}
+    estate_p25: dict[int, float] = {}
+    estate_p50: dict[int, float] = {}
+    estate_p75: dict[int, float] = {}
     for age in ages:
         if age < start_age:
             continue
-        out[age] = run(scenario, paths=paths, retirement_age=age).success_rate
-    return out
+        r = run(scenario, paths=paths, retirement_age=age)
+        success[age] = r.success_rate
+        real_end = r.net_worth[:, -1] / r.cum_inflation[:, -1]
+        estate_p25[age] = float(np.percentile(real_end, 25))
+        estate_p50[age] = float(np.median(real_end))
+        estate_p75[age] = float(np.percentile(real_end, 75))
+    return {"success": success, "estate_p25": estate_p25,
+            "estate_p50": estate_p50, "estate_p75": estate_p75}
+
+
+def retirement_sweep(scenario: Scenario, ages: list[int] | None = None,
+                     n_paths: int | None = None) -> dict[int, float]:
+    """Success probability for each candidate retirement age, reusing one set
+    of sampled market paths across all candidates."""
+    return retirement_sweep_full(scenario, ages=ages, n_paths=n_paths)["success"]
 
 
 def years_to_fi(sweep: dict[int, float], threshold: float, start_age: int) -> int | None:
@@ -793,6 +814,10 @@ def summarize(result: SimResult) -> dict:
         "withdrawals_real": withdrawal_source_medians_real(result),
         "ladder_schedule": ladder_schedule(result),
         "rmd_schedule": rmd_schedule(result),
+        "rmds_median_real": (
+            np.median(result.rmds / _flow_deflator(result), axis=0).tolist()
+            if result.rmds is not None else []
+        ),
         "taxes_median_real": np.median(
             result.taxes_paid / _flow_deflator(result), axis=0).tolist(),
         "expenses_median_real": np.median(
