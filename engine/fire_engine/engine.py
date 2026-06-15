@@ -130,6 +130,10 @@ class SimResult:
     shortfall: np.ndarray | None = None  # (P, T) nominal unfunded spending need each year
     # (>1.0 is what trips `fail`); deflate with cum_inflation to size depth-of-ruin.
     withdrawals: dict[str, np.ndarray] | None = None  # source -> (P, T) nominal amount drawn
+    penalty_paid: np.ndarray | None = None  # (P, T) nominal 10% early-withdrawal penalty paid
+    # (trad/HSA tapped before the penalty-free age); the cost an overall "success" hides.
+    spending_need: np.ndarray | None = None  # (P, T) nominal gross withdrawal need each year
+    # (the negative cash flow withdrawals must cover, taxes included) — sizes the bridge demand.
 
     @property
     def success_rate(self) -> float:
@@ -375,6 +379,8 @@ def run(
     aca_subsidy_out = np.zeros((P, T))
     net_health_cost_out = np.zeros((P, T))  # net ACA premium + IRMAA surcharge
     shortfall_out = np.zeros((P, T))  # nominal unfunded need each year (depth of ruin)
+    penalty_out = np.zeros((P, T))  # nominal 10% early-withdrawal penalty paid each year
+    need_out = np.zeros((P, T))  # nominal gross withdrawal need each year (bridge demand)
     withdrawals_out: dict[str, np.ndarray] = {}  # source -> (P, T) nominal amount drawn
     accessible_out: dict[str, np.ndarray] = {}
 
@@ -566,6 +572,10 @@ def run(
         apply_plan(state, wplan, age)
         fail[:, t] = wplan.shortfall > 1.0
         shortfall_out[:, t] = wplan.shortfall
+        # `need` holds the converged pre-withdrawal cash-flow gap (taxes included);
+        # penalty_base is the early trad/HSA draw the 10% penalty falls on.
+        need_out[:, t] = need
+        penalty_out[:, t] = tables.early_penalty * wplan.penalty_base
         for _src, _amt in wplan.takes.items():
             withdrawals_out.setdefault(_src.value, np.zeros((P, T)))[:, t] = _amt
 
@@ -671,6 +681,8 @@ def run(
         net_health_cost=net_health_cost_out,
         shortfall=shortfall_out,
         withdrawals=withdrawals_out,
+        penalty_paid=penalty_out,
+        spending_need=need_out,
     )
 
 

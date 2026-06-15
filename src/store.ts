@@ -1,8 +1,9 @@
 import { create } from "zustand";
 import { api } from "./api";
 import type {
-  Category, FreedomResult, MaxSpendResult, RothTradResult, Scenario, SensitivityResult,
-  SimulateResult, Snapshot, StressResult, SurfaceResult, SweepResult, TaxRegimeResult,
+  BridgeCrashResult, Category, FreedomResult, MaxSpendResult, RothTradResult, Scenario,
+  SensitivityResult, SimulateResult, Snapshot, StressResult, SurfaceResult, SweepResult,
+  TaxRegimeResult,
 } from "./types";
 
 export type Tab = "dashboard" | "cashflow" | "investing" | "taxes" | "freedom" | "risk" | "compare" | "settings";
@@ -41,6 +42,8 @@ interface AppState {
   taxregimeLoading: boolean;
   rothtrad: RothTradResult | null;
   rothtradLoading: boolean;
+  bridgecrash: BridgeCrashResult | null;
+  bridgecrashLoading: boolean;
   savedScenarios: string[];
   compare: CompareSlot[];
   snapshots: Snapshot[];
@@ -61,6 +64,7 @@ interface AppState {
   runStress: (shockAge: number, duration: number) => Promise<void>;
   runTaxRegime: (sunsetAge: number) => Promise<void>;
   runRothTrad: () => Promise<void>;
+  runBridgeCrash: (drop: number, years: number) => Promise<void>;
   saveAs: (name: string) => Promise<void>;
   load: (name: string) => Promise<void>;
   remove: (name: string) => Promise<void>;
@@ -105,7 +109,7 @@ export const useStore = create<AppState>((set, get) => {
           set({
             result, simError: null,
             maxspend: null, surface: null, sensitivity: null, stress: null,
-            taxregime: null, rothtrad: null,
+            taxregime: null, rothtrad: null, bridgecrash: null,
             sweep: dropSweep ? null : get().sweep,
           });
           if (hadFreedom) void get().runFreedom();
@@ -142,6 +146,8 @@ export const useStore = create<AppState>((set, get) => {
     taxregimeLoading: false,
     rothtrad: null,
     rothtradLoading: false,
+    bridgecrash: null,
+    bridgecrashLoading: false,
     savedScenarios: [],
     compare: [],
     snapshots: [],
@@ -305,6 +311,19 @@ export const useStore = create<AppState>((set, get) => {
         set({ simError: String(e) });
       } finally {
         set({ rothtradLoading: false });
+      }
+    },
+
+    runBridgeCrash: async (drop, years) => {
+      const scenario = get().scenario;
+      if (!scenario || get().bridgecrashLoading) return;
+      set({ bridgecrashLoading: true });
+      try {
+        set({ bridgecrash: await api.bridgeCrash(scenario, drop, years) });
+      } catch (e) {
+        set({ simError: String(e) });
+      } finally {
+        set({ bridgecrashLoading: false });
       }
     },
 

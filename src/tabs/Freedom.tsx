@@ -1,8 +1,8 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { A } from "../assumptions";
 import {
-  AccessibilityChart, SsIncomeChart, SurfaceHeatmap, SweepChart, TornadoChart,
-  WithdrawalSourceChart,
+  AccessibilityChart, AccessibilityFanChart, HistogramChart, SsIncomeChart,
+  SurfaceHeatmap, SweepChart, TornadoChart, WithdrawalSourceChart,
 } from "../components/charts";
 import {
   Field, Group, InfoTip, NumberInput, PercentInput, ProgressBar, Section, Stat,
@@ -23,8 +23,11 @@ export default function Freedom() {
           sweeping, axisMode,
           maxspend, runMaxSpend, maxspendLoading,
           surface, runSurface, surfaceLoading,
-          sensitivity, runSensitivity, sensitivityLoading } = useStore();
+          sensitivity, runSensitivity, sensitivityLoading,
+          bridgecrash, runBridgeCrash, bridgecrashLoading } = useStore();
   const setScenario = useStore((s) => s.setScenario);
+  const [crashDrop, setCrashDrop] = useState(0.35);
+  const [crashYears, setCrashYears] = useState(2);
 
   useEffect(() => {
     if (scenario && !freedom && !freedomLoading) void runFreedom();
@@ -174,6 +177,103 @@ export default function Freedom() {
             birthYear={s.profile.birth_year} />
         ) : (
           <p className="hint">Simulation pending…</p>
+        )}
+      </Section>
+
+      {result && result.bridge && (
+        <Section title="Bridge Confidence" info={A.bridgeConfidence}>
+          {result.bridge.has_bridge ? (() => {
+            const b = result.bridge;
+            const pctAcc = b.at_retirement?.pct_accessible ?? 0;
+            return (
+              <>
+                <div className="stat-grid">
+                  <Stat label="Bridge Holds"
+                    value={fmtPct(1 - (b.bridge_break_rate ?? 0), 0)}
+                    sub="penalty-free money lasts to 59½" info={A.bridgeBreak} />
+                  <Stat label="Relies On Early Penalty"
+                    value={fmtPct(b.early_penalty_rate ?? 0, 0)}
+                    sub={`median ${fmtMoney(b.median_penalty_real ?? 0)} when it does`}
+                    info={A.bridgePenalty} />
+                  <Stat label="Coverage (Median)"
+                    value={`${(b.coverage_p50 ?? 0).toFixed(2)}×`}
+                    sub={`worst 5%: ${(b.coverage_p5 ?? 0).toFixed(2)}×`}
+                    info={A.bridgeCoverage} />
+                  <Stat label="Runway"
+                    value={`${Math.round(b.runway_p50 ?? 0)} yr`}
+                    sub={`vs ${b.bridge_years}-yr gap · worst 5%: ${Math.round(b.runway_p5 ?? 0)} yr`}
+                    info={A.bridgeCoverage} />
+                </div>
+                <div style={{ marginTop: 10 }}>
+                  <Stat label="Accessible At Retirement" value={fmtPct(pctAcc, 0)}
+                    sub={`${fmtMoney(b.at_retirement?.accessible_real ?? 0)} reachable · ${fmtMoney(b.at_retirement?.locked_real ?? 0)} penalty-locked`}
+                    info={A.bridgeSplit} />
+                  <ProgressBar fraction={pctAcc} />
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <AccessibilityFanChart result={result} axisMode={axisMode}
+                    retirementMarker={axisMode === "age"
+                      ? s.retirement_age : s.profile.birth_year + s.retirement_age}
+                    retirementAge={s.retirement_age}
+                    birthYear={s.profile.birth_year} />
+                </div>
+                {b.min_accessible_real && b.min_accessible_real.length > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    <div className="card-head"><h3 style={{ fontSize: 13, margin: 0 }}>
+                      Lowest Penalty-Free Balance During The Bridge<InfoTip text={A.bridgeMinAccessible} />
+                    </h3></div>
+                    <HistogramChart values={b.min_accessible_real} unit="money"
+                      color="rgba(63,185,80,0.5)"
+                      markers={[{ value: 0, label: "Runs Dry", color: "#f85149" }]}
+                      title="" xTitle="Low-Water Mark Of Penalty-Free Assets (Today's $)" />
+                  </div>
+                )}
+              </>
+            );
+          })() : (
+            <p className="hint">
+              No bridge to cross — your retirement age is at or past 59½, so traditional
+              accounts are penalty-free from day one.
+            </p>
+          )}
+        </Section>
+      )}
+
+      <Section title="Retire Into A Crash" info={A.bridgeCrash}>
+        <div className="fields">
+          <Field label="Crash Size (Stock Drop)"
+            info="The real stock-market drop forced on the first years of retirement; bonds fall a third as much. Applied on the same market paths so the change is pure sequence-of-returns effect.">
+            <select value={String(crashDrop)}
+              onChange={(e) => setCrashDrop(parseFloat(e.target.value))}>
+              <option value="0.2">−20%</option>
+              <option value="0.35">−35% (2008-scale)</option>
+              <option value="0.5">−50% (Depression-scale)</option>
+            </select>
+          </Field>
+          <Field label="Duration (Years)">
+            <NumberInput value={crashYears} step={1} min={1} max={5} onChange={setCrashYears} />
+          </Field>
+          <button onClick={() => runBridgeCrash(crashDrop, crashYears)} disabled={bridgecrashLoading}>
+            {bridgecrashLoading ? "Computing…" : "Run Crash Test"}
+          </button>
+        </div>
+        {bridgecrash && (
+          bridgecrash.has_bridge ? (
+            <div className="stat-grid" style={{ marginTop: 10 }}>
+              <Stat label="Success: Baseline → Crash"
+                value={`${fmtPct(bridgecrash.base_success, 0)} → ${fmtPct(bridgecrash.stressed_success, 0)}`}
+                sub={`${bridgecrash.success_delta >= 0 ? "+" : ""}${fmtPct(bridgecrash.success_delta)} vs baseline`} />
+              <Stat label="Bridge Breaks: Baseline → Crash"
+                value={`${fmtPct(bridgecrash.base_bridge_break_rate, 0)} → ${fmtPct(bridgecrash.stressed_bridge_break_rate, 0)}`}
+                sub={`a ${fmtPct(bridgecrash.drop, 0)} drop over ${bridgecrash.years} yr at age ${bridgecrash.retirement_age}`} />
+              <Stat label="Early-Penalty Reliance: Baseline → Crash"
+                value={`${fmtPct(bridgecrash.base_early_penalty_rate, 0)} → ${fmtPct(bridgecrash.stressed_early_penalty_rate, 0)}`} />
+            </div>
+          ) : (
+            <p className="hint" style={{ marginTop: 10 }}>
+              No bridge to stress — retirement is at or past 59½.
+            </p>
+          )
         )}
       </Section>
 

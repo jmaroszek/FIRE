@@ -4,8 +4,11 @@ accessibility series, and the Roth ladder schedule."""
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 
+from .accounts import PENALTY_FREE_AGE
 from .engine import SimResult, run
 from .sampling import MarketPaths, sample_paths
 from .scenario import (
@@ -157,6 +160,116 @@ def accessibility_medians_real(result: SimResult) -> dict[str, list[float]]:
         src: np.median(series / deflate, axis=0).tolist()
         for src, series in result.accessible.items()
     }
+
+
+def accessibility_fan(result: SimResult,
+                      percentiles=DEFAULT_PERCENTILES) -> dict[str, list[float]]:
+    """Percentile fan of TOTAL penalty-free accessible dollars over time (real).
+
+    The median accessibility *stack* shows composition but hides the tail; this
+    shows dispersion. The low percentile is the bridge-failure signal — a p5 line
+    diving toward zero before 59½ means the penalty-free runway runs dry in bad
+    markets even when the median path looks comfortable."""
+    if not result.accessible:
+        return {}
+    deflate = result.cum_inflation[:, 1:]  # accessible is an end-of-year stock
+    total = sum(result.accessible.values()) / deflate
+    return {f"p{p}": np.percentile(total, p, axis=0).tolist() for p in percentiles}
+
+
+def bridge_analysis(result: SimResult) -> dict:
+    """Liquidity diagnostics for the bridge — early retirement to the 59½ penalty-
+    free age (modeled as 60). The headline success rate blends the bridge with
+    longevity risk and counts a path that survives only by paying early-withdrawal
+    penalties as a 'success'; this isolates both. Every window is over ages < 60.
+
+    Rides every /simulate:
+      - bridge_break_rate: paths whose penalty-free money proved insufficient before
+        60 — a hard shortfall OR a forced penalized traditional draw.
+      - bridge_fail_rate / longevity_fail_rate: failures split by when they strike.
+      - early_penalty_rate / median_penalty_real: how often, and how much, the plan
+        leans on the 10% last-resort early withdrawal.
+      - coverage / runway: conservative (growth-free) ratio of penalty-free assets
+        on entering retirement to the spending the bridge demands — a floor.
+      - min_accessible_real: per-path low-water mark of penalty-free assets (hist).
+      - at_retirement: median accessible-vs-penalty-locked split of the portfolio.
+    """
+    ages = result.ages
+    retire_age = int(result.scenario.retirement_age)
+    pf_age = PENALTY_FREE_AGE
+    P = int(result.fail.shape[0])
+    bridge_cols = np.where((ages >= retire_age) & (ages < pf_age))[0]
+    has_bridge = bool(retire_age < pf_age and bridge_cols.size > 0)
+
+    out: dict = {
+        "has_bridge": has_bridge,
+        "bridge_start_age": retire_age,
+        "bridge_end_age": pf_age,
+        "bridge_years": max(pf_age - retire_age, 0),
+        "total_paths": P,
+    }
+    if not has_bridge:
+        return out
+
+    # --- failure split: bridge liquidity crunch vs late-life longevity shortfall
+    failed_any = result.fail.any(axis=1)
+    bridge_fail = result.fail[:, bridge_cols].any(axis=1)
+    longevity_fail = failed_any & ~bridge_fail
+
+    # --- early-penalty leakage (the cost a binary "success" hides)
+    deflate = _flow_deflator(result)  # penalty & need are flows
+    penalty = (result.penalty_paid if result.penalty_paid is not None
+               else np.zeros_like(result.taxes_paid))
+    per_path_penalty = (penalty / deflate)[:, bridge_cols].sum(axis=1)
+    paid_penalty = per_path_penalty > 1.0
+    n_penalty = int(paid_penalty.sum())
+
+    # a path "breaks" the bridge if penalty-free money was insufficient by either
+    # symptom — a hard shortfall, or a last-resort penalized draw
+    bridge_break = bridge_fail | paid_penalty
+
+    # --- conservative coverage / runway (ignores growth on the bridge → a floor)
+    acc_total = sum(result.accessible.values()) / result.cum_inflation[:, 1:]  # (P,T) real
+    t0 = int(bridge_cols[0])
+    resources = acc_total[:, t0]  # penalty-free assets just inside retirement
+    need_real = ((result.spending_need if result.spending_need is not None
+                  else result.expenses) / deflate)
+    bridge_need = need_real[:, bridge_cols].sum(axis=1)
+    first_need = need_real[:, t0]
+    coverage = np.clip(np.divide(resources, bridge_need,
+                                 out=np.full(P, 20.0), where=bridge_need > 1.0), 0.0, 20.0)
+    runway = np.clip(np.divide(resources, first_need,
+                               out=np.full(P, 40.0), where=first_need > 1.0), 0.0, 40.0)
+    min_accessible = acc_total[:, bridge_cols].min(axis=1)
+
+    # --- accessible vs penalty-locked split of the portfolio entering retirement
+    # (accessible[:, t] is recorded end-of-year, aligning with pools[:, t+1])
+    pools_total = sum(p[:, t0 + 1] for p in result.pools.values()) / result.cum_inflation[:, t0 + 1]
+    locked = np.maximum(pools_total - resources, 0.0)
+
+    out.update({
+        "bridge_fail_rate": float(bridge_fail.mean()),
+        "longevity_fail_rate": float(longevity_fail.mean()),
+        "bridge_break_rate": float(bridge_break.mean()),
+        "early_penalty_rate": float(paid_penalty.mean()),
+        "early_penalty_paths": n_penalty,
+        "median_penalty_real": float(np.median(per_path_penalty[paid_penalty])) if n_penalty else 0.0,
+        "coverage_p5": float(np.percentile(coverage, 5)),
+        "coverage_p25": float(np.percentile(coverage, 25)),
+        "coverage_p50": float(np.percentile(coverage, 50)),
+        "runway_p5": float(np.percentile(runway, 5)),
+        "runway_p50": float(np.percentile(runway, 50)),
+        "resources_p50_real": float(np.median(resources)),
+        "need_p50_real": float(np.median(bridge_need)),
+        "min_accessible_real": min_accessible.tolist(),
+        "at_retirement": {
+            "accessible_real": float(np.median(resources)),
+            "locked_real": float(np.median(locked)),
+            "pct_accessible": float(np.median(np.divide(
+                resources, pools_total, out=np.zeros(P), where=pools_total > 1.0))),
+        },
+    })
+    return out
 
 
 def ladder_schedule(result: SimResult) -> list[dict]:
@@ -538,6 +651,42 @@ def income_stress(scenario: Scenario, shock_age: int, duration: int,
             "delta": stressed - base, "shock_age": shock_age, "duration": duration}
 
 
+def bridge_crash_stress(scenario: Scenario, drop: float = 0.30, years: int = 2,
+                        n_paths: int = 2000) -> dict:
+    """Retire-into-a-crash: force a market drop in the FIRST `years` years of
+    retirement on the SAME sampled paths, so the delta is pure sequence risk. A
+    severe drawdown right at the start of the bridge is the early retiree's worst
+    case — spending sells depressed assets exactly when the penalty-free runway has
+    the longest way to go. Reports the hit to overall success AND to the bridge-
+    specific break and early-penalty rates."""
+    base_paths = sample_paths(scenario, n_paths=n_paths)
+    base = run(scenario, paths=base_paths)
+    t_retire = max(scenario.retirement_age - scenario.start_age, 0)
+    end = min(t_retire + max(years, 1), base_paths.n_years)
+    stock = base_paths.stock.copy()
+    bond = base_paths.bond.copy()
+    # a crash REPLACES those years' returns (same convention as crash events):
+    # stocks take the full drop, bonds a third of it (flight-to-quality cushion).
+    stock[:, t_retire:end] = -drop
+    bond[:, t_retire:end] = -drop / 3.0
+    stressed = run(scenario, paths=replace(base_paths, stock=stock, bond=bond))
+
+    bb, sb = bridge_analysis(base), bridge_analysis(stressed)
+    return {
+        "has_bridge": bb["has_bridge"],
+        "drop": drop,
+        "years": end - t_retire,
+        "retirement_age": scenario.retirement_age,
+        "base_success": base.success_rate,
+        "stressed_success": stressed.success_rate,
+        "success_delta": stressed.success_rate - base.success_rate,
+        "base_bridge_break_rate": bb.get("bridge_break_rate", 0.0),
+        "stressed_bridge_break_rate": sb.get("bridge_break_rate", 0.0),
+        "base_early_penalty_rate": bb.get("early_penalty_rate", 0.0),
+        "stressed_early_penalty_rate": sb.get("early_penalty_rate", 0.0),
+    }
+
+
 def tax_regime_stress(scenario: Scenario, sunset_age: int, bracket_rate_mult: float = 1.15,
                       std_deduction_mult: float = 0.5, n_paths: int = 2000) -> dict:
     """Re-run the plan as if today's tax law reverts at `sunset_age` — ordinary
@@ -639,6 +788,8 @@ def summarize(result: SimResult) -> dict:
         "pool_medians_real": pool_medians_real(result),
         "survival_curve": survival_curve(result),
         "accessibility_real": accessibility_medians_real(result),
+        "accessibility_fan": accessibility_fan(result),
+        "bridge": bridge_analysis(result),
         "withdrawals_real": withdrawal_source_medians_real(result),
         "ladder_schedule": ladder_schedule(result),
         "rmd_schedule": rmd_schedule(result),

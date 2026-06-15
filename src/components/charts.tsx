@@ -308,6 +308,88 @@ export function AccessibilityChart(props: {
   );
 }
 
+/** Percentile fan of TOTAL penalty-free accessible dollars over time (real). The
+ * median stack shows composition; this shows dispersion. The p5 line diving toward
+ * zero before the 59½ marker is the bridge-failure signal the median can't show. */
+export function AccessibilityFanChart(props: {
+  result: SimulateResult; axisMode: "age" | "year";
+  retirementMarker?: number | null; retirementAge?: number | null;
+  birthYear?: number; height?: number;
+}) {
+  const fan = props.result.accessibility_fan;
+  const ages = props.result.ages;
+  const x = props.axisMode === "age" ? [...ages] : [...props.result.years];
+  if (!fan || !fan.p50) return <p className="hint">Simulation pending…</p>;
+
+  // Focus the view on the bridge era. After 59½ the traditional pool unlocks and
+  // decades of compounding blow the y-scale into the tens of millions, burying the
+  // bridge detail this chart exists to show — so cap both axes a few years past 60.
+  let xRange: [number, number] | undefined;
+  let yRange: [number, number] | undefined;
+  if (props.retirementAge != null) {
+    const ra = props.retirementAge;
+    const off = props.axisMode === "age" ? 0 : (props.birthYear ?? 0);
+    xRange = [ra - 3 + off, 65 + off];
+    // scale to the pre-60 (penalty-locked) era only; the 59½ unlock sends the
+    // lines off the top, which reads correctly as "everything opens up at 60".
+    let ymax = 0;
+    for (let i = 0; i < ages.length; i++) {
+      if (ages[i] >= ra - 1 && ages[i] < 60) ymax = Math.max(ymax, fan.p95[i] ?? 0);
+    }
+    if (ymax > 0) yRange = [0, ymax * 1.12];
+  }
+
+  const band = (lo: string, hi: string, color: string, label: string): Data[] => [
+    { x, y: fan[lo], type: "scatter", mode: "lines",
+      line: { width: 0 }, hoverinfo: "skip", showlegend: false },
+    { x, y: fan[hi], type: "scatter", mode: "lines", fill: "tonexty",
+      fillcolor: color, line: { width: 0 }, name: label, hoverinfo: "skip" },
+  ];
+  const data: Data[] = [
+    ...band("p5", "p95", "rgba(63,185,80,0.10)", "5–95%"),
+    ...band("p25", "p75", "rgba(63,185,80,0.22)", "25–75%"),
+    { x, y: fan.p50, type: "scatter", mode: "lines", name: "Median",
+      line: { color: "#3fb950", width: 2.5 }, hovertemplate: "%{y:$,.0f}" },
+    { x, y: fan.p5, type: "scatter", mode: "lines", name: "Worst 5%",
+      line: { color: "#f85149", width: 1.5, dash: "dot" }, hovertemplate: "%{y:$,.0f}" },
+  ];
+
+  const shapes: Partial<Shape>[] = [];
+  const annotations: Partial<Layout["annotations"][number]>[] = [];
+  const pf = props.axisMode === "age" ? 59.5 : (props.birthYear ?? 0) + 59.5;
+  shapes.push({ type: "line", x0: pf, x1: pf, y0: 0, y1: 1, yref: "paper",
+    line: { color: "#f0883e", width: 1.5, dash: "dash" } });
+  annotations.push({ x: pf, y: 1, yref: "paper", text: "59½", showarrow: false,
+    yanchor: "bottom", font: { color: "#f0883e", size: 11 } });
+  if (props.retirementMarker != null) {
+    shapes.push({ type: "line", x0: props.retirementMarker, x1: props.retirementMarker,
+      y0: 0, y1: 1, yref: "paper", line: { color: "#8b949e", width: 1.5, dash: "dash" } });
+    annotations.push({ x: props.retirementMarker, y: 1, yref: "paper",
+      text: `Retire ${props.retirementMarker}`, showarrow: false,
+      yanchor: "bottom", font: { color: "#8b949e", size: 11 } });
+  }
+  return (
+    <Plot
+      data={data}
+      layout={{
+        ...baseLayout, height: props.height ?? 340, hovermode: "x unified",
+        shapes, annotations: annotations as Layout["annotations"],
+        yaxis: {
+          ...baseLayout.yaxis, tickformat: "$.3~s",
+          ...(yRange ? { range: yRange, autorange: false } : { rangemode: "tozero" }),
+        },
+        xaxis: {
+          ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" },
+          ...(xRange ? { range: xRange } : {}),
+        },
+        title: { text: "Total Penalty-Free Assets — Percentile Fan, Today's $", font: { size: 14 } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
 /** Median amount actually withdrawn from each source per year (stacked, today's
  * $) — the funding sequence the withdrawal policy produces, vs the accessibility
  * chart which shows what was merely available. */
@@ -634,6 +716,66 @@ export function CompareSweepChart(props: {
           line: { color: "#d29922", width: 1, dash: "dot" },
         }] : [],
         title: { text: "Success Probability vs Retirement Age", font: { size: 14 } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
+/** Overlay each pinned scenario's MEDIAN total penalty-free assets through the
+ * bridge era — the A/B view of "whose early-retirement runway holds up". Focused
+ * on the pre-60 window and capped to bridge magnitude (the 59½ unlock runs off
+ * the top), so the comparison isn't crushed by post-unlock compounding. */
+export function CompareBridgeChart(props: {
+  slots: CompareSlot[]; axisMode: "age" | "year"; height?: number;
+}) {
+  const palette = ["#58a6ff", "#3fb950", "#d29922", "#bc8cff", "#f0883e", "#ff7b72"];
+  const data: Data[] = [];
+  let minRetire = Infinity;
+  let ymax = 0;
+  const firstBirth = props.slots[0]?.scenario.profile.birth_year ?? 0;
+  props.slots.forEach((slot, i) => {
+    const fan = slot.result.accessibility_fan;
+    if (!fan || !fan.p50) return;
+    const ages = slot.result.ages;
+    const x = props.axisMode === "age" ? [...ages] : [...slot.result.years];
+    data.push({
+      x, y: fan.p50, type: "scatter", mode: "lines", name: slot.name,
+      line: { color: palette[i % palette.length], width: 2.5 },
+      hovertemplate: "%{y:$,.0f}",
+    });
+    const ra = slot.scenario.retirement_age;
+    minRetire = Math.min(minRetire, ra);
+    for (let k = 0; k < ages.length; k++)
+      if (ages[k] >= ra - 1 && ages[k] < 60) ymax = Math.max(ymax, fan.p50[k] ?? 0);
+  });
+  if (data.length === 0) return null;
+  const off = props.axisMode === "age" ? 0 : firstBirth;
+  const pf = 59.5 + off;
+  const shapes: Partial<Shape>[] = [{
+    type: "line", x0: pf, x1: pf, y0: 0, y1: 1, yref: "paper",
+    line: { color: "#f0883e", width: 1.5, dash: "dash" },
+  }];
+  const annotations = [{
+    x: pf, y: 1, yref: "paper" as const, yanchor: "bottom" as const,
+    text: "59½", showarrow: false, font: { color: "#f0883e", size: 11 },
+  }];
+  return (
+    <Plot
+      data={data}
+      layout={{
+        ...baseLayout, height: props.height ?? 340, hovermode: "x unified",
+        shapes, annotations: annotations as Layout["annotations"],
+        yaxis: {
+          ...baseLayout.yaxis, tickformat: "$.3~s",
+          ...(ymax > 0 ? { range: [0, ymax * 1.12], autorange: false } : { rangemode: "tozero" }),
+        },
+        xaxis: {
+          ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" },
+          range: [minRetire - 3 + off, 65 + off],
+        },
+        title: { text: "Median Penalty-Free Assets Through The Bridge (Today's $)", font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}

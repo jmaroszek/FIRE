@@ -182,12 +182,42 @@ export interface Scenario {
 
 export type FanSeries = Record<string, number[]>; // p5..p95 -> series
 
+export interface BridgeAnalysis {
+  has_bridge: boolean;
+  bridge_start_age: number;
+  bridge_end_age: number;
+  bridge_years: number;
+  total_paths: number;
+  // present only when has_bridge:
+  bridge_fail_rate?: number;
+  longevity_fail_rate?: number;
+  bridge_break_rate?: number;
+  early_penalty_rate?: number;
+  early_penalty_paths?: number;
+  median_penalty_real?: number;
+  coverage_p5?: number;
+  coverage_p25?: number;
+  coverage_p50?: number;
+  runway_p5?: number;
+  runway_p50?: number;
+  resources_p50_real?: number;
+  need_p50_real?: number;
+  min_accessible_real?: number[];
+  at_retirement?: {
+    accessible_real: number;
+    locked_real: number;
+    pct_accessible: number;
+  };
+}
+
 export interface SimulateResult {
   success_rate: number;
   fan: { nominal: FanSeries; real: FanSeries };
   pool_medians_real: Record<string, number[]>;
   survival_curve: number[];
   accessibility_real: Record<string, number[]>;
+  accessibility_fan: FanSeries;
+  bridge: BridgeAnalysis;
   withdrawals_real: Record<string, number[]>;
   ladder_schedule: {
     year: number; age: number; amount_real: number; matures: number;
@@ -288,6 +318,20 @@ export interface StressResult {
   delta: number;
   shock_age: number;
   duration: number;
+}
+
+export interface BridgeCrashResult {
+  has_bridge: boolean;
+  drop: number;
+  years: number;
+  retirement_age: number;
+  base_success: number;
+  stressed_success: number;
+  success_delta: number;
+  base_bridge_break_rate: number;
+  stressed_bridge_break_rate: number;
+  base_early_penalty_rate: number;
+  stressed_early_penalty_rate: number;
 }
 
 export interface TaxRegimeResult {

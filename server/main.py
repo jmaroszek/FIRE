@@ -185,6 +185,19 @@ def tax_regime(req: TaxRegimeRequest) -> dict:
                                n_paths=req.n_paths)
 
 
+class BridgeCrashRequest(BaseModel):
+    scenario: Scenario
+    drop: float = 0.30
+    years: int = 2
+    n_paths: int = 2000
+
+
+@app.post("/simulate/bridge-crash")
+def bridge_crash(req: BridgeCrashRequest) -> dict:
+    return m.bridge_crash_stress(req.scenario, drop=req.drop, years=req.years,
+                                 n_paths=req.n_paths)
+
+
 class RothTradRequest(BaseModel):
     scenario: Scenario
     n_paths: int = 1000

@@ -1,5 +1,6 @@
 import React from "react";
-import { CompareChart, CompareSweepChart } from "../components/charts";
+import { A } from "../assumptions";
+import { CompareBridgeChart, CompareChart, CompareSweepChart } from "../components/charts";
 import { Section, fmtMoney, fmtPct } from "../components/ui";
 import { useStore, type CompareSlot } from "../store";
 
@@ -19,6 +20,7 @@ function yearsToFi(slot: CompareSlot): string {
 export default function Compare() {
   const { compare, addToCompare, removeFromCompare, result, axisMode, display } = useStore();
   const anySweep = compare.some((c) => c.sweep);
+  const anyBridge = compare.some((c) => c.result.bridge?.has_bridge);
 
   return (
     <div className="stack">
@@ -68,6 +70,50 @@ export default function Compare() {
           </>
         )}
       </Section>
+
+      {anyBridge && (
+        <Section title="Bridge Confidence Side By Side" info={A.bridgeConfidence}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Scenario</th><th>Bridge Holds</th><th>Coverage (Median)</th>
+                <th>Runway vs Gap</th><th>Accessible @ Retire</th><th>Early Penalty</th>
+              </tr>
+            </thead>
+            <tbody>
+              {compare.map((slot) => {
+                const b = slot.result.bridge;
+                if (!b) return (
+                  <tr key={slot.name}>
+                    <td>{slot.name}</td>
+                    <td colSpan={5} className="hint">Re-pin to compute bridge metrics</td>
+                  </tr>
+                );
+                if (!b.has_bridge) return (
+                  <tr key={slot.name}>
+                    <td>{slot.name}</td>
+                    <td colSpan={5} className="hint">No bridge — retires at/after 59½</td>
+                  </tr>
+                );
+                return (
+                  <tr key={slot.name}>
+                    <td>{slot.name}</td>
+                    <td>{fmtPct(1 - (b.bridge_break_rate ?? 0), 0)}</td>
+                    <td>
+                      {(b.coverage_p50 ?? 0).toFixed(2)}×{" "}
+                      <span className="hint">(p5 {(b.coverage_p5 ?? 0).toFixed(2)}×)</span>
+                    </td>
+                    <td>{Math.round(b.runway_p50 ?? 0)} / {b.bridge_years} yr</td>
+                    <td>{fmtPct(b.at_retirement?.pct_accessible ?? 0, 0)}</td>
+                    <td>{fmtPct(b.early_penalty_rate ?? 0, 0)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <CompareBridgeChart slots={compare} axisMode={axisMode} />
+        </Section>
+      )}
 
       {anySweep && (
         <Section
