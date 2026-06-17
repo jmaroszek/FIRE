@@ -13,7 +13,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-SCHEMA_VERSION = 2  # v2: income_streams, waterfall_schedule, medical_streams, Liability.start_age
+SCHEMA_VERSION = 3  # v3: allocation_schedule (age-based allocation glidepath)
 
 
 class AccountType(str, Enum):
@@ -242,6 +242,17 @@ class WaterfallSegment(BaseModel):
     steps: list[WaterfallStep] = Field(default_factory=default_waterfall)
 
 
+class AllocationSegment(BaseModel):
+    """An age-keyed override of the base `allocation` — a glidepath. From
+    `start_age` onward (until the next segment) the portfolio uses this mix.
+    Mirrors WaterfallSegment: before the first segment the base allocation
+    applies, and an empty schedule means one static allocation for all years.
+    Use it to model a rising-equity or de-risking glidepath over the plan."""
+
+    start_age: int
+    allocation: Allocation = Field(default_factory=Allocation)
+
+
 class WithdrawalSource(str, Enum):
     cash = "cash"
     taxable = "taxable"
@@ -418,6 +429,9 @@ class Scenario(BaseModel):
     profile: Profile = Profile()
     accounts: list[Account] = Field(default_factory=list)
     allocation: Allocation = Allocation()
+    # Optional age-keyed glidepath overriding `allocation` from each start_age.
+    # Empty (default) = one static allocation for all years (back-compatible).
+    allocation_schedule: list[AllocationSegment] = Field(default_factory=list)
     market: MarketModel = MarketModel()
     inflation: InflationModel = InflationModel()
     income: Income = Income()

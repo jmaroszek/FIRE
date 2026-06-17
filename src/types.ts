@@ -1,4 +1,4 @@
-// TypeScript mirror of engine/fire_engine/scenario.py (SCHEMA_VERSION 2)
+// TypeScript mirror of engine/fire_engine/scenario.py (SCHEMA_VERSION 3)
 
 export type AccountType =
   | "taxable" | "trad_401k" | "trad_ira" | "roth_ira" | "roth_401k" | "hsa" | "cash";
@@ -13,6 +13,13 @@ export interface Account {
 
 export interface Allocation { stocks: number; bonds: number; cash: number }
 export interface AssetParams { real_cagr: number; vol: number }
+
+/** An age-keyed override of the base allocation — a glidepath segment. Applies
+ *  from start_age until the next segment (mirrors WaterfallSegment). */
+export interface AllocationSegment {
+  start_age: number;
+  allocation: Allocation;
+}
 
 export interface MarketModel {
   mode: "bootstrap" | "parametric";
@@ -180,6 +187,9 @@ export interface Scenario {
   profile: Profile;
   accounts: Account[];
   allocation: Allocation;
+  /** Age-keyed overrides of `allocation` (a glidepath); empty/absent = the base
+   *  allocation every year. */
+  allocation_schedule?: AllocationSegment[];
   market: MarketModel;
   inflation: InflationModel;
   income: Income;

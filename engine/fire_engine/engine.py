@@ -171,10 +171,20 @@ def _precompute_regimes(scenario: Scenario, retirement_age: int) -> list[YearReg
     growth = scenario.income.effective_real_growth(mean_infl)
     match = scenario.income.employer_match_pct
     alloc = scenario.allocation
+    # Age-based allocation glidepath: the base allocation re-asserts to each
+    # segment's mix from its start_age onward. Empty (the default) -> the static
+    # `alloc` for every year, identical to pre-glide behavior. Explicit
+    # allocation regime-events still override within their year (applied below).
+    alloc_segs = sorted(scenario.allocation_schedule, key=lambda s: s.start_age)
+    seg_idx = 0
     segment_start = 0
     salary_set_at = -1  # sim-year when salary was last explicitly set
 
     for t in range(T):
+        age = start_age + t
+        while seg_idx < len(alloc_segs) and alloc_segs[seg_idx].start_age <= age:
+            alloc = alloc_segs[seg_idx].allocation
+            seg_idx += 1
         if t in regime_events:
             # salary compounds up to the event, then the overrides take effect
             salary = salary * (1 + growth) ** (t - segment_start)
@@ -189,7 +199,6 @@ def _precompute_regimes(scenario: Scenario, retirement_age: int) -> list[YearReg
                     match = ov.employer_match_pct
                 if ov.allocation is not None:
                     alloc = ov.allocation
-        age = start_age + t
         salary_t = salary * (1 + growth) ** (t - segment_start)
         retired = age >= retirement_age
         # retirement zeroes the salary unless a regime event at/after the

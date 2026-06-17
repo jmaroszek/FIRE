@@ -55,6 +55,22 @@ export function Collapsible(props: {
   );
 }
 
+/** A sticky in-page jump bar for deep tabs (Accounts, Freedom): one link per
+ * section, scrolling to that section's anchor id. Pairs with section headings
+ * carrying matching ids and a scroll-margin so they clear the sticky chrome. */
+export function SectionNav({ items }: { items: { id: string; label: string }[] }) {
+  return (
+    <div className="section-nav">
+      {items.map((it) => (
+        <button key={it.id} className="section-nav-link"
+          onClick={() => document.getElementById(it.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+          {it.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** A titled row of content-sized cards within a tab. */
 export function Group(props: { title: string; children: React.ReactNode }) {
   return (

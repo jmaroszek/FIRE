@@ -6,7 +6,8 @@ import type {
   TaxRegimeResult,
 } from "./types";
 
-export type Tab = "dashboard" | "plan" | "timeline" | "risk" | "taxes" | "compare" | "settings";
+export type Tab =
+  | "assumptions" | "cashflow" | "accounts" | "taxes" | "freedom" | "compare" | "settings";
 
 export interface CompareSlot {
   name: string;
@@ -50,9 +51,11 @@ interface AppState {
   categories: Category[];
   axisMode: "age" | "year";
   display: "real" | "nominal";
+  sidebarCollapsed: boolean;
   engineUp: boolean | null;
 
   setTab: (t: Tab) => void;
+  setSidebarCollapsed: (v: boolean) => void;
   init: () => Promise<void>;
   setScenario: (s: Scenario) => void;
   patchScenario: (patch: Partial<Scenario>) => void;
@@ -103,7 +106,7 @@ export const useStore = create<AppState>((set, get) => {
         const result = await api.simulate(scenario);
         if (seq === simSeq) {
           // Freedom is stale-while-revalidate: keep the prior bundle visible and
-          // recompute it in the background, so the Dashboard headline's Coast/FIRE
+          // recompute it in the background, so the Freedom tab's Coast/FIRE
           // rows don't flicker out on every edit (they used to be nulled here).
           const hadFreedom = get().freedom != null;
           set({
@@ -123,7 +126,7 @@ export const useStore = create<AppState>((set, get) => {
   };
 
   return {
-    tab: "dashboard",
+    tab: "freedom",
     scenario: null,
     savedAs: "",
     dirty: false,
@@ -154,9 +157,11 @@ export const useStore = create<AppState>((set, get) => {
     categories: [],
     axisMode: "age",
     display: "real",
+    sidebarCollapsed: false,
     engineUp: null,
 
     setTab: (tab) => set({ tab }),
+    setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
 
     init: async () => {
       // the bundled engine exe takes a few seconds to unpack on cold start —

@@ -20,12 +20,61 @@ body {
   font: 14px/1.5 "Segoe UI", system-ui, sans-serif;
 }
 
-.app { display: flex; flex-direction: column; min-height: 100vh; }
+.app { display: flex; flex-direction: row; min-height: 100vh; }
 
-header {
+/* ── Left sidebar navigation ────────────────────────────────────────── */
+.sidebar {
+  flex: 0 0 220px;
+  width: 220px;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 12px 10px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+.app.collapsed .sidebar { display: none; }
+
+.sidebar-brand {
+  font-size: 18px;
+  letter-spacing: 2px;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 4px 8px 14px;
+}
+.sidebar-nav { display: flex; flex-direction: column; flex: 1; }
+.sidebar-group { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; }
+.sidebar-group-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--muted);
+  padding: 4px 8px 2px;
+}
+.sidebar-spacer { flex: 1; }
+.navitem {
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.navitem:hover { color: var(--fg); background: #1f242c; }
+.navitem.active { color: var(--fg); background: #1f6feb33; }
+
+/* ── Content column + top bar ───────────────────────────────────────── */
+.content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.topbar {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 14px;
   padding: 8px 18px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
@@ -34,27 +83,7 @@ header {
   z-index: 10;
   flex-wrap: wrap;
 }
-
-header h1 {
-  margin: 0;
-  font-size: 18px;
-  letter-spacing: 2px;
-  color: var(--accent);
-}
-
-nav { display: flex; gap: 4px; }
-
-.tab {
-  background: none;
-  border: none;
-  color: var(--muted);
-  padding: 8px 14px;
-  cursor: pointer;
-  border-radius: 6px;
-  font-size: 14px;
-}
-.tab:hover { color: var(--fg); background: #1f242c; }
-.tab.active { color: var(--fg); background: #1f6feb33; }
+.sidebar-toggle { font-size: 16px; line-height: 1; padding: 5px 10px; }
 
 .scenario-bar {
   margin-left: auto;
@@ -62,10 +91,51 @@ nav { display: flex; gap: 4px; }
   align-items: center;
   gap: 8px;
 }
-.scenario-name { color: var(--muted); }
+.scenario-switch { max-width: 220px; }
 .dirty { color: var(--amber); }
+.saved-chip { color: var(--muted); font-size: 12px; }
+.overflow { position: relative; display: inline-flex; }
+.overflow-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+  z-index: 20;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+}
+.overflow-menu button { text-align: left; white-space: nowrap; }
 
 main { padding: 18px; max-width: 1500px; width: 100%; margin: 0 auto; }
+
+/* Sticky in-page section jump bar for deep tabs */
+.section-nav {
+  position: sticky;
+  top: 48px; /* sits just under the sticky top bar */
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0;
+  margin: -8px 0 2px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.section-nav-link {
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.section-nav-link:hover { color: var(--fg); background: #1f242c; }
 
 .stack { display: flex; flex-direction: column; gap: 16px; }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 16px; align-items: start; }

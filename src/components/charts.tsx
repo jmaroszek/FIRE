@@ -1232,6 +1232,58 @@ export function RetirementSpendingChart(props: {
   );
 }
 
+/** Net healthcare cost over life: ACA premium after subsidy (pre-65) plus the
+ * IRMAA surcharge (65+), with the subsidy shown alongside. Median path, today's
+ * $. Empty (both ACA and IRMAA off) -> the caller shows a hint instead. */
+export function HealthcareCostChart(props: {
+  result: SimulateResult; axisMode: "age" | "year"; retirementAge: number;
+  coverageEndAge?: number; birthYear?: number; height?: number;
+}) {
+  const x = props.axisMode === "age" ? [...props.result.ages] : [...props.result.years];
+  const net = props.result.healthcare?.net_cost_real ?? [];
+  const sub = props.result.healthcare?.subsidy_real ?? [];
+  const series: { name: string; values: number[]; color: string; fill?: boolean }[] = [];
+  if (net.some((v) => v > 1))
+    series.push({ name: "Net Cost (Premium − Subsidy + IRMAA)", values: net, color: "#bc8cff", fill: true });
+  if (sub.some((v) => v > 1))
+    series.push({ name: "ACA Subsidy", values: sub, color: "#3fb950", fill: false });
+  const marks: LifeMark[] = [{ age: props.retirementAge, label: "Retire", color: "#d29922" }];
+  if (props.coverageEndAge)
+    marks.push({ age: props.coverageEndAge, label: `Medicare ${props.coverageEndAge}`, color: "#bc8cff" });
+  return (
+    <SeriesChart x={x} axisMode={props.axisMode} yFormat="money" legend height={props.height}
+      series={series}
+      markers={lifeStageMarkers(props.axisMode, props.birthYear, marks)}
+      title="Net Healthcare Cost Over Life — Today's $" />
+  );
+}
+
+/** The ACA-vs-conversion tension made visible: Roth conversions raise MAGI,
+ * which shrinks the ACA subsidy. Median conversion $/yr from the ladder against
+ * the subsidy received — watch the subsidy dip in the high-conversion years. */
+export function SubsidyConversionChart(props: {
+  result: SimulateResult; axisMode: "age" | "year"; retirementAge: number;
+  coverageEndAge?: number; birthYear?: number; height?: number;
+}) {
+  const ages = props.result.ages;
+  const x = props.axisMode === "age" ? [...ages] : [...props.result.years];
+  const convByAge = ages.map((age) =>
+    props.result.ladder_schedule.filter((r) => r.age === age).reduce((s, r) => s + r.amount_real, 0));
+  const sub = props.result.healthcare?.subsidy_real ?? [];
+  const marks: LifeMark[] = [{ age: props.retirementAge, label: "Retire", color: "#d29922" }];
+  if (props.coverageEndAge)
+    marks.push({ age: props.coverageEndAge, label: `Medicare ${props.coverageEndAge}`, color: "#bc8cff" });
+  return (
+    <SeriesChart x={x} axisMode={props.axisMode} yFormat="money" legend height={props.height}
+      series={[
+        { name: "Roth Conversions", values: convByAge, color: "#f0883e", fill: true },
+        { name: "ACA Subsidy", values: sub, color: "#3fb950", fill: true },
+      ]}
+      markers={lifeStageMarkers(props.axisMode, props.birthYear, marks)}
+      title="Conversions vs ACA Subsidy — The MAGI Trade-off, Today's $" />
+  );
+}
+
 /** Wealth & Flows: stacked tax-pool balances (left axis) with annual
  * contributions (up) and withdrawals (down) as bars on the right axis — merges
  * the Account Balances, Annual Investing, and Spending-By-Source charts. */
