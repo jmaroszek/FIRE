@@ -18,14 +18,6 @@ export default function Taxes() {
 
   return (
     <div className="stack">
-      <Section title="Taxes Over Time — Annual $, Marginal & Effective Rate" info={A.marginalCurve}>
-        {result ? (
-          <AnnualTaxRateChart result={result} axisMode={axisMode}
-            retirementAge={s.retirement_age} claimingAge={s.social_security.claiming_age}
-            birthYear={s.profile.birth_year} />
-        ) : <p className="hint">Simulation pending…</p>}
-      </Section>
-
       <div className="stat-grid">
         <Section title="Lifetime Tax" info={A.lifetimeTax}>
           {result ? (
@@ -62,6 +54,14 @@ export default function Taxes() {
           )}
         </Section>
       </div>
+
+      <Section title="Taxes Over Time — Annual $, Marginal & Effective Rate" info={A.marginalCurve}>
+        {result ? (
+          <AnnualTaxRateChart result={result} axisMode={axisMode}
+            retirementAge={s.retirement_age} claimingAge={s.social_security.claiming_age}
+            birthYear={s.profile.birth_year} />
+        ) : <p className="hint">Simulation pending…</p>}
+      </Section>
 
       <div className="stat-grid">
       <Section title="Projected RMDs"
@@ -113,7 +113,8 @@ export default function Taxes() {
       </Section>
       </div>
 
-      <Section title="Tax-Law Stress (TCJA Sunset)" info={A.taxRegime}
+      <div className="group-grid">
+      <Section title="Tax-Law Stress (TCJA Sunset)" className="span2" info={A.taxRegime}
         actions={taxregime && (
           <button className="ghost" onClick={() => runTaxRegime(sunsetAge)} disabled={taxregimeLoading}>
             {taxregimeLoading ? "Computing…" : "Recompute"}
@@ -153,6 +154,7 @@ export default function Taxes() {
         </div>
         <p className="hint">Uses the 2025 single-filer Part B + D tiers (the surcharge starts above ~$106k MAGI). A high Roth-conversion or RMD year can trip a tier — cross-check the conversion ladder (Accounts) and the RMD table above.</p>
       </Collapsible>
+      </div>
     </div>
   );
 }

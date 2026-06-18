@@ -269,7 +269,7 @@ export interface SimulateResult {
   ladder_schedule: {
     year: number; age: number; amount_real: number; matures: number;
     trad_remaining_real: number; marginal_rate: number;
-    effective_rate: number; after_tax_income_real: number; surplus_real: number;
+    effective_rate: number; conversion_tax_real: number; accessible_left_real: number;
   }[];
   rmd_schedule: {
     year: number; age: number; amount_real: number;

@@ -47,11 +47,6 @@ export default function Assumptions() {
               <NumberInput value={s.profile.horizon_age} step={1} min={50} max={105}
                 onChange={(v) => up({ profile: { ...s.profile, horizon_age: v } })} />
             </Field>
-            <Field label="Success Threshold"
-              info="A retirement age 'works' when at least this share of paths never run out of money.">
-              <PercentInput value={s.sim.success_threshold} step={1}
-                onChange={(v) => up({ sim: { ...s.sim, success_threshold: v } })} />
-            </Field>
             <Field label="Legacy (Today's $)" info={A.legacy}>
               <NumberInput value={s.sim.legacy_target} step={10000} min={0}
                 onChange={(v) => up({ sim: { ...s.sim, legacy_target: v } })} />
@@ -74,6 +69,11 @@ export default function Assumptions() {
             <Field label="Random Seed">
               <NumberInput value={s.sim.seed} step={1}
                 onChange={(v) => up({ sim: { ...s.sim, seed: v } })} />
+            </Field>
+            <Field label="Success Threshold"
+              info="A retirement age 'works' when at least this share of paths never run out of money.">
+              <PercentInput value={s.sim.success_threshold} step={1}
+                onChange={(v) => up({ sim: { ...s.sim, success_threshold: v } })} />
             </Field>
           </div>
         </Section>

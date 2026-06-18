@@ -127,6 +127,9 @@ class SimResult:
     contrib_pools: dict[str, np.ndarray] | None = None  # destination -> (P, T) nominal
     liability_balance: np.ndarray | None = None  # (T+1,) nominal outstanding debt
     conversion_marginal_rate: np.ndarray | None = None  # (P, T) marginal tax on next conversion $
+    conversion_tax: np.ndarray | None = None  # (P, T) nominal tax attributable to the year's Roth
+    # conversion (year's income tax minus its no-conversion counterfactual) — the added tax the
+    # conversion creates, separate from tax owed anyway. Lets the ladder show a clean self-fund line.
     effective_rate: np.ndarray | None = None  # (P, T) avg fed+state income tax / taxable income
     # (the much-lower companion to the marginal rate — what you actually pay on average)
     rmds: np.ndarray | None = None  # (P, T) nominal required minimum distributions
@@ -463,6 +466,7 @@ def run(
     spending_mult_out = np.ones((P, T))
     conversions_out = np.zeros((P, T))
     conv_marginal_rate = np.zeros((P, T))
+    conv_tax_out = np.zeros((P, T))
     effective_rate_out = np.zeros((P, T))
     rmds_out = np.zeros((P, T))
     contrib_pool_names = ("taxable", "trad", "roth", "hsa", "cash", "match")
@@ -718,6 +722,19 @@ def run(
         tax_b = fed_b + scenario.profile.state_tax_rate * (ot_b + lt_b)
         conv_marginal_rate[:, t] = (tax_b - (fed + state_tax)) / bump
 
+        # Tax attributable to THIS year's Roth conversion: the year's income tax
+        # minus what it would have been with the conversion removed. The conversion
+        # inflates ordinary income (and can drag SS into the tax base or push LTCG
+        # out of the 0% band), so this counterfactual captures the full added tax —
+        # the cash you must source to convert, distinct from the tax you'd owe
+        # anyway. FICA/penalty don't depend on the conversion, so only fed+state move.
+        if conv_active:
+            oe_nc = ordinary_excl_ss - conv
+            ss_nc = taxmod.taxable_social_security(oe_nc + ltcg, ss_nom, tables)
+            fed_nc, ot_nc, lt_nc = taxmod.federal_tax(oe_nc + ss_nc, ltcg, tables_eff, infl)
+            tax_nc = fed_nc + scenario.profile.state_tax_rate * (ot_nc + lt_nc)
+            conv_tax_out[:, t] = np.maximum((fed + state_tax) - tax_nc, 0.0)
+
         # average (effective) fed+state income-tax rate on the year's taxable
         # income — the much-lower companion line to the marginal rate, which is
         # what people actually pay and tends to match a personal tax sheet.
@@ -819,6 +836,7 @@ def run(
         contrib_pools=contrib_pools_out,
         liability_balance=liab_balance,
         conversion_marginal_rate=conv_marginal_rate,
+        conversion_tax=conv_tax_out,
         effective_rate=effective_rate_out,
         rmds=rmds_out,
         port_return=port_return_out,

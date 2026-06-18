@@ -6,8 +6,8 @@ import {
 } from "../components/charts";
 import TimelineEditor from "../components/TimelineEditor";
 import {
-  Collapsible, Field, InfoTip, NumberInput, PercentInput, Section, SectionNav, Stat,
-  fmtMoney, fmtPct,
+  Collapsible, Field, HeroRow, HeroStat, InfoTip, NumberInput, PercentInput,
+  Section, SectionNav, Stat, fmtMoney, fmtPct,
 } from "../components/ui";
 import { KIND_META, KIND_ORDER, displayKindOf, newEventOf, type DisplayKind } from "../events";
 import { useStore } from "../store";
@@ -140,16 +140,59 @@ export default function CashFlow() {
     up({ income_streams: (s.income_streams ?? []).map((e, j) => (j === i ? { ...e, ...patch } : e)) });
   const ss = s.spending_strategy;
 
+  // ---- section hero metrics (always-on; from scenario + median result) -------
+  const activeNow = (start?: number | null, end?: number | null) =>
+    (start ?? startAge) <= startAge && startAge <= (end ?? 999);
+  const grossIncomeNow = s.income.gross_salary
+    + (s.income_streams ?? []).filter((i) => activeNow(i.start_age, i.end_age))
+        .reduce((a, i) => a + i.annual, 0);
+  const nStreams = (s.income_streams ?? []).length;
+  const plannedSpendNow =
+    s.expense_streams.filter((e) => activeNow(e.start_age, e.end_age)).reduce((a, e) => a + e.annual, 0)
+    + (s.medical_streams ?? []).filter((e) => activeNow(e.start_age, e.end_age)).reduce((a, e) => a + e.annual, 0);
+  const contribNow = result
+    ? Object.values(result.investing_real ?? {}).reduce((sum, arr) => sum + (arr?.[0] ?? 0), 0) : 0;
+  const savingsRate = grossIncomeNow > 0 ? contribNow / grossIncomeNow : 0;
+
+  const retIdx = result ? result.ages.findIndex((a) => a >= s.retirement_age) : -1;
+  const netHc = result?.healthcare?.net_cost_real ?? [];
+  const subHc = result?.healthcare?.subsidy_real ?? [];
+  const annualRetSpend = result && retIdx >= 0
+    ? (result.expenses_median_real[retIdx] ?? 0) + (netHc[retIdx] ?? 0) : 0;
+  const lifetimeRetSpend = result && retIdx >= 0
+    ? result.expenses_median_real.slice(retIdx).reduce((a, b) => a + b, 0) : 0;
+  const goGoShare = (() => {
+    if (!result) return 0;
+    const sp = result.expenses_median_real;
+    const tot = sp.reduce((a, b) => a + b, 0);
+    return tot > 0 ? sp.reduce((acc, v, i) => acc + (result.ages[i] <= 75 ? v : 0), 0) / tot : 0;
+  })();
+  const lifetimeHc = netHc.reduce((a, b) => a + b, 0);
+  const peakHc = netHc.length ? Math.max(...netHc) : 0;
+  const peakHcAge = peakHc > 1 && result ? result.ages[netHc.indexOf(peakHc)] : null;
+  const subCaptured = subHc.reduce((a, b) => a + b, 0);
+
   return (
     <div className="stack">
       <SectionNav items={[
         { id: "cf-overview", label: "Overview" },
-        { id: "cf-health", label: "Healthcare" },
         { id: "cf-retire", label: "Retirement" },
+        { id: "cf-health", label: "Healthcare" },
       ]} />
 
       {/* ───────────── OVERVIEW ───────────── */}
       <Head id="cf-overview">Overview</Head>
+      <HeroRow>
+        <HeroStat label="Gross Income" value={`${fmtMoney(grossIncomeNow)}/yr`}
+          sub={nStreams > 0 ? `salary + ${nStreams} other stream${nStreams > 1 ? "s" : ""}` : "primary salary"} />
+        <HeroStat tone="amber" label="Planned Spending" value={`${fmtMoney(plannedSpendNow)}/yr`}
+          sub="living + medical, today's $" />
+        <HeroStat tone="green" label="Savings Rate" value={fmtPct(savingsRate, 0)}
+          sub={`${fmtMoney(contribNow)}/yr invested`}
+          info="This year's modeled contributions (all destinations) as a share of gross income." />
+      </HeroRow>
+
+      <div className="group-grid">
       <Section title="Income"
         info="Salary in today's dollars; the primary salary stops at retirement unless a New Salary event sets another. Add other streams below for side income.">
         <div className="fields">
@@ -258,6 +301,7 @@ export default function CashFlow() {
           </tbody>
         </table>
       </Section>
+      </div>
 
       <Section
         title="Life Events"
@@ -320,6 +364,7 @@ export default function CashFlow() {
         )}
       </Section>
 
+      <div className="group-grid">
       <Section title="Income Shock Stress Test" info={A.stressTest}>
         <div className="fields">
           <Field label="Shock Starts At Age"
@@ -366,6 +411,7 @@ export default function CashFlow() {
           </button>
         )}
       </Section>
+      </div>
 
       <Section title="Funding Sources — Work vs Accounts" info={A.withdrawalSource}>
         {result ? <FundingSourceChart result={result} axisMode={axisMode} />
@@ -377,91 +423,17 @@ export default function CashFlow() {
           : <p className="hint">Simulation pending…</p>}
       </Section>
 
-      {/* ───────────── HEALTHCARE ───────────── */}
-      <Head id="cf-health">Healthcare</Head>
-      <Section
-        title="Medical Spending (HSA-Eligible)"
-        info="Out-of-pocket medical spending, kept separate from general expenses. Always essential; the HSA pays its share (set utilization under HSA on the Accounts tab). Don't list insurance premiums here — those are modeled under ACA / IRMAA, which add on top."
-        actions={
-          <button className="ghost" onClick={() =>
-            up({ medical_streams: [...(s.medical_streams ?? []), {
-              name: "Out-Of-Pocket Medical", annual: 0, inflates: true, extra_inflation: 0,
-              is_medical: false, essential: true,
-            }] })}>+ Add Medical</button>
-        }>
-        {(s.medical_streams ?? []).length > 0 ? (
-          <table className="table">
-            <thead>
-              <tr><th>Name</th><th>$ / Yr</th><th>Ages</th>
-                <th>CPI +<InfoTip text={A.cpiPlus} /></th><th /></tr>
-            </thead>
-            <tbody>
-              {(s.medical_streams ?? []).map((e, i) => (
-                <tr key={i}>
-                  <td className="namecell"><input value={e.name} onChange={(ev) => upMedical(i, { name: ev.target.value })} /></td>
-                  <td><NumberInput value={e.annual} step={250} onChange={(v) => upMedical(i, { annual: v })} /></td>
-                  <td className="agecell">
-                    <NumberInput value={e.start_age ?? startAge} step={1}
-                      onChange={(v) => upMedical(i, { start_age: v })} />
-                    –
-                    <NumberInput value={e.end_age ?? s.profile.horizon_age} step={1}
-                      onChange={(v) => upMedical(i, { end_age: v })} />
-                  </td>
-                  <td className="cpicell"><PercentInput value={e.extra_inflation} step={0.25}
-                    onChange={(v) => upMedical(i, { extra_inflation: v })} /></td>
-                  <td><button className="ghost" onClick={() =>
-                    up({ medical_streams: (s.medical_streams ?? []).filter((_, j) => j !== i) })}>✕</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="hint">No medical streams yet. Add prescriptions, dental, copays — the spending your HSA is meant to cover.</p>
-        )}
-      </Section>
-
-      <Collapsible title="ACA Premium Subsidy (Pre-65)" info={A.aca}>
-        <div className="fields">
-          <Field label="Enabled">
-            <input type="checkbox" checked={s.aca.enabled}
-              onChange={(e) => up({ aca: { ...s.aca, enabled: e.target.checked } })} />
-          </Field>
-          <Field label="Benchmark Premium (Today's $/yr)"
-            info="The second-lowest-cost Silver plan in your area — the plan the subsidy is computed against.">
-            <NumberInput value={s.aca.benchmark_annual} step={500}
-              onChange={(v) => up({ aca: { ...s.aca, benchmark_annual: v } })} />
-          </Field>
-          <Field label="Your Plan's Premium (Today's $/yr)">
-            <NumberInput value={s.aca.actual_annual} step={500}
-              onChange={(v) => up({ aca: { ...s.aca, actual_annual: v } })} />
-          </Field>
-          <Field label="Coverage Ends At Age"
-            info="Medicare eligibility — marketplace coverage (and this subsidy) stops here.">
-            <NumberInput value={s.aca.coverage_end_age} step={1}
-              onChange={(v) => up({ aca: { ...s.aca, coverage_end_age: v } })} />
-          </Field>
-        </div>
-        <p className="hint">Models the post-2021 subsidy (caps at 8.5% of MAGI, no income cliff). Roth conversions raise MAGI and shrink the subsidy — the collision the Accounts tab's subsidy-vs-conversion view surfaces. Don't also list this premium as an expense stream.</p>
-      </Collapsible>
-
-      <Section title="Net Healthcare Cost" info={A.healthcareTrajectory}>
-        {result ? (
-          result.healthcare?.net_cost_real?.some((v) => v > 1)
-            || result.healthcare?.subsidy_real?.some((v) => v > 1) ? (
-            <HealthcareCostChart result={result} axisMode={axisMode}
-              retirementAge={s.retirement_age} coverageEndAge={s.aca.coverage_end_age}
-              birthYear={s.profile.birth_year} />
-          ) : (
-            <p className="hint">
-              No modeled healthcare cost yet. Turn on ACA Premium Subsidy above (pre-65) or
-              IRMAA on the Taxes tab (65+) to see net premium, subsidy, and surcharge over life.
-            </p>
-          )
-        ) : <p className="hint">Simulation pending…</p>}
-      </Section>
-
       {/* ───────────── RETIREMENT ───────────── */}
       <Head id="cf-retire">Retirement</Head>
+      <HeroRow>
+        <HeroStat label="Annual Retirement Spend" value={`${fmtMoney(annualRetSpend)}/yr`}
+          sub={`living + net healthcare at age ${s.retirement_age}`} />
+        <HeroStat tone="green" label="Spent In Go-Go Years" value={fmtPct(goGoShare, 0)}
+          sub="share of lifetime spending through age 75"
+          info="Bill-Perkins lens: how much of your modeled lifetime spending lands in the high-energy years (through 75) vs later." />
+        <HeroStat tone="amber" label="Lifetime Retirement Spending" value={fmtMoney(lifetimeRetSpend)}
+          sub={`age ${s.retirement_age}–${s.profile.horizon_age}, today's $`} />
+      </HeroRow>
       <Section title="Retirement Spending"
         info="What a year in retirement costs on the median path: living expenses plus net healthcare (ACA premium after subsidy, then IRMAA at 65+).">
         {result ? (
@@ -615,6 +587,102 @@ export default function CashFlow() {
           ) : <p className="hint">Simulation pending…</p>}
         </Section>
       )}
+
+      {/* ───────────── HEALTHCARE ───────────── */}
+      <Head id="cf-health">Healthcare</Head>
+      <HeroRow>
+        <HeroStat tone="purple" label="Lifetime Net Healthcare" value={fmtMoney(lifetimeHc)}
+          sub="premiums − subsidy + IRMAA, today's $"
+          info="Sum of modeled net healthcare cost over the plan (median path). Zero until you enable ACA (below) or IRMAA (Taxes tab)." />
+        <HeroStat tone="purple" label="Peak Annual Net Cost" value={fmtMoney(peakHc)}
+          sub={peakHcAge ? `at age ${peakHcAge}` : "enable ACA / IRMAA to model"} />
+        <HeroStat tone="green" label="ACA Subsidy Captured" value={fmtMoney(subCaptured)}
+          sub="lifetime, today's $" />
+      </HeroRow>
+
+      <div className="group-grid">
+      <Section
+        title="Medical Spending (HSA-Eligible)"
+        className="span2"
+        info="Out-of-pocket medical spending, kept separate from general expenses. Always essential; the HSA pays its share (set utilization under HSA on the Accounts tab). Don't list insurance premiums here — those are modeled under ACA / IRMAA, which add on top."
+        actions={
+          <button className="ghost" onClick={() =>
+            up({ medical_streams: [...(s.medical_streams ?? []), {
+              name: "Out-Of-Pocket Medical", annual: 0, inflates: true, extra_inflation: 0,
+              is_medical: false, essential: true,
+            }] })}>+ Add Medical</button>
+        }>
+        {(s.medical_streams ?? []).length > 0 ? (
+          <table className="table">
+            <thead>
+              <tr><th>Name</th><th>$ / Yr</th><th>Ages</th>
+                <th>CPI +<InfoTip text={A.cpiPlus} /></th><th /></tr>
+            </thead>
+            <tbody>
+              {(s.medical_streams ?? []).map((e, i) => (
+                <tr key={i}>
+                  <td className="namecell"><input value={e.name} onChange={(ev) => upMedical(i, { name: ev.target.value })} /></td>
+                  <td><NumberInput value={e.annual} step={250} onChange={(v) => upMedical(i, { annual: v })} /></td>
+                  <td className="agecell">
+                    <NumberInput value={e.start_age ?? startAge} step={1}
+                      onChange={(v) => upMedical(i, { start_age: v })} />
+                    –
+                    <NumberInput value={e.end_age ?? s.profile.horizon_age} step={1}
+                      onChange={(v) => upMedical(i, { end_age: v })} />
+                  </td>
+                  <td className="cpicell"><PercentInput value={e.extra_inflation} step={0.25}
+                    onChange={(v) => upMedical(i, { extra_inflation: v })} /></td>
+                  <td><button className="ghost" onClick={() =>
+                    up({ medical_streams: (s.medical_streams ?? []).filter((_, j) => j !== i) })}>✕</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="hint">No medical streams yet. Add prescriptions, dental, copays — the spending your HSA is meant to cover.</p>
+        )}
+      </Section>
+
+      <Collapsible title="ACA Premium Subsidy (Pre-65)" info={A.aca}>
+        <div className="fields">
+          <Field label="Enabled">
+            <input type="checkbox" checked={s.aca.enabled}
+              onChange={(e) => up({ aca: { ...s.aca, enabled: e.target.checked } })} />
+          </Field>
+          <Field label="Benchmark Premium (Today's $/yr)"
+            info="The second-lowest-cost Silver plan in your area — the plan the subsidy is computed against.">
+            <NumberInput value={s.aca.benchmark_annual} step={500}
+              onChange={(v) => up({ aca: { ...s.aca, benchmark_annual: v } })} />
+          </Field>
+          <Field label="Your Plan's Premium (Today's $/yr)">
+            <NumberInput value={s.aca.actual_annual} step={500}
+              onChange={(v) => up({ aca: { ...s.aca, actual_annual: v } })} />
+          </Field>
+          <Field label="Coverage Ends At Age"
+            info="Medicare eligibility — marketplace coverage (and this subsidy) stops here.">
+            <NumberInput value={s.aca.coverage_end_age} step={1}
+              onChange={(v) => up({ aca: { ...s.aca, coverage_end_age: v } })} />
+          </Field>
+        </div>
+        <p className="hint">Models the post-2021 subsidy (caps at 8.5% of MAGI, no income cliff). Roth conversions raise MAGI and shrink the subsidy — the collision the Accounts tab's subsidy-vs-conversion view surfaces. Don't also list this premium as an expense stream.</p>
+      </Collapsible>
+      </div>
+
+      <Section title="Net Healthcare Cost" info={A.healthcareTrajectory}>
+        {result ? (
+          result.healthcare?.net_cost_real?.some((v) => v > 1)
+            || result.healthcare?.subsidy_real?.some((v) => v > 1) ? (
+            <HealthcareCostChart result={result} axisMode={axisMode}
+              retirementAge={s.retirement_age} coverageEndAge={s.aca.coverage_end_age}
+              birthYear={s.profile.birth_year} />
+          ) : (
+            <p className="hint">
+              No modeled healthcare cost yet. Turn on ACA Premium Subsidy above (pre-65) or
+              IRMAA on the Taxes tab (65+) to see net premium, subsidy, and surcharge over life.
+            </p>
+          )
+        ) : <p className="hint">Simulation pending…</p>}
+      </Section>
     </div>
   );
 }

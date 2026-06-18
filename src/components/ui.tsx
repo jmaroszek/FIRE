@@ -170,6 +170,29 @@ export function PercentInput(props: {
   );
 }
 
+/** A section-topping KPI tile — bigger than Stat, with a colored top accent.
+ * Drop a few inside <HeroRow> for the headline numbers of a section. */
+export function HeroStat(props: {
+  label: string; value: string; sub?: string; info?: string;
+  tone?: "accent" | "green" | "amber" | "red" | "purple";
+}) {
+  return (
+    <div className={["hero", `hero-${props.tone ?? "accent"}`].join(" ")}>
+      <div className="hero-label">
+        {props.label}
+        {props.info && <InfoTip text={props.info} />}
+      </div>
+      <div className="hero-value">{props.value}</div>
+      {props.sub && <div className="hero-sub">{props.sub}</div>}
+    </div>
+  );
+}
+
+/** Responsive row of HeroStat tiles (auto-fits 2–4 across). */
+export function HeroRow({ children }: { children: React.ReactNode }) {
+  return <div className="hero-row">{children}</div>;
+}
+
 export function Stat(props: { label: string; value: string; sub?: string; info?: string }) {
   return (
     <div className="stat">

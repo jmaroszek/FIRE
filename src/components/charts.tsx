@@ -18,8 +18,13 @@ export const baseLayout: Partial<Layout> = {
   plot_bgcolor: "transparent",
   font: { color: FG, size: 12 },
   margin: { l: 70, r: 20, t: 30, b: 45 },
-  // themed hover spikeline (was an off-theme white/red default under x-unified hover)
-  xaxis: { gridcolor: GRID, zeroline: false, spikecolor: "#6e7681", spikethickness: 1, spikedash: "dot" },
+  // themed hover spikeline (was an off-theme white/red default under x-unified hover).
+  // showspikes + spikemode are required — without them Plotly's unified-hover line
+  // falls back to its default white/red styling and ignores spikecolor.
+  xaxis: {
+    gridcolor: GRID, zeroline: false, showspikes: true, spikemode: "across",
+    spikesnap: "cursor", spikecolor: "#6e7681", spikethickness: 1, spikedash: "dot",
+  },
   yaxis: { gridcolor: GRID, zeroline: false },
   showlegend: true,
   legend: { orientation: "h", y: -0.18 },
@@ -440,9 +445,10 @@ export function AccessibilityFanChart(props: {
   if (props.retirementAge != null) {
     const ra = props.retirementAge;
     const off = props.axisMode === "age" ? 0 : (props.birthYear ?? 0);
-    // Stop at the 59½ unlock (modeled at 60): this chart is about the bridge, and
-    // the post-60 spike when traditional opens up is a distraction from it.
-    xRange = [ra - 3 + off, 60 + off];
+    // Stop at the 59½ marker: this chart is about the bridge, and the age-60 jump
+    // when traditional unlocks is a distraction. Ending at 59.5 (not 60) drops that
+    // spike point while keeping the 59½ guide at the right edge.
+    xRange = [ra - 3 + off, 59.5 + off];
     // scale to the pre-60 (penalty-locked) era only; the 59½ unlock sends the
     // lines off the top, which reads correctly as "everything opens up at 60".
     let ymax = 0;
@@ -545,6 +551,18 @@ export function FundingSourceChart(props: {
   const totals = [...x].map((_, i) =>
     (hasWork ? wages[i] ?? 0 : 0) + (hasSS ? ssInc[i] ?? 0 : 0)
     + present.reduce((sum, src) => sum + (w[src][i] ?? 0), 0));
+  // Deficit: planned spending the funding strategy didn't cover (median path).
+  // Stacks on top in red so the stack's full height = what the year needed, and
+  // the red slice = the gap. On a healthy plan this is empty; it only appears when
+  // even the median path can't fund spending — exactly when you want to see it.
+  const exp = props.result.expenses_median_real ?? [];
+  const deficit = [...x].map((_, i) => Math.max(0, (exp[i] ?? 0) - totals[i]));
+  if (deficit.some((v) => v > 1))
+    data.push({
+      x: [...x], y: deficit, type: "scatter", mode: "lines", stackgroup: "one",
+      name: "Deficit (Unfunded Spending)", line: { width: 0.5, color: "#f85149" },
+      fillcolor: "#f8514966", hovertemplate: "Unfunded: %{y:$,.0f}",
+    });
   data.push({
     x: [...x], y: totals, type: "scatter", mode: "lines", name: "Total",
     line: { width: 0 }, showlegend: false,
@@ -832,7 +850,19 @@ export function HistogramChart(props: {
     .map((mk) => ({
       x: mk.value, y: 1, yref: "paper" as const, yanchor: "bottom" as const,
       text: mk.label, showarrow: false, font: { color: mk.color ?? ACCENT, size: 11 },
-    }));
+    })) as any[];
+  // Label the clamped overflow bin so the final bar reads as "everything ≥ end",
+  // not as a literal value at `end` (the histogram's silent-truncation trap).
+  if (bins && props.clampOverflow) {
+    const compact = unit === "money"
+      ? new Intl.NumberFormat("en-US", { notation: "compact", style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(bins.end)
+      : unit === "percent" ? `${Math.round(bins.end * 100)}%` : `${bins.end}`;
+    annotations.push({
+      x: bins.end - bins.size / 2, y: 1, yref: "paper" as const, yanchor: "bottom" as const,
+      xanchor: "center" as const, text: `${compact}+`, showarrow: false,
+      font: { color: "#8b949e", size: 10 },
+    });
+  }
   return (
     <Plot
       data={[{
@@ -1366,10 +1396,8 @@ export function ContributionsChart(props: {
       </p>
     );
   const data: Data[] = present.map((k) => ({
-    x: [...x], y: inv[k], type: "scatter" as const, mode: "lines" as const,
-    stackgroup: "one", name: CONTRIB_LABELS[k] ?? k,
-    line: { width: 0.5, color: CONTRIB_COLORS[k] },
-    fillcolor: (CONTRIB_COLORS[k] ?? "#8b949e") + "66",
+    x: [...x], y: inv[k], type: "bar" as const, name: CONTRIB_LABELS[k] ?? k,
+    marker: { color: CONTRIB_COLORS[k] ?? "#8b949e" },
     hovertemplate: "%{y:$,.0f}",
   }));
   const totals = [...x].map((_, i) =>
@@ -1384,6 +1412,7 @@ export function ContributionsChart(props: {
       data={data}
       layout={{
         ...baseLayout, height: props.height ?? 340, hovermode: "x unified",
+        barmode: "stack", bargap: 0.15,
         legend: { ...baseLayout.legend, traceorder: "reversed" },
         yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero" },
         xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },

@@ -325,13 +325,16 @@ def ladder_schedule(result: SimResult) -> list[dict]:
     med = np.median(result.conversions / deflate, axis=0)
     trad = result.pools["trad"]
     mrate = result.conversion_marginal_rate
-    # per-year diagnostics that contextualize each conversion: income left after
-    # tax, the surplus/deficit vs planned spending (does the year self-fund?), and
-    # the effective (average) rate beside the marginal one.
-    after_tax = (np.median((result.gross_income - result.taxes_paid) / deflate, axis=0)
-                 if result.gross_income is not None else None)
-    surplus = (np.median((result.gross_income - result.taxes_paid - result.expenses) / deflate, axis=0)
-               if result.gross_income is not None else None)
+    # per-year diagnostics that contextualize each conversion:
+    #  - conv_tax: the added tax the conversion itself creates (the cash cost to
+    #    convert; the conversion amount itself is an internal transfer, not a cost).
+    #  - accessible_left: penalty-free balance at year end (today's $) — the liquid
+    #    cushion behind the year; it draws down through the bridge and falls faster
+    #    the more aggressively you convert (the conversion tax is funded from it).
+    conv_tax = result.conversion_tax
+    conv_tax_real = (np.median(conv_tax / deflate, axis=0) if conv_tax is not None else None)
+    acc_left = (np.median(sum(result.accessible.values()) / result.cum_inflation[:, 1:], axis=0)
+                if result.accessible else None)
     erate = result.effective_rate
     out = []
     for i, amount in enumerate(med):
@@ -348,8 +351,8 @@ def ladder_schedule(result: SimResult) -> list[dict]:
                 # path) — bracket + SS torpedo + LTCG displacement
                 "marginal_rate": float(np.median(mrate[:, i])) if mrate is not None else 0.0,
                 "effective_rate": float(np.median(erate[:, i])) if erate is not None else 0.0,
-                "after_tax_income_real": float(after_tax[i]) if after_tax is not None else 0.0,
-                "surplus_real": float(surplus[i]) if surplus is not None else 0.0,
+                "conversion_tax_real": float(conv_tax_real[i]) if conv_tax_real is not None else 0.0,
+                "accessible_left_real": float(acc_left[i]) if acc_left is not None else 0.0,
             })
     return out
 

@@ -5,8 +5,8 @@ import {
   SubsidyConversionChart, WealthFlowsChart,
 } from "../components/charts";
 import {
-  Collapsible, Field, InfoTip, NumberInput, PercentInput, Section, SectionNav, Stat,
-  fmtMoney, fmtPct,
+  Collapsible, Field, HeroRow, HeroStat, InfoTip, NumberInput, PercentInput,
+  Section, SectionNav, Stat, fmtMoney, fmtPct,
 } from "../components/ui";
 import { ACCOUNT_LABELS, SOURCE_LABELS } from "../labels";
 import { useStore } from "../store";
@@ -141,6 +141,20 @@ export default function Accounts() {
   const debt = (s.liabilities ?? []).reduce((a, l) => a + l.balance, 0);
   const total = assets - debt;
 
+  // Growth-section headline metrics (median path, real $)
+  const endingRealMedian = result ? result.fan.real.p50[result.fan.real.p50.length - 1] : 0;
+  const growthMultiple = result && assets > 0 ? endingRealMedian / assets : 0;
+  const medianMaxDD = result ? median(result.max_drawdown) : 0;
+
+  // Liquidity-section headline metrics. Runway is framed against the wait until
+  // your first Roth conversion seasons (becomes penalty-free, +5 yr), not the full
+  // retirement→59½ window — that's the span liquid assets must bridge alone.
+  const bridge = result?.bridge;
+  const hasBridge = !!bridge?.has_bridge;
+  const ladderGap = result && result.ladder_schedule.length
+    ? Math.max(0, result.ladder_schedule[0].age + 5 - s.retirement_age)
+    : (bridge?.bridge_years ?? 0);
+
   const upAccount = (i: number, patch: Partial<Account>) =>
     up({ accounts: s.accounts.map((a, j) => (j === i ? { ...a, ...patch } : a)) });
   const upLiability = (i: number, patch: Partial<Liability>) =>
@@ -172,6 +186,7 @@ export default function Accounts() {
     <div className="stack">
       <SectionNav items={[
         { id: "acc-overview", label: "Overview" },
+        { id: "acc-strategy", label: "Strategy" },
         { id: "acc-growth", label: "Growth" },
         { id: "acc-liquidity", label: "Liquidity & Drawdown" },
         { id: "acc-history", label: "History" },
@@ -183,6 +198,7 @@ export default function Accounts() {
         <Section title="Net Worth" className="span1">
           <Stat label={debt > 0 ? "Assets Minus Liabilities" : "Total Across All Pools"}
             value={fmtMoney(total)} />
+          <div style={{ maxHeight: 240, overflowY: "auto" }}>
           <table className="table">
             <tbody>
               {POOLS.map((p) => (
@@ -203,6 +219,7 @@ export default function Accounts() {
               ))}
             </tbody>
           </table>
+          </div>
         </Section>
 
         <Section title="Accounts" className="span2"
@@ -291,8 +308,10 @@ export default function Accounts() {
         )}
       </Section>
 
+      {/* ───────────── STRATEGY ───────────── */}
+      <Head id="acc-strategy">Strategy</Head>
       <div className="group-grid">
-        <Collapsible title="Contribution Waterfall" info={A.waterfall}
+        <Collapsible title="Contribution Waterfall" info={A.waterfall} defaultOpen
           actions={
             <button className="ghost" onClick={() =>
               up({ waterfall: [...s.waterfall, { account: "taxable", kind: "max" }] })}>+ Step</button>
@@ -325,7 +344,7 @@ export default function Accounts() {
           ))}
         </Collapsible>
 
-        <Collapsible title="Withdrawal Policy" info={A.policy}>
+        <Collapsible title="Withdrawal Policy" info={A.policy} defaultOpen>
           <div className="policy-row">
             {(["order", "late_order"] as const).map((which) => {
               const list = s.withdrawal_policy[which]
@@ -368,31 +387,41 @@ export default function Accounts() {
             </div>
           </div>
         </Collapsible>
-      </div>
 
-      <Collapsible title="HSA Settings" info={A.hsa}>
-        <div className="fields">
-          <Field label="Utilization"
-            info={"The share of HSA-eligible medical spending paid tax-free from the HSA each year; the rest is paid out of pocket."}>
-            <PercentInput value={s.hsa.utilization} step={5}
-              onChange={(v) => up({ hsa: { ...s.hsa, utilization: v } })} />
-          </Field>
-          <Field label="Cash Buffer" info={A.hsaBuffer}>
-            <NumberInput value={s.hsa.cash_buffer} step={500}
-              onChange={(v) => up({ hsa: { ...s.hsa, cash_buffer: v } })} />
-          </Field>
-          <Field label="Coverage">
-            <select value={s.hsa.coverage}
-              onChange={(e) => up({ hsa: { ...s.hsa, coverage: e.target.value as any } })}>
-              <option value="self_only">Self-Only</option>
-              <option value="family">Family</option>
-            </select>
-          </Field>
-        </div>
-      </Collapsible>
+        <Collapsible title="HSA Settings" info={A.hsa} defaultOpen>
+          <div className="fields">
+            <Field label="Utilization"
+              info={"The share of HSA-eligible medical spending paid tax-free from the HSA each year; the rest is paid out of pocket."}>
+              <PercentInput value={s.hsa.utilization} step={5}
+                onChange={(v) => up({ hsa: { ...s.hsa, utilization: v } })} />
+            </Field>
+            <Field label="Cash Buffer" info={A.hsaBuffer}>
+              <NumberInput value={s.hsa.cash_buffer} step={500}
+                onChange={(v) => up({ hsa: { ...s.hsa, cash_buffer: v } })} />
+            </Field>
+            <Field label="Coverage">
+              <select value={s.hsa.coverage}
+                onChange={(e) => up({ hsa: { ...s.hsa, coverage: e.target.value as any } })}>
+                <option value="self_only">Self-Only</option>
+                <option value="family">Family</option>
+              </select>
+            </Field>
+          </div>
+        </Collapsible>
+      </div>
 
       {/* ───────────── GROWTH ───────────── */}
       <Head id="acc-growth">Growth</Head>
+      <HeroRow>
+        <HeroStat label="Median Ending Net Worth" value={result ? fmtMoney(endingRealMedian) : "—"}
+          sub={`real, at age ${s.profile.horizon_age}`} />
+        <HeroStat tone="green" label="Real Growth Multiple"
+          value={growthMultiple > 0 ? `${growthMultiple.toFixed(1)}×` : "—"}
+          sub={`median ending ÷ ${fmtMoney(assets)} invested today`}
+          info="How many times your current invested balance the median path ends with, in today's dollars — the real (inflation-adjusted) growth multiple." />
+        <HeroStat tone="amber" label="Median Max Drawdown" value={result ? fmtPct(medianMaxDD, 0) : "—"}
+          sub="deepest real peak-to-trough fall" />
+      </HeroRow>
       <Collapsible title="Allocation & Glidepath"
         info="Portfolio weights applied across all accounts. The base mix holds until the first glide phase; each phase re-sets the mix from its age onward — e.g. de-risk approaching retirement, or a rising-equity glide through it."
         defaultOpen
@@ -479,7 +508,9 @@ export default function Accounts() {
           <>
             <Stat label="Median Maximum Drawdown" value={fmtPct(median(result.max_drawdown))}
               sub="the deepest real peak-to-trough fall you'd have to sit through — be ready for it" info={A.drawdown} />
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, 1fr) 2fr", gap: 16, alignItems: "start" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "2fr minmax(240px, 1fr)", gap: 16, alignItems: "start" }}>
+              <HistogramChart values={result.max_drawdown} unit="percent" color="rgba(210,153,34,0.55)"
+                title="" xTitle="Deepest Peak-To-Trough Fall In Real Net Worth" />
               <table className="table">
                 <thead>
                   <tr><th>Scenario</th><th style={{ textAlign: "right" }}>Drop</th>
@@ -499,8 +530,6 @@ export default function Accounts() {
                   })}
                 </tbody>
               </table>
-              <HistogramChart values={result.max_drawdown} unit="percent" color="rgba(210,153,34,0.55)"
-                title="" xTitle="Deepest Peak-To-Trough Fall In Real Net Worth" />
             </div>
           </>
         ) : <p className="hint">Simulation pending…</p>}
@@ -508,6 +537,18 @@ export default function Accounts() {
 
       {/* ───────────── LIQUIDITY & DRAWDOWN ───────────── */}
       <Head id="acc-liquidity">Liquidity &amp; Drawdown</Head>
+      {hasBridge && bridge && (
+        <HeroRow>
+          <HeroStat tone="green" label="Bridge Holds" value={fmtPct(1 - (bridge.bridge_break_rate ?? 0), 0)}
+            sub="penalty-free money lasts to 59½ (no early-penalty raid)" info={A.bridgeHolds} />
+          <HeroStat label="Liquid Needed" value={fmtMoney(bridge.bridge_funding_total_real ?? 0)}
+            sub={`first ${bridge.bridge_funding_years} retirement years · ${fmtMoney(bridge.bridge_funding_by_source?.cash ?? 0)} cash + ${fmtMoney(bridge.bridge_funding_by_source?.taxable ?? 0)} taxable + ${fmtMoney(bridge.bridge_funding_by_source?.roth_basis ?? 0)} Roth basis`}
+            info={A.bridgeFunding} />
+          <HeroStat tone="amber" label="Runway" value={`${Math.round(bridge.runway_p50 ?? 0)} yr`}
+            sub={`covers the ${ladderGap}-yr wait until your first conversion seasons · worst 5%: ${Math.round(bridge.runway_p5 ?? 0)} yr`}
+            info={A.bridgeCoverage} />
+        </HeroRow>
+      )}
       <Section title="Liquidity: Penalty-Free Assets By Source"
         info={A.accessibility + " The balance you could tap penalty-free each year — a stock, not a surplus. The bridge is the gap between Retire and 60."}>
         {result ? (
@@ -518,89 +559,66 @@ export default function Accounts() {
 
       {result && result.bridge && (
         <Section title="Bridge Confidence: Can You Reach 59½?" info={A.bridgeConfidence}>
-          {result.bridge.has_bridge ? (() => {
-            const b = result.bridge;
-            const pctAcc = b.at_retirement?.pct_accessible ?? 0;
-            return (
-              <>
-                <div className="stat-grid">
-                  <Stat label="Bridge Holds" value={fmtPct(1 - (b.bridge_break_rate ?? 0), 0)}
-                    sub="penalty-free money lasts to 59½ (no early-penalty raid)" info={A.bridgeHolds} />
-                  <Stat label="Coverage (Median)" value={`${(b.coverage_p50 ?? 0).toFixed(2)}×`}
-                    sub={`worst 5%: ${(b.coverage_p5 ?? 0).toFixed(2)}×`} info={A.bridgeCoverage} />
-                  <Stat label="Runway" value={`${Math.round(b.runway_p50 ?? 0)} yr`}
-                    sub={`vs ${b.bridge_years}-yr gap · worst 5%: ${Math.round(b.runway_p5 ?? 0)} yr`}
-                    info={A.bridgeCoverage} />
-                  <Stat label="Accessible At Retirement" value={fmtPct(pctAcc, 0)}
-                    sub={`${fmtMoney(b.at_retirement?.accessible_real ?? 0)} reachable · ${fmtMoney(b.at_retirement?.locked_real ?? 0)} locked`}
-                    info={A.bridgeSplit} />
+          {result.bridge.has_bridge ? (
+            <>
+              <p className="hint" style={{ marginTop: 0 }}>
+                <strong>Bridge Holds</strong> (above) is the dynamic verdict — it credits the Roth
+                ladder maturing mid-bridge. The fan below shows the dispersion the median stack hides:
+                watch the worst-5% line dive toward zero before 59½.
+              </p>
+              <AccessibilityFanChart result={result} axisMode={axisMode}
+                retirementMarker={retMarker} retirementAge={s.retirement_age}
+                birthYear={s.profile.birth_year} />
+              {result.bridge.min_accessible_real && result.bridge.min_accessible_real.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <div className="card-head"><h3 style={{ fontSize: 13, margin: 0 }}>
+                    Lowest Penalty-Free Balance During The Bridge<InfoTip text={A.bridgeMinAccessible} />
+                  </h3></div>
+                  <HistogramChart values={result.bridge.min_accessible_real} unit="money"
+                    color="rgba(63,185,80,0.5)" title=""
+                    bins={{ start: 0, size: 50000, end: 500000 }} clampOverflow
+                    xTitle="Low-Water Mark Of Penalty-Free Assets (Today's $, 500k+ grouped)" />
                 </div>
-                <p className="hint" style={{ marginTop: 6 }}>
-                  <strong>Bridge Holds</strong> is the dynamic verdict — it credits the Roth ladder
-                  maturing mid-bridge. Coverage, Runway, and Accessible-at-Retirement are conservative
-                  day-one snapshots that ignore those conversions, so for a ladder-reliant plan they
-                  read as a floor, not the headline.
-                </p>
-                {b.bridge_funding_total_real != null && (
-                  <Stat label={`Liquid Needed For The First ${b.bridge_funding_years} Retirement Years`}
-                    value={fmtMoney(b.bridge_funding_total_real)}
-                    sub={`before your first conversion seasons · ${fmtMoney(b.bridge_funding_by_source?.cash ?? 0)} cash + ${fmtMoney(b.bridge_funding_by_source?.taxable ?? 0)} taxable + ${fmtMoney(b.bridge_funding_by_source?.roth_basis ?? 0)} Roth basis`}
-                    info={A.bridgeFunding} />
-                )}
-                <div style={{ marginTop: 12 }}>
-                  <AccessibilityFanChart result={result} axisMode={axisMode}
-                    retirementMarker={retMarker} retirementAge={s.retirement_age}
-                    birthYear={s.profile.birth_year} />
-                </div>
-                {b.min_accessible_real && b.min_accessible_real.length > 0 && (
-                  <div style={{ marginTop: 8 }}>
-                    <div className="card-head"><h3 style={{ fontSize: 13, margin: 0 }}>
-                      Lowest Penalty-Free Balance During The Bridge<InfoTip text={A.bridgeMinAccessible} />
-                    </h3></div>
-                    <HistogramChart values={b.min_accessible_real} unit="money"
-                      color="rgba(63,185,80,0.5)" title=""
-                      bins={{ start: 0, size: 50000, end: 500000 }} clampOverflow
-                      xTitle="Low-Water Mark Of Penalty-Free Assets (Today's $, 500k+ grouped)" />
-                  </div>
-                )}
-                <div className="card-head" style={{ marginTop: 12 }}>
-                  <h3 style={{ fontSize: 13, margin: 0 }}>Retire Into A Crash</h3>
-                </div>
-                <div className="fields">
-                  <Field label="Crash Size (Stock Drop)">
-                    <select value={String(crashDrop)} onChange={(e) => setCrashDrop(parseFloat(e.target.value))}>
-                      <option value="0.2">−20%</option>
-                      <option value="0.35">−35% (2008-scale)</option>
-                      <option value="0.5">−50% (Depression-scale)</option>
-                    </select>
-                  </Field>
-                  <Field label="Duration (Years)">
-                    <NumberInput value={crashYears} step={1} min={1} max={5} onChange={setCrashYears} />
-                  </Field>
-                  <button onClick={() => runBridgeCrash(crashDrop, crashYears)} disabled={bridgecrashLoading}>
-                    {bridgecrashLoading ? "Computing…" : "Run Crash Test"}
-                  </button>
-                </div>
-                {bridgecrash && bridgecrash.has_bridge && (
-                  <>
-                    <div className="stat-grid" style={{ marginTop: 10 }}>
-                      <Stat label="Bridge Breaks: Baseline → Crash"
-                        value={`${fmtPct(bridgecrash.base_bridge_break_rate, 0)} → ${fmtPct(bridgecrash.stressed_bridge_break_rate, 0)}`}
-                        sub={`a ${fmtPct(bridgecrash.drop, 0)} drop over ${bridgecrash.years} yr at age ${bridgecrash.retirement_age}`} />
-                      <Stat label="Early-Penalty Reliance: Baseline → Crash"
-                        value={`${fmtPct(bridgecrash.base_early_penalty_rate, 0)} → ${fmtPct(bridgecrash.stressed_early_penalty_rate, 0)}`}
-                        sub="paths forced to raid traditional early" />
-                    </div>
-                    <p className="hint" style={{ marginTop: 6 }}>
-                      The hit to your <em>overall</em> success rate from this crash is on the Freedom
-                      tab, under Undersaving.
-                    </p>
-                  </>
-                )}
-              </>
-            );
-          })() : (
+              )}
+            </>
+          ) : (
             <p className="hint">No bridge to cross — your retirement age is at or past 59½.</p>
+          )}
+        </Section>
+      )}
+
+      {result && result.bridge?.has_bridge && (
+        <Section title="Retire Into A Crash" info={A.bridgeCrash}>
+          <div className="fields">
+            <Field label="Crash Size (Stock Drop)">
+              <select value={String(crashDrop)} onChange={(e) => setCrashDrop(parseFloat(e.target.value))}>
+                <option value="0.2">−20%</option>
+                <option value="0.35">−35% (2008-scale)</option>
+                <option value="0.5">−50% (Depression-scale)</option>
+              </select>
+            </Field>
+            <Field label="Duration (Years)">
+              <NumberInput value={crashYears} step={1} min={1} max={5} onChange={setCrashYears} />
+            </Field>
+            <button onClick={() => runBridgeCrash(crashDrop, crashYears)} disabled={bridgecrashLoading}>
+              {bridgecrashLoading ? "Computing…" : "Run Crash Test"}
+            </button>
+          </div>
+          {bridgecrash && bridgecrash.has_bridge && (
+            <>
+              <div className="stat-grid" style={{ marginTop: 10 }}>
+                <Stat label="Bridge Breaks: Baseline → Crash"
+                  value={`${fmtPct(bridgecrash.base_bridge_break_rate, 0)} → ${fmtPct(bridgecrash.stressed_bridge_break_rate, 0)}`}
+                  sub={`a ${fmtPct(bridgecrash.drop, 0)} drop over ${bridgecrash.years} yr at age ${bridgecrash.retirement_age}`} />
+                <Stat label="Early-Penalty Reliance: Baseline → Crash"
+                  value={`${fmtPct(bridgecrash.base_early_penalty_rate, 0)} → ${fmtPct(bridgecrash.stressed_early_penalty_rate, 0)}`}
+                  sub="paths forced to raid traditional early" />
+              </div>
+              <p className="hint" style={{ marginTop: 6 }}>
+                The hit to your <em>overall</em> success rate from this crash is on the Freedom
+                tab, under Undersaving.
+              </p>
+            </>
           )}
         </Section>
       )}
@@ -654,12 +672,13 @@ export default function Accounts() {
           <table className="table">
             <thead>
               <tr>
-                <th>Year</th><th>Age</th><th>Convert (Today's $)</th><th>Penalty-Free In</th>
-                <th>Next $ Taxed At<InfoTip text="Marginal federal + state rate the next conversion dollar would face on the median path." /></th>
-                <th>Effective Rate<InfoTip text="Average federal + state income-tax rate that year on the median path — the blended cost, beside the marginal next-dollar cost." /></th>
-                <th>Income After Tax<InfoTip text="Median gross income minus all income tax that year, today's $ — what's actually available to spend or save (the conversion principal itself is not spendable)." /></th>
-                <th>Surplus / Deficit<InfoTip text="After-tax income minus planned spending that year (median, today's $). Positive = the year self-funds; negative = you're drawing down liquid assets to cover it." /></th>
+                <th>Year</th><th>Age</th><th>Penalty-Free In</th>
+                <th>Convert (Today's $)<InfoTip text="Median amount moved from Traditional to Roth that year, today's $. The full amount lands in your Roth — it's still your money, just relocated (and it starts a 5-year seasoning clock). It is NOT reduced by the tax; the tax is a separate cash cost in the next column." /></th>
+                <th>Conversion Tax<InfoTip text="The extra income tax this year's conversion triggers (median, today's $) — the only money that actually leaves your net worth to convert. Paid from your taxable/cash accounts, not skimmed off the conversion. Lower once your brokerage is spent down and the conversion sits alone in a low bracket." /></th>
+                <th>Accessible Left<InfoTip text="Your penalty-free (reachable) balance at the END of that year, today's $ — the liquid cushion behind the year. Watch it draw down through the bridge; it falls faster the more aggressively you convert (the conversion tax is paid out of it) and recovers as past conversions season into spendable Roth. Red only if it goes negative." /></th>
                 <th>Traditional Left<InfoTip text="Median traditional balance after that year's conversion and growth, today's $." /></th>
+                <th>Effective Rate<InfoTip text="Average federal + state income-tax rate that year on the median path — the blended cost, beside the marginal next-dollar cost." /></th>
+                <th>Next $ Taxed At<InfoTip text="Marginal federal + state rate the next conversion dollar would face on the median path." /></th>
               </tr>
             </thead>
             <tbody>
@@ -668,14 +687,15 @@ export default function Accounts() {
                   : Math.min(r.matures, s.profile.birth_year + 60);
                 return (
                   <tr key={r.year}>
-                    <td>{r.year}</td><td>{r.age}</td><td>{fmtMoney(r.amount_real)}</td>
-                    <td>{penaltyFree}</td><td>{fmtPct(r.marginal_rate, 0)}</td>
-                    <td>{fmtPct(r.effective_rate, 0)}</td>
-                    <td>{fmtMoney(r.after_tax_income_real)}</td>
-                    <td style={{ color: r.surplus_real >= 0 ? "#3fb950" : "#ff7b72" }}>
-                      {r.surplus_real >= 0 ? "+" : "−"}{fmtMoney(Math.abs(r.surplus_real))}
+                    <td>{r.year}</td><td>{r.age}</td><td>{penaltyFree}</td>
+                    <td>{fmtMoney(r.amount_real)}</td>
+                    <td>{fmtMoney(r.conversion_tax_real)}</td>
+                    <td style={{ color: r.accessible_left_real < 0 ? "#ff7b72" : undefined }}>
+                      {fmtMoney(r.accessible_left_real)}
                     </td>
                     <td>{fmtMoney(r.trad_remaining_real)}</td>
+                    <td>{fmtPct(r.effective_rate, 0)}</td>
+                    <td>{fmtPct(r.marginal_rate, 0)}</td>
                   </tr>
                 );
               })}

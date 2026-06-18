@@ -130,6 +130,18 @@ export default function Freedom() {
         </div>
       </Section>
 
+      <Section title="What Moves The Needle" info={A.tornado}
+        actions={sensitivity && (
+          <button className="ghost" onClick={runSensitivity} disabled={sensitivityLoading}>
+            {sensitivityLoading ? "Computing…" : "Recompute"}
+          </button>
+        )}>
+        {sensitivity ? <TornadoChart data={sensitivity} />
+          : <button onClick={runSensitivity} disabled={sensitivityLoading}>
+              {sensitivityLoading ? "Computing…" : "Compute Sensitivity"}
+            </button>}
+      </Section>
+
       <Section title="When & How Much: Success Surface" info={A.surface}
         actions={surface && (
           <button className="ghost" onClick={runSurface} disabled={surfaceLoading}>
@@ -144,18 +156,6 @@ export default function Freedom() {
             {surfaceLoading ? "Computing…" : "Compute Surface"}
           </button>
         )}
-      </Section>
-
-      <Section title="What Moves The Needle" info={A.tornado}
-        actions={sensitivity && (
-          <button className="ghost" onClick={runSensitivity} disabled={sensitivityLoading}>
-            {sensitivityLoading ? "Computing…" : "Recompute"}
-          </button>
-        )}>
-        {sensitivity ? <TornadoChart data={sensitivity} />
-          : <button onClick={runSensitivity} disabled={sensitivityLoading}>
-              {sensitivityLoading ? "Computing…" : "Compute Sensitivity"}
-            </button>}
       </Section>
 
       {/* ───────────── UNDERSAVING ───────────── */}
@@ -196,16 +196,6 @@ export default function Freedom() {
               <RuinAgeChart data={result.age_at_ruin} />
             </Section>
           </div>
-          <p className="hint" style={{ marginTop: -4 }}>
-            <strong>Why the years just after retirement are the riskiest:</strong> a market drop right
-            when you stop earning forces selling depressed assets you can't rebuy (sequence-of-returns
-            risk); the penalty-free bridge is longest and most strained; there's no wage income to
-            cushion it; and Social Security hasn't started. Clear that first decade with assets intact
-            and the hazard falls fast — which is exactly why the survival curve drops, then levels off.
-            The levers that help most: a cash-bucket or rising-equity glidepath (Accounts), flexible
-            spending (guardrails / VPW, Cash Flow), a bigger liquid bridge, retiring a year or two
-            later, or part-time income early.
-          </p>
 
           {bridgecrash && bridgecrash.has_bridge && (
             <Section title="Retire Into A Crash — Overall Success" info={A.bridgeCrash}>
@@ -215,28 +205,22 @@ export default function Freedom() {
               <p className="hint">Run or tune this crash test on the Accounts tab (Bridge section) — its bridge-specific break and early-penalty rates live there.</p>
             </Section>
           )}
+
+          <p className="hint" style={{ maxWidth: "none" }}>
+            <strong>Why the years just after retirement are the riskiest:</strong> a market drop right
+            when you stop earning forces selling depressed assets you can't rebuy (sequence-of-returns
+            risk); the penalty-free bridge is longest and most strained; there's no wage income to
+            cushion it; and Social Security hasn't started. Clear that first decade with assets intact
+            and the hazard falls fast — which is exactly why the survival curve drops, then levels off.
+            The levers that help most: a cash-bucket or rising-equity glidepath (Accounts), flexible
+            spending (guardrails / VPW, Cash Flow), a bigger liquid bridge, retiring a year or two
+            later, or part-time income early.
+          </p>
         </>
       )}
 
       {/* ───────────── OVERSAVING ───────────── */}
       <Head id="freedom-over">Oversaving — Could You Stop Sooner?</Head>
-      <Section title="Over-Saving Frontier: When To Pull The Trigger" info={A.frontier}
-        actions={sweep && (
-          <button className="ghost" onClick={runSweep} disabled={sweeping}>
-            {sweeping ? "Computing…" : "Recompute"}
-          </button>
-        )}>
-        {sweep ? (
-          <FrontierChart sweep={sweep} axisMode={axisMode} birthYear={s.profile.birth_year}
-            retirementMarker={retMarker}
-            annualExpenses={freedom?.annual_retirement_expenses} />
-        ) : (
-          <button onClick={runSweep} disabled={sweeping}>
-            {sweeping ? "Computing…" : "Compute Frontier"}
-          </button>
-        )}
-      </Section>
-
       <div className="stat-grid">
         <Section title="Median Ending Net Worth" info={A.headroom}>
           {result ? (
@@ -262,6 +246,23 @@ export default function Freedom() {
           ) : <p className="hint">Simulation pending…</p>}
         </Section>
       </div>
+
+      <Section title="Over-Saving Frontier: When To Pull The Trigger" info={A.frontier}
+        actions={sweep && (
+          <button className="ghost" onClick={runSweep} disabled={sweeping}>
+            {sweeping ? "Computing…" : "Recompute"}
+          </button>
+        )}>
+        {sweep ? (
+          <FrontierChart sweep={sweep} axisMode={axisMode} birthYear={s.profile.birth_year}
+            retirementMarker={retMarker}
+            annualExpenses={freedom?.annual_retirement_expenses} />
+        ) : (
+          <button onClick={runSweep} disabled={sweeping}>
+            {sweeping ? "Computing…" : "Compute Frontier"}
+          </button>
+        )}
+      </Section>
 
       <Section title="Ending Net Worth Distribution" info={A.endingBalance}>
         {result ? (() => {
