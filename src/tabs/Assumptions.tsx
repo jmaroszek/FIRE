@@ -71,7 +71,7 @@ export default function Assumptions() {
                 onChange={(v) => up({ sim: { ...s.sim, seed: v } })} />
             </Field>
             <Field label="Success Threshold"
-              info="A retirement age 'works' when at least this share of paths never run out of money.">
+              info="A retirement age 'works' when at least this share of paths end with a balance ≥ the legacy target (never running out also counts).">
               <PercentInput value={s.sim.success_threshold} step={1}
                 onChange={(v) => up({ sim: { ...s.sim, success_threshold: v } })} />
             </Field>
