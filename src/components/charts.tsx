@@ -1199,23 +1199,48 @@ export function TradOverfundingChart(props: {
       balance is drained before 75 (the ladder defused it) or the horizon ends before then.</p>;
   const ages = props.result.ages;
   const spend = props.result.expenses_median_real;
-  let start = ages.findIndex((a) => a >= 70);
+  // RMDs only begin at 75, so that's where the story starts.
+  let start = ages.findIndex((a) => a >= 75);
   if (start < 0) start = 0;
   const x = props.axisMode === "age"
     ? [...ages.slice(start)] : [...props.result.years.slice(start)];
   const rmdS = rmd.slice(start);
   const spendS = spend.slice(start);
+  // Split each RMD bar at the spending line: the part you'd have spent anyway,
+  // and the forced surplus stacked on top — ordinary income you must realize but
+  // don't need. The spending line overlays so the split point stays legible.
+  const withinSpend = rmdS.map((v, i) => Math.min(v, spendS[i] ?? 0));
   const surplus = rmdS.map((v, i) => Math.max(v - (spendS[i] ?? 0), 0));
+  // Legend reads top-down: Spending, RMD Within Spending, Forced Surplus. Bars
+  // still stack within-then-surplus regardless of where the line trace sits.
+  const data: Data[] = [
+    { x, y: spendS, type: "scatter", mode: "lines", name: "Spending",
+      line: { color: ACCENT, width: 2 },
+      hovertemplate: "Spending %{y:$,.0f}<extra></extra>" },
+    { x, y: withinSpend, type: "bar", name: "RMD Within Spending",
+      marker: { color: "rgba(210,153,34,0.55)" },
+      hovertemplate: "Within spending %{y:$,.0f}<extra></extra>" },
+    { x, y: surplus, type: "bar", name: "Forced Surplus",
+      marker: { color: "rgba(248,81,73,0.75)" },
+      hovertemplate: "Forced surplus %{y:$,.0f}<extra></extra>" },
+  ];
   return (
-    <SeriesChart x={x} axisMode={props.axisMode} yFormat="money" legend height={props.height}
-      series={[
-        { name: "Spending", values: spendS, color: ACCENT },
-        { name: "RMD (Forced Withdrawal)", values: rmdS, color: "#d29922" },
-        { name: "Forced Surplus (RMD − Spend)", values: surplus, color: "#f85149", fill: true },
-      ]}
-      markers={lifeStageMarkers(props.axisMode, props.birthYear,
-        [{ age: 75, label: "RMD 75", color: "#8b949e" }])}
-      title="Forced Withdrawals vs Spending — Median Path, Today's $" />
+    <Plot
+      data={data}
+      layout={{
+        ...baseLayout, height: props.height ?? 320, hovermode: "x unified", barmode: "stack",
+        // extra bottom room so the x-axis title clears the (reversed) legend
+        margin: { ...baseLayout.margin, b: 72 },
+        // stacked charts default to a reversed legend; force normal order and centre it
+        legend: { orientation: "h", y: -0.32, x: 0.5, xanchor: "center", traceorder: "normal" },
+        yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero" },
+        xaxis: { ...baseLayout.xaxis, dtick: 1,
+          title: { text: props.axisMode === "age" ? "Age" : "Year", standoff: 8 } },
+        title: { text: "Forced Withdrawals vs Spending — Median Path, Today's $", font: { size: 14 } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
   );
 }
 
@@ -1460,7 +1485,6 @@ export function AnnualTaxRateChart(props: {
         yaxis2: { tickformat: ".0%", overlaying: "y", side: "right", rangemode: "tozero",
           gridcolor: "transparent", automargin: true, title: { text: "Rate", standoff: 8 } },
         xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
-        title: { text: "Taxes Over Time — Annual $ vs Marginal & Effective Rate", font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}

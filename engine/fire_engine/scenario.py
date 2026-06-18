@@ -376,9 +376,13 @@ class IRMAAConfig(BaseModel):
     """Medicare income-related premium surcharge (Part B + D) at 65+. A step
     function on MAGI. Real IRMAA lags two years (it keys off MAGI from two years
     prior); the engine uses current-year MAGI as a documented simplification.
-    See docs/ASSUMPTIONS.md #27."""
+    See docs/ASSUMPTIONS.md #27.
 
-    enabled: bool = False
+    On by default: it only bites above ~$106k MAGI (so it's $0 for modest paths)
+    and folds into the existing per-year fixed point, so enabling it is strictly
+    more accurate at negligible cost."""
+
+    enabled: bool = True
     start_age: int = 65
     brackets: list[IRMAABracket] = Field(default_factory=default_irmaa_brackets)
 

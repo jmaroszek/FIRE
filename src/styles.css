@@ -159,6 +159,8 @@ main { padding: 18px; max-width: 1500px; width: 100%; margin: 0 auto; }
   gap: 16px;
   align-items: flex-start;
 }
+/* opt-in: neighbouring cards in a row grow to the tallest one's height */
+.group-grid.stretch { align-items: stretch; }
 .group-grid .card {
   flex: 0 1 auto;
   min-width: 340px;

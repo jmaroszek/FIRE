@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { A } from "../assumptions";
 import { AnnualTaxRateChart, TradOverfundingChart } from "../components/charts";
 import {
-  Collapsible, Field, InfoTip, NumberInput, Section, Stat, fmtMoney, fmtPct,
+  Field, InfoTip, NumberInput, Section, Stat, fmtMoney, fmtPct,
 } from "../components/ui";
 import { useStore } from "../store";
 import type { Scenario } from "../types";
@@ -12,6 +12,16 @@ export default function Taxes() {
           laddersavings, runLadderSavings, laddersavingsLoading } = useStore();
   const setScenario = useStore((s) => s.setScenario);
   const [sunsetAge, setSunsetAge] = useState(scenario ? scenario.retirement_age : 60);
+
+  // Both readouts are cheap, so compute them automatically once the simulation
+  // lands (the store nulls them on every edit, so this re-fires per scenario).
+  useEffect(() => {
+    if (result && !laddersavings && !laddersavingsLoading) void runLadderSavings();
+  }, [result, laddersavings, laddersavingsLoading, runLadderSavings]);
+  useEffect(() => {
+    if (result && !taxregime && !taxregimeLoading) void runTaxRegime(sunsetAge);
+  }, [result, taxregime, taxregimeLoading, runTaxRegime, sunsetAge]);
+
   if (!scenario) return null;
   const s = scenario;
   const up = (patch: Partial<Scenario>) => setScenario({ ...s, ...patch });
@@ -36,26 +46,17 @@ export default function Taxes() {
           ) : <p className="hint">Simulation pending…</p>}
         </Section>
 
-        <Section title="Tax Saved By The Ladder" info={A.ladderSavings}
-          actions={laddersavings && (
-            <button className="ghost" onClick={runLadderSavings} disabled={laddersavingsLoading}>
-              {laddersavingsLoading ? "Computing…" : "Recompute"}
-            </button>
-          )}>
+        <Section title="Tax Saved By The Ladder" info={A.ladderSavings}>
           {laddersavings ? (
             <Stat label="Lifetime Tax Saved vs No Conversions"
               value={fmtMoney(laddersavings.saved_real)}
               sub={`${fmtMoney(laddersavings.without_ladder_real)} without → ${fmtMoney(laddersavings.with_ladder_real)} with`}
               info={A.ladderSavings} />
-          ) : (
-            <button onClick={runLadderSavings} disabled={laddersavingsLoading}>
-              {laddersavingsLoading ? "Computing…" : "Compute"}
-            </button>
-          )}
+          ) : <p className="hint">{laddersavingsLoading ? "Computing…" : "Simulation pending…"}</p>}
         </Section>
       </div>
 
-      <Section title="Taxes Over Time — Annual $, Marginal & Effective Rate" info={A.marginalCurve}>
+      <Section title="Taxes Over Time" info={A.marginalCurve}>
         {result ? (
           <AnnualTaxRateChart result={result} axisMode={axisMode}
             retirementAge={s.retirement_age} claimingAge={s.social_security.claiming_age}
@@ -101,19 +102,21 @@ export default function Taxes() {
                 <div className="stat-grid">
                   <Stat label={`First RMD (Age ${first.age})`} value={fmtMoney(first.amount_real)}
                     sub={`spending that year ≈ ${fmtMoney(spendThen)}`} info={A.tradOverfunding} />
-                  <Stat label="Forced Beyond Spending" value={overshoot > 0 ? fmtMoney(overshoot) : "—"}
+                  <Stat label="Forced Beyond Spending" value={fmtMoney(Math.max(overshoot, 0))}
                     sub={overshoot > 0 ? "ordinary income you must realize but don't need"
                       : "the RMD stays within your spending"} />
                 </div>
               );
             })()}
-            <TradOverfundingChart result={result} axisMode={axisMode} birthYear={s.profile.birth_year} />
+            <div style={{ marginTop: 16 }}>
+              <TradOverfundingChart result={result} axisMode={axisMode} birthYear={s.profile.birth_year} />
+            </div>
           </>
         ) : <p className="hint">Simulation pending…</p>}
       </Section>
       </div>
 
-      <div className="group-grid">
+      <div className="group-grid stretch">
       <Section title="Tax-Law Stress (TCJA Sunset)" className="span2" info={A.taxRegime}
         actions={taxregime && (
           <button className="ghost" onClick={() => runTaxRegime(sunsetAge)} disabled={taxregimeLoading}>
@@ -126,14 +129,9 @@ export default function Taxes() {
             <NumberInput value={sunsetAge} step={1} min={s.sim.start_year - s.profile.birth_year}
               max={s.profile.horizon_age} onChange={setSunsetAge} />
           </Field>
-          {!taxregime && (
-            <button onClick={() => runTaxRegime(sunsetAge)} disabled={taxregimeLoading}>
-              {taxregimeLoading ? "Computing…" : "Run Stress Test"}
-            </button>
-          )}
         </div>
-        {taxregime && (
-          <div className="stat-grid" style={{ marginTop: 10 }}>
+        {taxregime ? (
+          <div className="stat-grid" style={{ marginTop: 10, gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
             <Stat label="Baseline Success" value={fmtPct(taxregime.base_success)} />
             <Stat label={`After Reversion At ${taxregime.sunset_age}`}
               value={fmtPct(taxregime.stressed_success)}
@@ -142,10 +140,14 @@ export default function Taxes() {
               value={`${fmtMoney(taxregime.base_lifetime_tax_real)} → ${fmtMoney(taxregime.stressed_lifetime_tax_real)}`}
               sub={`+${fmtMoney(taxregime.stressed_lifetime_tax_real - taxregime.base_lifetime_tax_real)} more tax (today's $)`} />
           </div>
+        ) : (
+          <p className="hint" style={{ marginTop: 10 }}>
+            {taxregimeLoading ? "Computing…" : "Simulation pending…"}
+          </p>
         )}
       </Section>
 
-      <Collapsible title="IRMAA Medicare Surcharge (65+)" info={A.irmaa}>
+      <Section title="IRMAA Medicare Surcharge (65+)" className="span1" info={A.irmaa}>
         <div className="fields">
           <Field label="Enabled">
             <input type="checkbox" checked={s.irmaa.enabled}
@@ -153,7 +155,7 @@ export default function Taxes() {
           </Field>
         </div>
         <p className="hint">Uses the 2025 single-filer Part B + D tiers (the surcharge starts above ~$106k MAGI). A high Roth-conversion or RMD year can trip a tier — cross-check the conversion ladder (Accounts) and the RMD table above.</p>
-      </Collapsible>
+      </Section>
       </div>
     </div>
   );
