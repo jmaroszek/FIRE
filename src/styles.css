@@ -309,18 +309,12 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .hero {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-top: 2px solid var(--accent);
   border-radius: 8px;
   padding: 14px 16px;
 }
 .hero-label { color: var(--muted); font-size: 12px; display: flex; align-items: center; }
 .hero-value { font-size: 30px; font-weight: 700; line-height: 1.15; margin-top: 4px; }
 .hero-sub { color: var(--muted); font-size: 12px; margin-top: 5px; }
-.hero-accent { border-top-color: var(--accent); }
-.hero-green { border-top-color: var(--green); }
-.hero-amber { border-top-color: var(--amber); }
-.hero-red { border-top-color: var(--red); }
-.hero-purple { border-top-color: #bc8cff; }
 
 .stat { margin-bottom: 10px; }
 .stat-label { color: var(--muted); font-size: 12px; }
