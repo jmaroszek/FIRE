@@ -142,10 +142,19 @@ class SimResult:
     # failure (see the fail predicate below), so it no longer hides inside "success".
     spending_need: np.ndarray | None = None  # (P, T) nominal gross withdrawal need each year
     # (the negative cash flow withdrawals must cover, taxes included) — sizes the bridge demand.
+    gross_income: np.ndarray | None = None  # (P, T) nominal gross income (effective-rate denominator)
+    wages: np.ndarray | None = None  # (P, T) nominal active work income (salary + secondary streams)
+    legacy_met: np.ndarray | None = None  # (P,) bool: ended with >= the legacy floor (real)
 
     @property
     def success_rate(self) -> float:
-        return float(1.0 - self.fail.any(axis=1).mean())
+        # A path succeeds if it never ran short mid-stream AND left at least the
+        # legacy floor (legacy_met is all-True when legacy_target is 0, so this
+        # reduces to the original definition).
+        failed = self.fail.any(axis=1)
+        if self.legacy_met is not None:
+            failed = failed | ~self.legacy_met
+        return float(1.0 - failed.mean())
 
 
 def _precompute_regimes(scenario: Scenario, retirement_age: int) -> list[YearRegime]:
@@ -389,6 +398,7 @@ def run(
     retirement_age: int | None = None,
     balance_scale: float = 1.0,
     spending_scale: float = 1.0,
+    spending_scale_from_age: int | None = None,
     tax_regime: TaxRegimeShock | None = None,
     deterministic: bool = False,
 ) -> SimResult:
@@ -435,6 +445,7 @@ def run(
 
     policy = scenario.withdrawal_policy
     div_yield = scenario.market.dividend_yield
+    expense_ratio = scenario.market.expense_ratio
     aca = scenario.aca
     irmaa = scenario.irmaa
 
@@ -465,6 +476,8 @@ def run(
     shortfall_out = np.zeros((P, T))  # nominal unfunded need each year (depth of ruin)
     penalty_out = np.zeros((P, T))  # nominal 10% early-withdrawal penalty paid each year
     need_out = np.zeros((P, T))  # nominal gross withdrawal need each year (bridge demand)
+    gross_income_out = np.zeros((P, T))  # nominal gross income (wages, SS, investment, withdrawals)
+    wages_out = np.zeros((P, T))  # nominal active (work) income: primary salary + secondary streams
     withdrawals_out: dict[str, np.ndarray] = {}  # source -> (P, T) nominal amount drawn
     accessible_out: dict[str, np.ndarray] = {}
 
@@ -515,7 +528,12 @@ def run(
         # max-sustainable-spend solver and the success surface). It leaves medical
         # streams unscaled (essential, ACA/IRMAA-coupled) and loan payments unscaled
         # (contractual), so the HSA medical offset below stays consistent.
-        if spending_scale != 1.0:
+        # spending_scale_from_age gates the lever to retirement-and-later years, so
+        # the "max sustainable spending IN RETIREMENT" solver flexes only the
+        # decumulation budget, not the accumulation-era expenses.
+        apply_scale = spending_scale != 1.0 and (
+            spending_scale_from_age is None or age >= spending_scale_from_age)
+        if apply_scale:
             ess_nom = ess_med + (ess_nom - ess_med) * spending_scale
             disc_nom = disc_med + (disc_nom - disc_med) * spending_scale
         ess_nom = ess_nom + liab_payments[t]  # loan payments: essential, non-inflating
@@ -678,6 +696,14 @@ def run(
         # penalty_base is the early trad/HSA draw the 10% penalty falls on.
         need_out[:, t] = need
         penalty_out[:, t] = tables.early_penalty * wplan.penalty_base
+        # gross income that hit the year: wages, SS, RMD, investment income, and the
+        # taxable portion of withdrawals (trad = ordinary, taxable sale = the gain).
+        # Roth conversions are excluded — an internal transfer, not new income. The
+        # denominator for the lifetime effective tax rate.
+        gross_income_out[:, t] = (
+            wages + ss_nom + rmd + cash_interest + dividends
+            + wplan.ordinary_income + wplan.ltcg_income)
+        wages_out[:, t] = wages
         for _src, _amt in wplan.takes.items():
             withdrawals_out.setdefault(_src.value, np.zeros((P, T)))[:, t] = _amt
 
@@ -748,6 +774,10 @@ def run(
         weights = regime.weights
         blended = (weights[0] * paths.stock[:, t] + weights[1] * paths.bond[:, t]
                    + weights[2] * paths.cash[:, t])
+        # Fund expense ratio drags the invested (stock + bond) portion only; the
+        # cash pool is held directly, not in a fund. Recorded into port_return so
+        # the realized-return fan reflects the net-of-fees return you actually earn.
+        blended = blended - expense_ratio * (weights[0] + weights[1])
         port_return_out[:, t] = blended
         state.grow(blended, paths.cash[:, t],
                    hsa_cash_buffer=scenario.hsa.cash_buffer * infl)
@@ -765,6 +795,11 @@ def run(
         contributions_out[:, t] = sum(contrib.values(), start=zeros) + match
         for src, amount in state.accessible(age).items():
             accessible_out.setdefault(src, np.zeros((P, T)))[:, t] = amount
+
+    # die-with-zero floor: did each path end with at least the legacy target (real)?
+    legacy_target = scenario.sim.legacy_target
+    real_ending = nw[:, -1] / paths.cum_inflation[:, -1]
+    legacy_met = real_ending >= legacy_target if legacy_target > 0 else np.ones(P, dtype=bool)
 
     return SimResult(
         scenario=scenario,
@@ -793,6 +828,9 @@ def run(
         withdrawals=withdrawals_out,
         penalty_paid=penalty_out,
         spending_need=need_out,
+        gross_income=gross_income_out,
+        wages=wages_out,
+        legacy_met=legacy_met,
     )
 
 

@@ -12,7 +12,7 @@ from .accounts import PENALTY_FREE_AGE
 from .engine import SimResult, run
 from .sampling import MarketPaths, sample_paths
 from .scenario import (
-    AccountType, Event, EventKind, RegimeOverrides, Scenario, TaxRegimeShock, WaterfallStep,
+    Event, EventKind, RegimeOverrides, Scenario, TaxRegimeShock,
 )
 
 DEFAULT_PERCENTILES = (5, 25, 50, 75, 95)
@@ -274,6 +274,20 @@ def bridge_analysis(result: SimResult) -> dict:
     pools_total = sum(p[:, t0 + 1] for p in result.pools.values()) / result.cum_inflation[:, t0 + 1]
     locked = np.maximum(pools_total - resources, 0.0)
 
+    # --- bridge funding plan: the liquid pile you must hold to cover the first
+    # retirement years BEFORE a retirement-start Roth conversion seasons (5 yrs).
+    # Total real spending need over that window, and what the sim actually draws
+    # from each penalty-free liquid source to meet it — the concrete "how much do
+    # I need in cash / taxable / Roth basis" answer the coverage ratio only hints at.
+    fund_cols = bridge_cols[:min(5, bridge_cols.size)]
+    funding_total = float(np.median(need_real[:, fund_cols].sum(axis=1)))
+    funding_by_source = {}
+    for src in ("cash", "taxable", "roth_basis"):
+        arr = (result.withdrawals or {}).get(src)
+        funding_by_source[src] = (
+            float(np.median((arr / deflate)[:, fund_cols].sum(axis=1)))
+            if arr is not None else 0.0)
+
     out.update({
         "bridge_fail_rate": float(bridge_fail.mean()),
         "longevity_fail_rate": float(longevity_fail.mean()),
@@ -288,6 +302,9 @@ def bridge_analysis(result: SimResult) -> dict:
         "runway_p50": float(np.percentile(runway, 50)),
         "resources_p50_real": float(np.median(resources)),
         "need_p50_real": float(np.median(bridge_need)),
+        "bridge_funding_years": int(fund_cols.size),
+        "bridge_funding_total_real": funding_total,
+        "bridge_funding_by_source": funding_by_source,
         "min_accessible_real": min_accessible.tolist(),
         "at_retirement": {
             "accessible_real": float(np.median(resources)),
@@ -308,6 +325,14 @@ def ladder_schedule(result: SimResult) -> list[dict]:
     med = np.median(result.conversions / deflate, axis=0)
     trad = result.pools["trad"]
     mrate = result.conversion_marginal_rate
+    # per-year diagnostics that contextualize each conversion: income left after
+    # tax, the surplus/deficit vs planned spending (does the year self-fund?), and
+    # the effective (average) rate beside the marginal one.
+    after_tax = (np.median((result.gross_income - result.taxes_paid) / deflate, axis=0)
+                 if result.gross_income is not None else None)
+    surplus = (np.median((result.gross_income - result.taxes_paid - result.expenses) / deflate, axis=0)
+               if result.gross_income is not None else None)
+    erate = result.effective_rate
     out = []
     for i, amount in enumerate(med):
         if amount > 1.0:
@@ -322,6 +347,9 @@ def ladder_schedule(result: SimResult) -> list[dict]:
                 # marginal tax rate the NEXT conversion dollar would face (median
                 # path) — bracket + SS torpedo + LTCG displacement
                 "marginal_rate": float(np.median(mrate[:, i])) if mrate is not None else 0.0,
+                "effective_rate": float(np.median(erate[:, i])) if erate is not None else 0.0,
+                "after_tax_income_real": float(after_tax[i]) if after_tax is not None else 0.0,
+                "surplus_real": float(surplus[i]) if surplus is not None else 0.0,
             })
     return out
 
@@ -477,6 +505,15 @@ def ss_income_median_real(result: SimResult) -> list[float]:
     return np.median(result.ss_income / _flow_deflator(result), axis=0).tolist()
 
 
+def wages_median_real(result: SimResult) -> list[float]:
+    """Median active (work) income per year in today's dollars — salary plus any
+    secondary streams. The 'are you funding life from a paycheck or your accounts?'
+    band on the funding-sources chart."""
+    if result.wages is None:
+        return []
+    return np.median(result.wages / _flow_deflator(result), axis=0).tolist()
+
+
 def marginal_rate_median(result: SimResult) -> list[float]:
     """Median marginal fed+state rate on the next conversion dollar, per year —
     the lifetime view of the per-cell rate the ladder/RMD tables already sample."""
@@ -515,17 +552,28 @@ def inflation_fan(result: SimResult,
 
 
 def lifetime_tax(result: SimResult) -> dict:
-    """Median lifetime real tax for the current plan, and as a share of lifetime
-    delivered spending — the headline number that tells you whether the ladder /
-    withdrawal-ordering machinery is actually working. The same expression
-    roth_vs_trad uses to compare routings, exposed for the live plan."""
-    tax_real = (result.taxes_paid / _flow_deflator(result)).sum(axis=1)
-    spend_real = (result.expenses / _flow_deflator(result)).sum(axis=1)
+    """Median lifetime real tax for the current plan, as a share of lifetime
+    delivered spending, and as an effective rate on lifetime income — the headline
+    numbers that tell you whether the ladder / withdrawal-ordering machinery is
+    actually working."""
+    deflate = _flow_deflator(result)
+    tax_real = (result.taxes_paid / deflate).sum(axis=1)
+    spend_real = (result.expenses / deflate).sum(axis=1)
     med_tax = float(np.median(tax_real))
     med_spend = float(np.median(spend_real))
+    # Lifetime effective tax rate: total tax / total gross income, per path, then
+    # the median. The honest "what share of everything I earned went to tax"
+    # number — far below the marginal rate, and the headline hero alongside it.
+    effective_rate = 0.0
+    if result.gross_income is not None:
+        income_real = (result.gross_income / deflate).sum(axis=1)
+        rate = np.divide(tax_real, income_real,
+                         out=np.zeros_like(tax_real), where=income_real > 1.0)
+        effective_rate = float(np.median(rate))
     return {
         "median_real": med_tax,
         "as_pct_of_spending": (med_tax / med_spend) if med_spend > 0 else 0.0,
+        "effective_rate": effective_rate,
     }
 
 
@@ -535,7 +583,10 @@ def success_ci(result: SimResult, z: float = 1.959963984540054) -> dict:
     user's real-life outcome. Wilson (not normal-approx) because near 95%+ success
     the normal interval spills past 1.0."""
     n = int(result.fail.shape[0])
-    k = int((~result.fail.any(axis=1)).sum())
+    failed = result.fail.any(axis=1)
+    if result.legacy_met is not None:
+        failed = failed | ~result.legacy_met  # legacy floor counts in the headline rate
+    k = int((~failed).sum())
     p = k / n if n else 0.0
     denom = 1 + z * z / n
     center = (p + z * z / (2 * n)) / denom
@@ -561,37 +612,57 @@ def _retirement_living_expenses(scenario: Scenario, at_age: int) -> float:
     )
 
 
-def max_sustainable_spend(scenario: Scenario, n_paths: int = 1000,
-                          tolerance: float = 0.01) -> dict:
-    """Largest spending_scale on living expenses that still meets the success
-    threshold, by bisection over one shared set of market paths. The inverse of
-    the FIRE number: 'how much can I spend?' instead of 'how much do I need?'."""
-    threshold = scenario.sim.success_threshold
-    paths = sample_paths(scenario, n_paths=n_paths)
-
-    def ok(scale: float) -> bool:
-        return run(scenario, paths=paths, spending_scale=scale).success_rate >= threshold
-
+def _bisect_max_scale(ok, tolerance: float = 0.01) -> tuple[float, bool]:
+    """Largest scale for which ok(scale) holds, by bisection. Returns
+    (scale, capped) where capped means the search hit the 8× ceiling."""
     lo, hi = 0.0, 1.0
     capped = False
     if ok(hi):
         while ok(hi) and hi < 8.0:
             lo, hi = hi, hi * 2
         if hi >= 8.0 and ok(hi):
-            lo, capped = hi, True
+            return hi, True
     # invariant when not capped: ok(lo), not ok(hi)
-    if not capped:
-        while hi - lo > tolerance:
-            mid = (lo + hi) / 2
-            if ok(mid):
-                lo = mid
-            else:
-                hi = mid
+    while hi - lo > tolerance:
+        mid = (lo + hi) / 2
+        if ok(mid):
+            lo = mid
+        else:
+            hi = mid
+    return lo, capped
+
+
+def max_sustainable_spend(scenario: Scenario, n_paths: int = 1000,
+                          tolerance: float = 0.01) -> dict:
+    """Largest spending_scale on living expenses that still meets the success
+    threshold, by bisection over one shared set of market paths. The inverse of
+    the FIRE number: 'how much can I spend?' instead of 'how much do I need?'.
+
+    Two answers, sharing the path set: `max_scale` flexes living expenses across
+    the WHOLE plan ('how much can I afford to live on now while still retiring on
+    time'); `retirement_max_scale` flexes only retirement-and-later expenses ('how
+    much can I spend each year IN retirement'). Both honor the success threshold
+    and the legacy floor (via run().success_rate)."""
+    threshold = scenario.sim.success_threshold
+    paths = sample_paths(scenario, n_paths=n_paths)
+
+    def ok(scale: float) -> bool:
+        return run(scenario, paths=paths, spending_scale=scale).success_rate >= threshold
+
+    def ok_retire(scale: float) -> bool:
+        return run(scenario, paths=paths, spending_scale=scale,
+                   spending_scale_from_age=scenario.retirement_age).success_rate >= threshold
+
+    max_scale, capped = _bisect_max_scale(ok, tolerance)
+    retire_scale, retire_capped = _bisect_max_scale(ok_retire, tolerance)
     base_living = _retirement_living_expenses(scenario, scenario.retirement_age)
     return {
-        "max_scale": lo,
+        "max_scale": max_scale,
         "base_living_annual": base_living,
-        "max_living_annual": lo * base_living,
+        "max_living_annual": max_scale * base_living,
+        "retirement_max_scale": retire_scale,
+        "retirement_max_living_annual": retire_scale * base_living,
+        "retirement_capped": retire_capped,
         "threshold": threshold,
         "capped": capped,
     }
@@ -757,43 +828,26 @@ def tax_regime_stress(scenario: Scenario, sunset_age: int, bracket_rate_mult: fl
     }
 
 
-def _contribution_waterfall(kind: str) -> list[WaterfallStep]:
-    """Two contribution orderings that differ only in whether tax-advantaged
-    savings go pre-tax (traditional) or post-tax (Roth). Both still grab the
-    employer match first and fund the HSA."""
-    head = [WaterfallStep(account=AccountType.trad_401k, kind="to_match"),
-            WaterfallStep(account=AccountType.hsa, kind="max")]
-    if kind == "trad":
-        body = [WaterfallStep(account=AccountType.trad_ira, kind="max"),
-                WaterfallStep(account=AccountType.trad_401k, kind="max")]
-    else:
-        body = [WaterfallStep(account=AccountType.roth_ira, kind="max"),
-                WaterfallStep(account=AccountType.roth_401k, kind="max")]
-    return head + body + [WaterfallStep(account=AccountType.taxable, kind="max")]
-
-
-def roth_vs_trad(scenario: Scenario, n_paths: int = 1000) -> dict:
-    """Accumulation-phase mirror of the conversion ladder: route tax-advantaged
-    contributions pre-tax (traditional) vs post-tax (Roth) and compare lifetime
-    tax, success, and ending wealth on one shared set of market paths."""
+def ladder_tax_savings(scenario: Scenario, n_paths: int = 1000) -> dict:
+    """Lifetime real tax with the Roth conversion ladder as configured vs with no
+    conversions at all, on one shared set of market paths — the scoreboard for the
+    whole ladder strategy in a single dollar figure. Positive `saved_real` means
+    the ladder lowers lifetime tax (the usual case: convert cheaply in low-bracket
+    bridge years instead of facing RMDs at a higher rate later)."""
     paths = sample_paths(scenario, n_paths=n_paths)
 
-    def variant(kind: str) -> dict:
-        s = scenario.model_copy(deep=True)
-        s.waterfall = _contribution_waterfall(kind)
-        s.waterfall_schedule = []  # compare the pure routing, ignore age-keyed overrides
+    def life_tax(s: Scenario) -> float:
         r = run(s, paths=paths)
-        lifetime_tax = float(np.median((r.taxes_paid / _flow_deflator(r)).sum(axis=1)))
-        ending = float(np.median(r.net_worth[:, -1] / r.cum_inflation[:, -1]))
-        return {"success_rate": r.success_rate,
-                "lifetime_tax_real": lifetime_tax, "ending_real": ending}
+        return float(np.median((r.taxes_paid / _flow_deflator(r)).sum(axis=1)))
 
-    trad, roth = variant("trad"), variant("roth")
+    with_ladder = life_tax(scenario)
+    s0 = scenario.model_copy(deep=True)
+    s0.conversion_rule.kind = "none"
+    without_ladder = life_tax(s0)
     return {
-        "trad": trad, "roth": roth,
-        "success_diff": roth["success_rate"] - trad["success_rate"],
-        "tax_diff": roth["lifetime_tax_real"] - trad["lifetime_tax_real"],
-        "ending_diff": roth["ending_real"] - trad["ending_real"],
+        "with_ladder_real": with_ladder,
+        "without_ladder_real": without_ladder,
+        "saved_real": without_ladder - with_ladder,
     }
 
 
@@ -845,6 +899,7 @@ def summarize(result: SimResult) -> dict:
             result.expenses / _flow_deflator(result), axis=0).tolist(),
         "spending_mult_median": np.median(result.spending_mult, axis=0).tolist(),
         "ss_income_median_real": ss_income_median_real(result),
+        "wages_median_real": wages_median_real(result),
         "marginal_rate_median": marginal_rate_median(result),
         "effective_rate_median": effective_rate_median(result),
         "port_return_fan": port_return_fan(result),

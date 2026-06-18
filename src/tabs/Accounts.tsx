@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { A } from "../assumptions";
 import {
   AccessibilityChart, AccessibilityFanChart, HistogramChart, SeriesChart,
-  SubsidyConversionChart, WealthFlowsChart, WithdrawalSourceChart,
+  SubsidyConversionChart, WealthFlowsChart,
 } from "../components/charts";
 import {
   Collapsible, Field, InfoTip, NumberInput, PercentInput, Section, SectionNav, Stat,
@@ -41,6 +41,13 @@ function median(xs: number[]): number {
   const s = [...xs].sort((a, b) => a - b);
   const m = Math.floor(s.length / 2);
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+function pctile(xs: number[], p: number): number {
+  if (!xs.length) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  const idx = Math.min(s.length - 1, Math.max(0, Math.round((p / 100) * (s.length - 1))));
+  return s[idx];
 }
 
 /** Section heading that doubles as a scroll anchor for the in-page sub-nav. */
@@ -164,14 +171,14 @@ export default function Accounts() {
   return (
     <div className="stack">
       <SectionNav items={[
-        { id: "acc-today", label: "Today" },
+        { id: "acc-overview", label: "Overview" },
         { id: "acc-growth", label: "Growth" },
         { id: "acc-liquidity", label: "Liquidity & Drawdown" },
         { id: "acc-history", label: "History" },
       ]} />
 
-      {/* ───────────── TODAY ───────────── */}
-      <Head id="acc-today">Today</Head>
+      {/* ───────────── OVERVIEW ───────────── */}
+      <Head id="acc-overview">Overview</Head>
       <div className="group-grid">
         <Section title="Net Worth" className="span1">
           <Stat label={debt > 0 ? "Assets Minus Liabilities" : "Total Across All Pools"}
@@ -209,6 +216,7 @@ export default function Accounts() {
               {Object.entries(ACCOUNT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           }>
+          <div style={{ maxHeight: 300, overflowY: "auto" }}>
           <table className="table">
             <thead>
               <tr><th>Account</th><th>Balance</th>
@@ -235,6 +243,7 @@ export default function Accounts() {
               ))}
             </tbody>
           </table>
+          </div>
         </Section>
       </div>
 
@@ -246,6 +255,7 @@ export default function Accounts() {
             }] })}>+ Add Loan</button>
         }>
         {(s.liabilities ?? []).length > 0 ? (
+          <div style={{ maxHeight: 280, overflowY: "auto" }}>
           <table className="table">
             <thead>
               <tr>
@@ -275,19 +285,114 @@ export default function Accounts() {
               ))}
             </tbody>
           </table>
+          </div>
         ) : (
           <p className="hint">Mortgage, car loan, business loans. Payments count as essential non-inflating expenses; the outstanding balance reduces net worth.</p>
         )}
       </Section>
 
+      <div className="group-grid">
+        <Collapsible title="Contribution Waterfall" info={A.waterfall}
+          actions={
+            <button className="ghost" onClick={() =>
+              up({ waterfall: [...s.waterfall, { account: "taxable", kind: "max" }] })}>+ Step</button>
+          }>
+          <p className="hint" style={{ marginTop: 0 }}>Surplus each year flows down this list. Add phases below to change the routing at chosen ages — e.g. divert from the 401k to taxable while saving for a house.</p>
+          <WaterfallTable steps={s.waterfall} onChange={(waterfall) => up({ waterfall })} />
+          <div className="card-head" style={{ marginTop: 12 }}>
+            <h3 style={{ fontSize: 13, margin: 0 }}>Phases (Age-Keyed Overrides)</h3>
+            <button className="ghost" onClick={() =>
+              up({ waterfall_schedule: [...(s.waterfall_schedule ?? []),
+                { start_age: Math.min(startAge + 5, s.profile.horizon_age), steps: s.waterfall }] })}>
+              + Add Phase
+            </button>
+          </div>
+          {(s.waterfall_schedule ?? []).map((seg, si) => (
+            <div key={si} style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+              <div className="pair" style={{ marginBottom: 6 }}>
+                <Field label="From Age">
+                  <NumberInput value={seg.start_age} step={1}
+                    onChange={(v) => up({ waterfall_schedule: (s.waterfall_schedule ?? []).map((x, j) => j === si ? { ...x, start_age: v } : x) })} />
+                </Field>
+                <button className="ghost" onClick={() =>
+                  up({ waterfall_schedule: (s.waterfall_schedule ?? []).filter((_, j) => j !== si) })}>
+                  ✕ Remove Phase
+                </button>
+              </div>
+              <WaterfallTable steps={seg.steps}
+                onChange={(steps) => up({ waterfall_schedule: (s.waterfall_schedule ?? []).map((x, j) => j === si ? { ...x, steps } : x) })} />
+            </div>
+          ))}
+        </Collapsible>
+
+        <Collapsible title="Withdrawal Policy" info={A.policy}>
+          <div className="policy-row">
+            {(["order", "late_order"] as const).map((which) => {
+              const list = s.withdrawal_policy[which]
+                ?? (which === "order" ? DEFAULT_ORDER : DEFAULT_LATE_ORDER);
+              const move = (i: number, dir: -1 | 1) => {
+                const j = i + dir;
+                if (j < 0 || j >= list.length) return;
+                const next = [...list];
+                [next[i], next[j]] = [next[j], next[i]];
+                up({ withdrawal_policy: { ...s.withdrawal_policy, [which]: next } });
+              };
+              return (
+                <div className="policy-col" key={which}>
+                  <div className="policy-col-head">{which === "order" ? "Before 59½" : "59½ & After"}</div>
+                  <ol className="policy-list">
+                    {list.map((src, i) => (
+                      <li key={src}>
+                        {SOURCE_LABELS[src]}
+                        <span>
+                          <button className="ghost" disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
+                          <button className="ghost" disabled={i === list.length - 1} onClick={() => move(i, 1)}>↓</button>
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              );
+            })}
+            <div className="fields">
+              <Field label="Cash Buffer"
+                info="The withdrawal policy never draws the cash pool below this amount — your untouchable reserve.">
+                <NumberInput value={s.withdrawal_policy.cash_buffer} step={1000}
+                  onChange={(v) => up({ withdrawal_policy: { ...s.withdrawal_policy, cash_buffer: v } })} />
+              </Field>
+              <Field label="Last Resort: Early Trad + Penalty"
+                info="If every other source is empty before 59½, tap traditional early and pay the 10% penalty rather than miss a year. Note: relying on this now counts as a FAILURE — it only changes how a failed path keeps going, not the success rate.">
+                <input type="checkbox" checked={s.withdrawal_policy.allow_early_trad_with_penalty}
+                  onChange={(e) => up({ withdrawal_policy: { ...s.withdrawal_policy, allow_early_trad_with_penalty: e.target.checked } })} />
+              </Field>
+            </div>
+          </div>
+        </Collapsible>
+      </div>
+
+      <Collapsible title="HSA Settings" info={A.hsa}>
+        <div className="fields">
+          <Field label="Utilization"
+            info={"The share of HSA-eligible medical spending paid tax-free from the HSA each year; the rest is paid out of pocket."}>
+            <PercentInput value={s.hsa.utilization} step={5}
+              onChange={(v) => up({ hsa: { ...s.hsa, utilization: v } })} />
+          </Field>
+          <Field label="Cash Buffer" info={A.hsaBuffer}>
+            <NumberInput value={s.hsa.cash_buffer} step={500}
+              onChange={(v) => up({ hsa: { ...s.hsa, cash_buffer: v } })} />
+          </Field>
+          <Field label="Coverage">
+            <select value={s.hsa.coverage}
+              onChange={(e) => up({ hsa: { ...s.hsa, coverage: e.target.value as any } })}>
+              <option value="self_only">Self-Only</option>
+              <option value="family">Family</option>
+            </select>
+          </Field>
+        </div>
+      </Collapsible>
+
       {/* ───────────── GROWTH ───────────── */}
       <Head id="acc-growth">Growth</Head>
-      <Section className="full" title="Where The Money Lives — Balances & Flows"
-        info="Median balance of each tax pool over the plan (left axis), with annual contributions and withdrawals as bars (right). Watch the mix shift as you accumulate, convert, and draw down.">
-        {result ? <WealthFlowsChart result={result} axisMode={axisMode} />
-          : <p className="hint">Simulation pending…</p>}
-      </Section>
-
       <Collapsible title="Allocation & Glidepath"
         info="Portfolio weights applied across all accounts. The base mix holds until the first glide phase; each phase re-sets the mix from its age onward — e.g. de-risk approaching retirement, or a rising-equity glide through it."
         defaultOpen
@@ -298,18 +403,40 @@ export default function Accounts() {
             + Add Phase
           </button>
         }>
-        <div className="fields">
-          <Field label="Base Allocation (Stocks / Bonds / Cash)">
-            <span className="pair">
-              <PercentInput value={s.allocation.stocks} step={5}
-                onChange={(v) => up({ allocation: { ...s.allocation, stocks: v, bonds: Math.max(0, 1 - v - s.allocation.cash) } })} />
-              <PercentInput value={s.allocation.bonds} step={5}
-                onChange={(v) => up({ allocation: { ...s.allocation, bonds: v, stocks: Math.max(0, 1 - v - s.allocation.cash) } })} />
-              <PercentInput value={s.allocation.cash} step={1}
-                onChange={(v) => up({ allocation: { ...s.allocation, cash: v, stocks: Math.max(0, 1 - v - s.allocation.bonds) } })} />
-            </span>
-          </Field>
-        </div>
+        <table className="table" style={{ maxWidth: 340 }}>
+          <thead><tr><th>Asset Class</th><th style={{ textAlign: "right" }}>Weight</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Stocks</td>
+              <td style={{ textAlign: "right" }}>
+                <PercentInput value={s.allocation.stocks} step={5}
+                  onChange={(v) => up({ allocation: { ...s.allocation, stocks: v, bonds: Math.max(0, 1 - v - s.allocation.cash) } })} />
+              </td>
+            </tr>
+            <tr>
+              <td>Bonds</td>
+              <td style={{ textAlign: "right" }}>
+                <PercentInput value={s.allocation.bonds} step={5}
+                  onChange={(v) => up({ allocation: { ...s.allocation, bonds: v, stocks: Math.max(0, 1 - v - s.allocation.cash) } })} />
+              </td>
+            </tr>
+            <tr>
+              <td>Cash</td>
+              <td style={{ textAlign: "right" }}>
+                <PercentInput value={s.allocation.cash} step={1}
+                  onChange={(v) => up({ allocation: { ...s.allocation, cash: v, stocks: Math.max(0, 1 - v - s.allocation.bonds) } })} />
+              </td>
+            </tr>
+            <tr style={{ borderTop: "1px solid var(--border)" }}>
+              <td style={{ fontWeight: 600 }}>Total</td>
+              <td style={{ textAlign: "right", fontWeight: 600,
+                color: Math.abs(s.allocation.stocks + s.allocation.bonds + s.allocation.cash - 1) < 1e-6
+                  ? "var(--muted)" : "#f0883e" }}>
+                {fmtPct(s.allocation.stocks + s.allocation.bonds + s.allocation.cash, 0)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
         {(s.allocation_schedule ?? []).length > 0 && (
           <div style={{ marginTop: 8 }}>
             <div className="card-head"><h3 style={{ fontSize: 13, margin: 0 }}>Glidepath Phases (Age-Keyed)</h3></div>
@@ -341,70 +468,43 @@ export default function Accounts() {
         )}
       </Collapsible>
 
+      <Section className="full" title="Account Balances By Pool"
+        info="Median balance of each tax pool over the plan, in today's dollars — the growth and composition story. (The contribution and withdrawal flows now live on the Cash Flow tab.)">
+        {result ? <WealthFlowsChart result={result} axisMode={axisMode} />
+          : <p className="hint">Simulation pending…</p>}
+      </Section>
+
       <Section title="Maximum Drawdown (Real)" info={A.drawdown}>
         {result ? (
           <>
             <Stat label="Median Maximum Drawdown" value={fmtPct(median(result.max_drawdown))}
               sub="the deepest real peak-to-trough fall you'd have to sit through — be ready for it" info={A.drawdown} />
-            <HistogramChart values={result.max_drawdown} unit="percent" color="rgba(210,153,34,0.55)"
-              title="" xTitle="Deepest Peak-To-Trough Fall In Real Net Worth" />
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, 1fr) 2fr", gap: 16, alignItems: "start" }}>
+              <table className="table">
+                <thead>
+                  <tr><th>Scenario</th><th style={{ textAlign: "right" }}>Drop</th>
+                    <th style={{ textAlign: "right" }}>On Your {fmtMoney(total)}</th></tr>
+                </thead>
+                <tbody>
+                  {([["Typical (median)", 50], ["1-In-4 Bad (p75)", 75],
+                     ["1-In-10 (p90)", 90], ["Worst 5% (p95)", 95]] as [string, number][]).map(([label, p]) => {
+                    const dd = pctile(result.max_drawdown, p);
+                    return (
+                      <tr key={label}>
+                        <td>{label}</td>
+                        <td style={{ textAlign: "right", color: "#d29922" }}>−{fmtPct(dd, 0)}</td>
+                        <td style={{ textAlign: "right", color: "#ff7b72" }}>−{fmtMoney(dd * total)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <HistogramChart values={result.max_drawdown} unit="percent" color="rgba(210,153,34,0.55)"
+                title="" xTitle="Deepest Peak-To-Trough Fall In Real Net Worth" />
+            </div>
           </>
         ) : <p className="hint">Simulation pending…</p>}
       </Section>
-
-      <Collapsible title="Contributions: Waterfall & Schedule" info={A.waterfall}
-        actions={
-          <button className="ghost" onClick={() =>
-            up({ waterfall: [...s.waterfall, { account: "taxable", kind: "max" }] })}>+ Step</button>
-        }>
-        <p className="hint" style={{ marginTop: 0 }}>Surplus each year flows down this list. Add phases below to change the routing at chosen ages — e.g. divert from the 401k to taxable while saving for a house.</p>
-        <WaterfallTable steps={s.waterfall} onChange={(waterfall) => up({ waterfall })} />
-        <div className="card-head" style={{ marginTop: 12 }}>
-          <h3 style={{ fontSize: 13, margin: 0 }}>Phases (Age-Keyed Overrides)</h3>
-          <button className="ghost" onClick={() =>
-            up({ waterfall_schedule: [...(s.waterfall_schedule ?? []),
-              { start_age: Math.min(startAge + 5, s.profile.horizon_age), steps: s.waterfall }] })}>
-            + Add Phase
-          </button>
-        </div>
-        {(s.waterfall_schedule ?? []).map((seg, si) => (
-          <div key={si} style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
-            <div className="pair" style={{ marginBottom: 6 }}>
-              <Field label="From Age">
-                <NumberInput value={seg.start_age} step={1}
-                  onChange={(v) => up({ waterfall_schedule: (s.waterfall_schedule ?? []).map((x, j) => j === si ? { ...x, start_age: v } : x) })} />
-              </Field>
-              <button className="ghost" onClick={() =>
-                up({ waterfall_schedule: (s.waterfall_schedule ?? []).filter((_, j) => j !== si) })}>
-                ✕ Remove Phase
-              </button>
-            </div>
-            <WaterfallTable steps={seg.steps}
-              onChange={(steps) => up({ waterfall_schedule: (s.waterfall_schedule ?? []).map((x, j) => j === si ? { ...x, steps } : x) })} />
-          </div>
-        ))}
-      </Collapsible>
-
-      <Collapsible title="HSA Settings" info={A.hsa}>
-        <div className="fields">
-          <Field label="Utilization"
-            info={"The share of HSA-eligible medical spending paid tax-free from the HSA each year; the rest is paid out of pocket."}>
-            <PercentInput value={s.hsa.utilization} step={5}
-              onChange={(v) => up({ hsa: { ...s.hsa, utilization: v } })} />
-          </Field>
-          <Field label="Cash Buffer" info={A.hsaBuffer}>
-            <NumberInput value={s.hsa.cash_buffer} step={500}
-              onChange={(v) => up({ hsa: { ...s.hsa, cash_buffer: v } })} />
-          </Field>
-          <Field label="Coverage">
-            <select value={s.hsa.coverage}
-              onChange={(e) => up({ hsa: { ...s.hsa, coverage: e.target.value as any } })}>
-              <option value="self_only">Self-Only</option>
-              <option value="family">Family</option>
-            </select>
-          </Field>
-        </div>
-      </Collapsible>
 
       {/* ───────────── LIQUIDITY & DRAWDOWN ───────────── */}
       <Head id="acc-liquidity">Liquidity &amp; Drawdown</Head>
@@ -425,7 +525,7 @@ export default function Accounts() {
               <>
                 <div className="stat-grid">
                   <Stat label="Bridge Holds" value={fmtPct(1 - (b.bridge_break_rate ?? 0), 0)}
-                    sub="penalty-free money lasts to 59½ (no early-penalty raid)" info={A.bridgeBreak} />
+                    sub="penalty-free money lasts to 59½ (no early-penalty raid)" info={A.bridgeHolds} />
                   <Stat label="Coverage (Median)" value={`${(b.coverage_p50 ?? 0).toFixed(2)}×`}
                     sub={`worst 5%: ${(b.coverage_p5 ?? 0).toFixed(2)}×`} info={A.bridgeCoverage} />
                   <Stat label="Runway" value={`${Math.round(b.runway_p50 ?? 0)} yr`}
@@ -435,6 +535,18 @@ export default function Accounts() {
                     sub={`${fmtMoney(b.at_retirement?.accessible_real ?? 0)} reachable · ${fmtMoney(b.at_retirement?.locked_real ?? 0)} locked`}
                     info={A.bridgeSplit} />
                 </div>
+                <p className="hint" style={{ marginTop: 6 }}>
+                  <strong>Bridge Holds</strong> is the dynamic verdict — it credits the Roth ladder
+                  maturing mid-bridge. Coverage, Runway, and Accessible-at-Retirement are conservative
+                  day-one snapshots that ignore those conversions, so for a ladder-reliant plan they
+                  read as a floor, not the headline.
+                </p>
+                {b.bridge_funding_total_real != null && (
+                  <Stat label={`Liquid Needed For The First ${b.bridge_funding_years} Retirement Years`}
+                    value={fmtMoney(b.bridge_funding_total_real)}
+                    sub={`before your first conversion seasons · ${fmtMoney(b.bridge_funding_by_source?.cash ?? 0)} cash + ${fmtMoney(b.bridge_funding_by_source?.taxable ?? 0)} taxable + ${fmtMoney(b.bridge_funding_by_source?.roth_basis ?? 0)} Roth basis`}
+                    info={A.bridgeFunding} />
+                )}
                 <div style={{ marginTop: 12 }}>
                   <AccessibilityFanChart result={result} axisMode={axisMode}
                     retirementMarker={retMarker} retirementAge={s.retirement_age}
@@ -447,7 +559,8 @@ export default function Accounts() {
                     </h3></div>
                     <HistogramChart values={b.min_accessible_real} unit="money"
                       color="rgba(63,185,80,0.5)" title=""
-                      xTitle="Low-Water Mark Of Penalty-Free Assets (Today's $)" />
+                      bins={{ start: 0, size: 50000, end: 500000 }} clampOverflow
+                      xTitle="Low-Water Mark Of Penalty-Free Assets (Today's $, 500k+ grouped)" />
                   </div>
                 )}
                 <div className="card-head" style={{ marginTop: 12 }}>
@@ -469,14 +582,20 @@ export default function Accounts() {
                   </button>
                 </div>
                 {bridgecrash && bridgecrash.has_bridge && (
-                  <div className="stat-grid" style={{ marginTop: 10 }}>
-                    <Stat label="Success: Baseline → Crash"
-                      value={`${fmtPct(bridgecrash.base_success, 0)} → ${fmtPct(bridgecrash.stressed_success, 0)}`}
-                      sub={`${bridgecrash.success_delta >= 0 ? "+" : ""}${fmtPct(bridgecrash.success_delta)} vs baseline`} />
-                    <Stat label="Bridge Breaks: Baseline → Crash"
-                      value={`${fmtPct(bridgecrash.base_bridge_break_rate, 0)} → ${fmtPct(bridgecrash.stressed_bridge_break_rate, 0)}`}
-                      sub={`a ${fmtPct(bridgecrash.drop, 0)} drop over ${bridgecrash.years} yr at age ${bridgecrash.retirement_age}`} />
-                  </div>
+                  <>
+                    <div className="stat-grid" style={{ marginTop: 10 }}>
+                      <Stat label="Bridge Breaks: Baseline → Crash"
+                        value={`${fmtPct(bridgecrash.base_bridge_break_rate, 0)} → ${fmtPct(bridgecrash.stressed_bridge_break_rate, 0)}`}
+                        sub={`a ${fmtPct(bridgecrash.drop, 0)} drop over ${bridgecrash.years} yr at age ${bridgecrash.retirement_age}`} />
+                      <Stat label="Early-Penalty Reliance: Baseline → Crash"
+                        value={`${fmtPct(bridgecrash.base_early_penalty_rate, 0)} → ${fmtPct(bridgecrash.stressed_early_penalty_rate, 0)}`}
+                        sub="paths forced to raid traditional early" />
+                    </div>
+                    <p className="hint" style={{ marginTop: 6 }}>
+                      The hit to your <em>overall</em> success rate from this crash is on the Freedom
+                      tab, under Undersaving.
+                    </p>
+                  </>
                 )}
               </>
             );
@@ -487,7 +606,13 @@ export default function Accounts() {
       )}
 
       <Section title="Roth Conversion Ladder"
-        info={A.ladder + " The ladder's first job here is liquidity — it converts locked traditional into penalty-free Roth for the pre-59½ bridge. Conversions are capped by the traditional balance each year; amounts are the median across paths. (Its tax consequences — RMDs, lifetime tax — live on the Taxes tab.)"}>
+        info={A.ladder + " The ladder's first job here is liquidity — it converts locked traditional into penalty-free Roth for the pre-59½ bridge. Conversions are capped by the traditional balance each year; amounts are the median across paths. (Its tax consequences — RMDs, lifetime tax — live on the Taxes tab.)"}
+        actions={result && result.rmd_schedule.length > 0 ? (
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>
+            First RMD @ 75: <strong style={{ color: "#d29922" }}>{fmtMoney(result.rmd_schedule[0].amount_real)}</strong>
+            <InfoTip text="Your first Required Minimum Distribution at age 75 (median, today's $) — the forced income the ladder is working to shrink before then. Full schedule on the Taxes tab." />
+          </span>
+        ) : undefined}>
         <div className="fields" style={{ marginBottom: 10 }}>
           <Field label="Strategy">
             <select value={convStrategy} onChange={(e) => setConvStrategy(e.target.value)}>
@@ -531,6 +656,9 @@ export default function Accounts() {
               <tr>
                 <th>Year</th><th>Age</th><th>Convert (Today's $)</th><th>Penalty-Free In</th>
                 <th>Next $ Taxed At<InfoTip text="Marginal federal + state rate the next conversion dollar would face on the median path." /></th>
+                <th>Effective Rate<InfoTip text="Average federal + state income-tax rate that year on the median path — the blended cost, beside the marginal next-dollar cost." /></th>
+                <th>Income After Tax<InfoTip text="Median gross income minus all income tax that year, today's $ — what's actually available to spend or save (the conversion principal itself is not spendable)." /></th>
+                <th>Surplus / Deficit<InfoTip text="After-tax income minus planned spending that year (median, today's $). Positive = the year self-funds; negative = you're drawing down liquid assets to cover it." /></th>
                 <th>Traditional Left<InfoTip text="Median traditional balance after that year's conversion and growth, today's $." /></th>
               </tr>
             </thead>
@@ -542,6 +670,11 @@ export default function Accounts() {
                   <tr key={r.year}>
                     <td>{r.year}</td><td>{r.age}</td><td>{fmtMoney(r.amount_real)}</td>
                     <td>{penaltyFree}</td><td>{fmtPct(r.marginal_rate, 0)}</td>
+                    <td>{fmtPct(r.effective_rate, 0)}</td>
+                    <td>{fmtMoney(r.after_tax_income_real)}</td>
+                    <td style={{ color: r.surplus_real >= 0 ? "#3fb950" : "#ff7b72" }}>
+                      {r.surplus_real >= 0 ? "+" : "−"}{fmtMoney(Math.abs(r.surplus_real))}
+                    </td>
                     <td>{fmtMoney(r.trad_remaining_real)}</td>
                   </tr>
                 );
@@ -568,57 +701,6 @@ export default function Accounts() {
           )}
         </Section>
       )}
-
-      <Collapsible title="Withdrawal Policy" info={A.policy}>
-        <div className="policy-row">
-          {(["order", "late_order"] as const).map((which) => {
-            const list = s.withdrawal_policy[which]
-              ?? (which === "order" ? DEFAULT_ORDER : DEFAULT_LATE_ORDER);
-            const move = (i: number, dir: -1 | 1) => {
-              const j = i + dir;
-              if (j < 0 || j >= list.length) return;
-              const next = [...list];
-              [next[i], next[j]] = [next[j], next[i]];
-              up({ withdrawal_policy: { ...s.withdrawal_policy, [which]: next } });
-            };
-            return (
-              <div className="policy-col" key={which}>
-                <div className="policy-col-head">{which === "order" ? "Before 59½" : "59½ & After"}</div>
-                <ol className="policy-list">
-                  {list.map((src, i) => (
-                    <li key={src}>
-                      {SOURCE_LABELS[src]}
-                      <span>
-                        <button className="ghost" disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
-                        <button className="ghost" disabled={i === list.length - 1} onClick={() => move(i, 1)}>↓</button>
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            );
-          })}
-          <div className="fields">
-            <Field label="Cash Buffer"
-              info="The withdrawal policy never draws the cash pool below this amount — your untouchable reserve.">
-              <NumberInput value={s.withdrawal_policy.cash_buffer} step={1000}
-                onChange={(v) => up({ withdrawal_policy: { ...s.withdrawal_policy, cash_buffer: v } })} />
-            </Field>
-            <Field label="Last Resort: Early Trad + Penalty"
-              info="If every other source is empty before 59½, tap traditional early and pay the 10% penalty rather than miss a year. Note: relying on this now counts as a FAILURE — it only changes how a failed path keeps going, not the success rate.">
-              <input type="checkbox" checked={s.withdrawal_policy.allow_early_trad_with_penalty}
-                onChange={(e) => up({ withdrawal_policy: { ...s.withdrawal_policy, allow_early_trad_with_penalty: e.target.checked } })} />
-            </Field>
-          </div>
-        </div>
-        <div style={{ marginTop: 8 }}>
-          <div className="card-head"><h3 style={{ fontSize: 13, margin: 0 }}>
-            Spending Funded By Source<InfoTip text={A.withdrawalSource} />
-          </h3></div>
-          {result ? <WithdrawalSourceChart result={result} axisMode={axisMode} />
-            : <p className="hint">Simulation pending…</p>}
-        </div>
-      </Collapsible>
 
       {/* ───────────── HISTORY ───────────── */}
       <Head id="acc-history">History</Head>

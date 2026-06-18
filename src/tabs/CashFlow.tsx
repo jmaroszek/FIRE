@@ -1,18 +1,24 @@
 import React, { useState } from "react";
 import { A } from "../assumptions";
 import {
-  FulfillmentChart, HealthcareCostChart, RetirementSpendingChart, SpendingActualsChart,
-  SpendingDepthChart,
+  ContributionsChart, FulfillmentChart, FundingSourceChart, HealthcareCostChart,
+  RetirementSpendingChart, SpendingActualsChart, SpendingDepthChart,
 } from "../components/charts";
 import TimelineEditor from "../components/TimelineEditor";
 import {
-  Collapsible, Field, InfoTip, NumberInput, PercentInput, Section, Stat, fmtMoney, fmtPct,
+  Collapsible, Field, InfoTip, NumberInput, PercentInput, Section, SectionNav, Stat,
+  fmtMoney, fmtPct,
 } from "../components/ui";
 import { KIND_META, KIND_ORDER, displayKindOf, newEventOf, type DisplayKind } from "../events";
 import { useStore } from "../store";
 import type {
   AccountType, ExpenseStream, FireEvent, IncomeStream, Scenario,
 } from "../types";
+
+/** Section heading that doubles as a scroll anchor for the in-page sub-nav. */
+function Head({ id, children }: { id: string; children: React.ReactNode }) {
+  return <h2 className="group-title" id={id} style={{ scrollMarginTop: 96 }}>{children}</h2>;
+}
 
 /** One editable row in the Life Events list. The crash/allocation branches stay
  * editable for existing events, but both are dropped from the add menu (better
@@ -136,6 +142,14 @@ export default function CashFlow() {
 
   return (
     <div className="stack">
+      <SectionNav items={[
+        { id: "cf-overview", label: "Overview" },
+        { id: "cf-health", label: "Healthcare" },
+        { id: "cf-retire", label: "Retirement" },
+      ]} />
+
+      {/* ───────────── OVERVIEW ───────────── */}
+      <Head id="cf-overview">Overview</Head>
       <Section title="Income"
         info="Salary in today's dollars; the primary salary stops at retirement unless a New Salary event sets another. Add other streams below for side income.">
         <div className="fields">
@@ -193,33 +207,6 @@ export default function CashFlow() {
         )}
       </Section>
 
-      <Collapsible title="Social Security" info={A.ss}>
-        <div className="fields">
-          <Field label="Monthly Benefit At FRA (Today's $)">
-            <NumberInput value={s.social_security.monthly_at_fra} step={100}
-              onChange={(v) => up({ social_security: { ...s.social_security, monthly_at_fra: v } })} />
-          </Field>
-          <Field label="Claiming Age (62–70)">
-            <NumberInput value={s.social_security.claiming_age} step={1} min={62} max={70}
-              onChange={(v) => up({ social_security: { ...s.social_security, claiming_age: v } })} />
-          </Field>
-          <Field label="Haircut (Trust-Fund Scenario)">
-            <select value={String(s.social_security.haircut)}
-              onChange={(e) => up({ social_security: { ...s.social_security, haircut: parseFloat(e.target.value) } })}>
-              <option value="1">100% Of Projected</option>
-              <option value="0.75">75%</option>
-              <option value="0.5">50%</option>
-              <option value="0.25">25%</option>
-              <option value="0">0% (None)</option>
-            </select>
-          </Field>
-        </div>
-        <p className="hint">
-          Benefit is income; how it's taxed (the provisional-income "torpedo") is on the Taxes tab.{" "}
-          <a className="ext" href="https://www.ssa.gov/myaccount/" target="_blank" rel="noreferrer">Estimate your benefit at ssa.gov ↗</a>
-        </p>
-      </Collapsible>
-
       <Section
         title="Expenses"
         info="Baseline living costs in today's dollars. Medical spending goes in its own section below; loan payments belong under Debt & Liabilities on the Accounts tab."
@@ -272,6 +259,126 @@ export default function CashFlow() {
         </table>
       </Section>
 
+      <Section
+        title="Life Events"
+        info={A.events}
+        actions={
+          <span className="pair">
+            <select value={addKind} onChange={(e) => setAddKind(e.target.value as DisplayKind)}>
+              {KIND_ORDER.filter((k) => k !== "crash" && k !== "allocation").map((k) => (
+                <option key={k} value={k}>{KIND_META[k].label}</option>
+              ))}
+            </select>
+            <button onClick={() =>
+              up({ events: [...s.events,
+                newEventOf(addKind, Math.min(startAge + 5, s.profile.horizon_age), s)] })}>
+              + Add Event
+            </button>
+          </span>
+        }>
+        <TimelineEditor
+          axisMode={axisMode}
+          birthYear={s.profile.birth_year}
+          startYear={s.sim.start_year}
+          horizonAge={s.profile.horizon_age}
+          retirementAge={s.retirement_age}
+          events={s.events}
+          onRetirementAge={(age) => up({ retirement_age: age })}
+          onEventAge={(index, age) => {
+            const events = s.events.map((e, j) => (j === index ? { ...e, age, year: null } : e));
+            up({ events });
+          }}
+        />
+        {s.events.length > 0 ? (
+          <div className="event-details">
+            <div className="event-details-head">Event Details</div>
+            <div className="event-list">
+              {s.events.map((ev, i) => <EventRow key={i} ev={ev} index={i} />)}
+            </div>
+          </div>
+        ) : (
+          <p className="hint">No events yet. Add a house down payment, an inheritance, or a raise — then drag it along the timeline. Allocation glides live on the Accounts tab.</p>
+        )}
+      </Section>
+
+      <Section title="Lifestyle Creep"
+        info="Your recorded annual spending by category, converted to today's dollars using the assumed mean inflation, against the dashed line of what your plan budgets. Creep is the bars climbing past the line in real terms.">
+        {snapshots.some((sn) => sn.spending && Object.values(sn.spending).some((v) => v > 0)) ? (
+          <SpendingActualsChart
+            snapshots={snapshots}
+            categories={categories}
+            inflationMean={s.inflation.mean}
+            planTotal={s.expense_streams
+              .filter((e) => (e.start_age ?? 0) <= startAge && startAge <= (e.end_age ?? 999))
+              .reduce((a, e) => a + e.annual, 0)}
+          />
+        ) : (
+          <p className="hint">
+            No spending recorded yet. Use Record A Snapshot on the Accounts tab and fill the Annual
+            Spending section — once a year is enough to see the trend.
+          </p>
+        )}
+      </Section>
+
+      <Section title="Income Shock Stress Test" info={A.stressTest}>
+        <div className="fields">
+          <Field label="Shock Starts At Age"
+            info="The age your wages drop to zero. Most meaningful before your retirement age.">
+            <NumberInput value={shockAge} step={1} min={startAge} max={s.retirement_age} onChange={setShockAge} />
+          </Field>
+          <Field label="Duration (Years)">
+            <NumberInput value={shockDur} step={1} min={1} max={20} onChange={setShockDur} />
+          </Field>
+          <button onClick={() => runStress(shockAge, shockDur)} disabled={stressLoading}>
+            {stressLoading ? "Computing…" : "Run Stress Test"}
+          </button>
+        </div>
+        {stress && (
+          <div className="stat-grid" style={{ marginTop: 10 }}>
+            <Stat label="Baseline Success" value={fmtPct(stress.base_success)} />
+            <Stat label={`After A ${stress.duration}-Year Shock At Age ${stress.shock_age}`}
+              value={fmtPct(stress.stressed_success)}
+              sub={`${stress.delta >= 0 ? "+" : ""}${fmtPct(stress.delta)} vs baseline`} />
+          </div>
+        )}
+      </Section>
+
+      <Section title="Max Sustainable Spending" info={A.maxSpendRetire}
+        actions={maxspend && (
+          <button className="ghost" onClick={runMaxSpend} disabled={maxspendLoading}>
+            {maxspendLoading ? "Computing…" : "Recompute"}
+          </button>
+        )}>
+        {maxspend ? (
+          <div className="stat-grid">
+            <Stat label="Max Spend Now (While Working)"
+              value={`${fmtMoney(maxspend.max_living_annual)}/yr`}
+              sub={`${maxspend.max_scale.toFixed(2)}× planned ${fmtMoney(maxspend.base_living_annual)}/yr${maxspend.capped ? " (capped 8×)" : ""}`}
+              info={A.maxSpend} />
+            <Stat label="Max Spend In Retirement"
+              value={`${fmtMoney(maxspend.retirement_max_living_annual)}/yr`}
+              sub={`${maxspend.retirement_max_scale.toFixed(2)}× planned · from retirement age ${s.retirement_age}${maxspend.retirement_capped ? " (capped 8×)" : ""}`}
+              info={A.maxSpendRetire} />
+          </div>
+        ) : (
+          <button onClick={runMaxSpend} disabled={maxspendLoading}>
+            {maxspendLoading ? "Computing…" : "Compute"}
+          </button>
+        )}
+      </Section>
+
+      <Section title="Funding Sources — Work vs Accounts" info={A.withdrawalSource}>
+        {result ? <FundingSourceChart result={result} axisMode={axisMode} />
+          : <p className="hint">Simulation pending…</p>}
+      </Section>
+
+      <Section title="Annual Contributions" info={A.investing}>
+        {result ? <ContributionsChart result={result} axisMode={axisMode} />
+          : <p className="hint">Simulation pending…</p>}
+      </Section>
+
+      {/* ───────────── HEALTHCARE ───────────── */}
+      <Head id="cf-health">Healthcare</Head>
       <Section
         title="Medical Spending (HSA-Eligible)"
         info="Out-of-pocket medical spending, kept separate from general expenses. Always essential; the HSA pays its share (set utilization under HSA on the Accounts tab). Don't list insurance premiums here — those are modeled under ACA / IRMAA, which add on top."
@@ -337,47 +444,59 @@ export default function CashFlow() {
         <p className="hint">Models the post-2021 subsidy (caps at 8.5% of MAGI, no income cliff). Roth conversions raise MAGI and shrink the subsidy — the collision the Accounts tab's subsidy-vs-conversion view surfaces. Don't also list this premium as an expense stream.</p>
       </Collapsible>
 
-      <Section
-        title="Life Events"
-        info={A.events}
-        actions={
-          <span className="pair">
-            <select value={addKind} onChange={(e) => setAddKind(e.target.value as DisplayKind)}>
-              {KIND_ORDER.filter((k) => k !== "crash" && k !== "allocation").map((k) => (
-                <option key={k} value={k}>{KIND_META[k].label}</option>
-              ))}
-            </select>
-            <button onClick={() =>
-              up({ events: [...s.events,
-                newEventOf(addKind, Math.min(startAge + 5, s.profile.horizon_age), s)] })}>
-              + Add Event
-            </button>
-          </span>
-        }>
-        <TimelineEditor
-          axisMode={axisMode}
-          birthYear={s.profile.birth_year}
-          startYear={s.sim.start_year}
-          horizonAge={s.profile.horizon_age}
-          retirementAge={s.retirement_age}
-          events={s.events}
-          onRetirementAge={(age) => up({ retirement_age: age })}
-          onEventAge={(index, age) => {
-            const events = s.events.map((e, j) => (j === index ? { ...e, age, year: null } : e));
-            up({ events });
-          }}
-        />
-        {s.events.length > 0 ? (
-          <div className="event-details">
-            <div className="event-details-head">Event Details</div>
-            <div className="event-list">
-              {s.events.map((ev, i) => <EventRow key={i} ev={ev} index={i} />)}
-            </div>
-          </div>
-        ) : (
-          <p className="hint">No events yet. Add a house down payment, an inheritance, or a raise — then drag it along the timeline. Allocation glides live on the Accounts tab.</p>
-        )}
+      <Section title="Net Healthcare Cost" info={A.healthcareTrajectory}>
+        {result ? (
+          result.healthcare?.net_cost_real?.some((v) => v > 1)
+            || result.healthcare?.subsidy_real?.some((v) => v > 1) ? (
+            <HealthcareCostChart result={result} axisMode={axisMode}
+              retirementAge={s.retirement_age} coverageEndAge={s.aca.coverage_end_age}
+              birthYear={s.profile.birth_year} />
+          ) : (
+            <p className="hint">
+              No modeled healthcare cost yet. Turn on ACA Premium Subsidy above (pre-65) or
+              IRMAA on the Taxes tab (65+) to see net premium, subsidy, and surcharge over life.
+            </p>
+          )
+        ) : <p className="hint">Simulation pending…</p>}
       </Section>
+
+      {/* ───────────── RETIREMENT ───────────── */}
+      <Head id="cf-retire">Retirement</Head>
+      <Section title="Retirement Spending"
+        info="What a year in retirement costs on the median path: living expenses plus net healthcare (ACA premium after subsidy, then IRMAA at 65+).">
+        {result ? (
+          <RetirementSpendingChart result={result} axisMode={axisMode}
+            retirementAge={s.retirement_age} coverageEndAge={s.aca.coverage_end_age}
+            birthYear={s.profile.birth_year} />
+        ) : <p className="hint">Simulation pending…</p>}
+      </Section>
+
+      <Collapsible title="Social Security" info={A.ss}>
+        <div className="fields">
+          <Field label="Monthly Benefit At FRA (Today's $)">
+            <NumberInput value={s.social_security.monthly_at_fra} step={100}
+              onChange={(v) => up({ social_security: { ...s.social_security, monthly_at_fra: v } })} />
+          </Field>
+          <Field label="Claiming Age (62–70)">
+            <NumberInput value={s.social_security.claiming_age} step={1} min={62} max={70}
+              onChange={(v) => up({ social_security: { ...s.social_security, claiming_age: v } })} />
+          </Field>
+          <Field label="Haircut (Trust-Fund Scenario)">
+            <select value={String(s.social_security.haircut)}
+              onChange={(e) => up({ social_security: { ...s.social_security, haircut: parseFloat(e.target.value) } })}>
+              <option value="1">100% Of Projected</option>
+              <option value="0.75">75%</option>
+              <option value="0.5">50%</option>
+              <option value="0.25">25%</option>
+              <option value="0">0% (None)</option>
+            </select>
+          </Field>
+        </div>
+        <p className="hint">
+          Benefit is income; how it's taxed (the provisional-income "torpedo") is on the Taxes tab.{" "}
+          <a className="ext" href="https://www.ssa.gov/myaccount/" target="_blank" rel="noreferrer">Estimate your benefit at ssa.gov ↗</a>
+        </p>
+      </Collapsible>
 
       <Collapsible title="Spending Strategy" info={A.spendingStrategy} defaultOpen>
         <div className="fields">
@@ -448,60 +567,6 @@ export default function CashFlow() {
         )}
       </Collapsible>
 
-      <Section title="Max Sustainable Spending" info={A.maxSpend}
-        actions={maxspend && (
-          <button className="ghost" onClick={runMaxSpend} disabled={maxspendLoading}>
-            {maxspendLoading ? "Computing…" : "Recompute"}
-          </button>
-        )}>
-        {maxspend ? (
-          <Stat label={`At ≥${fmtPct(maxspend.threshold, 0)} Success`}
-            value={`${fmtMoney(maxspend.max_living_annual)}/yr`}
-            sub={`${maxspend.max_scale.toFixed(2)}× planned ${fmtMoney(maxspend.base_living_annual)}/yr${maxspend.capped ? " (capped at 8×)" : ""} · at retirement age ${s.retirement_age} (set on Freedom)`} />
-        ) : (
-          <button onClick={runMaxSpend} disabled={maxspendLoading}>
-            {maxspendLoading ? "Computing…" : "Compute"}
-          </button>
-        )}
-      </Section>
-
-      <Section title="Retirement Spending"
-        info="What a year in retirement costs on the median path: living expenses plus net healthcare (ACA premium after subsidy, then IRMAA at 65+).">
-        {result ? (
-          <RetirementSpendingChart result={result} axisMode={axisMode}
-            retirementAge={s.retirement_age} coverageEndAge={s.aca.coverage_end_age}
-            birthYear={s.profile.birth_year} />
-        ) : <p className="hint">Simulation pending…</p>}
-      </Section>
-
-      <Section title="Net Healthcare Cost" info={A.healthcareTrajectory}>
-        {result ? (
-          result.healthcare?.net_cost_real?.some((v) => v > 1)
-            || result.healthcare?.subsidy_real?.some((v) => v > 1) ? (
-            <HealthcareCostChart result={result} axisMode={axisMode}
-              retirementAge={s.retirement_age} coverageEndAge={s.aca.coverage_end_age}
-              birthYear={s.profile.birth_year} />
-          ) : (
-            <p className="hint">
-              No modeled healthcare cost yet. Turn on ACA Premium Subsidy above (pre-65) or
-              IRMAA on the Taxes tab (65+) to see net premium, subsidy, and surcharge over life.
-            </p>
-          )
-        ) : <p className="hint">Simulation pending…</p>}
-      </Section>
-
-      <Section title="Realized Spending Level" info={A.spendingDepth}>
-        {result ? (
-          <SpendingDepthChart result={result} axisMode={axisMode} retirementAge={s.retirement_age}
-            enabled={s.spending_strategy.kind !== "constant_dollar" || s.guardrails.enabled}
-            floor={s.spending_strategy.kind === "floor_ceiling" ? s.spending_strategy.floor_mult
-              : s.spending_strategy.kind === "constant_dollar" ? s.guardrails.floor_mult : 0}
-            cap={s.spending_strategy.kind === "floor_ceiling" ? s.spending_strategy.ceiling_mult
-              : s.spending_strategy.kind === "constant_dollar" ? s.guardrails.cap_mult : 0}
-            birthYear={s.profile.birth_year} />
-        ) : <p className="hint">Simulation pending…</p>}
-      </Section>
-
       <Section title="Spending vs Ability To Enjoy It" info={A.fulfillment}>
         {result ? (() => {
           const ages = result.ages;
@@ -537,47 +602,19 @@ export default function CashFlow() {
         })() : <p className="hint">Simulation pending…</p>}
       </Section>
 
-      <Section title="Lifestyle Creep"
-        info="Your recorded annual spending by category, converted to today's dollars using the assumed mean inflation, against the dashed line of what your plan budgets. Creep is the bars climbing past the line in real terms.">
-        {snapshots.some((sn) => sn.spending && Object.values(sn.spending).some((v) => v > 0)) ? (
-          <SpendingActualsChart
-            snapshots={snapshots}
-            categories={categories}
-            inflationMean={s.inflation.mean}
-            planTotal={s.expense_streams
-              .filter((e) => (e.start_age ?? 0) <= startAge && startAge <= (e.end_age ?? 999))
-              .reduce((a, e) => a + e.annual, 0)}
-          />
-        ) : (
-          <p className="hint">
-            No spending recorded yet. Use Record A Snapshot on the Accounts tab and fill the Annual
-            Spending section — once a year is enough to see the trend.
-          </p>
-        )}
-      </Section>
-
-      <Section title="Income Shock Stress Test" info={A.stressTest}>
-        <div className="fields">
-          <Field label="Shock Starts At Age"
-            info="The age your wages drop to zero. Most meaningful before your retirement age.">
-            <NumberInput value={shockAge} step={1} min={startAge} max={s.retirement_age} onChange={setShockAge} />
-          </Field>
-          <Field label="Duration (Years)">
-            <NumberInput value={shockDur} step={1} min={1} max={20} onChange={setShockDur} />
-          </Field>
-          <button onClick={() => runStress(shockAge, shockDur)} disabled={stressLoading}>
-            {stressLoading ? "Computing…" : "Run Stress Test"}
-          </button>
-        </div>
-        {stress && (
-          <div className="stat-grid" style={{ marginTop: 10 }}>
-            <Stat label="Baseline Success" value={fmtPct(stress.base_success)} />
-            <Stat label={`After A ${stress.duration}-Year Shock At Age ${stress.shock_age}`}
-              value={fmtPct(stress.stressed_success)}
-              sub={`${stress.delta >= 0 ? "+" : ""}${fmtPct(stress.delta)} vs baseline`} />
-          </div>
-        )}
-      </Section>
+      {(s.spending_strategy.kind !== "constant_dollar" || s.guardrails.enabled) && (
+        <Section title="Realized Spending Level" info={A.spendingDepth}>
+          {result ? (
+            <SpendingDepthChart result={result} axisMode={axisMode} retirementAge={s.retirement_age}
+              enabled={s.spending_strategy.kind !== "constant_dollar" || s.guardrails.enabled}
+              floor={s.spending_strategy.kind === "floor_ceiling" ? s.spending_strategy.floor_mult
+                : s.spending_strategy.kind === "constant_dollar" ? s.guardrails.floor_mult : 0}
+              cap={s.spending_strategy.kind === "floor_ceiling" ? s.spending_strategy.ceiling_mult
+                : s.spending_strategy.kind === "constant_dollar" ? s.guardrails.cap_mult : 0}
+              birthYear={s.profile.birth_year} />
+          ) : <p className="hint">Simulation pending…</p>}
+        </Section>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import type {
-  BridgeCrashResult, Category, FreedomResult, MaxSpendResult, RothTradResult, Scenario,
-  SensitivityResult, SimulateResult, Snapshot, StressResult, SurfaceResult, SweepResult,
-  TaxRegimeResult,
+  BridgeCrashResult, Category, FreedomResult, LadderSavingsResult, MaxSpendResult,
+  Scenario, SensitivityResult, SimulateResult, Snapshot, StressResult,
+  SurfaceResult, SweepResult, TaxRegimeResult,
 } from "./types";
 
 const BASE = `http://127.0.0.1:${(window as any).__FIRE_PORT__ ?? 8765}`;
@@ -50,8 +50,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ scenario, shock_age: shockAge, duration, n_paths: nPaths }),
     }),
-  rothVsTrad: (scenario: Scenario, nPaths = 1000) =>
-    req<RothTradResult>("/simulate/roth-vs-trad", {
+  ladderSavings: (scenario: Scenario, nPaths = 1000) =>
+    req<LadderSavingsResult>("/simulate/ladder-savings", {
       method: "POST", body: JSON.stringify({ scenario, n_paths: nPaths }),
     }),
   bridgeCrash: (scenario: Scenario, drop = 0.3, years = 2, nPaths = 2000) =>

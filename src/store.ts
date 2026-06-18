@@ -1,9 +1,9 @@
 import { create } from "zustand";
 import { api } from "./api";
 import type {
-  BridgeCrashResult, Category, FreedomResult, MaxSpendResult, RothTradResult, Scenario,
-  SensitivityResult, SimulateResult, Snapshot, StressResult, SurfaceResult, SweepResult,
-  TaxRegimeResult,
+  BridgeCrashResult, Category, FreedomResult, LadderSavingsResult, MaxSpendResult,
+  Scenario, SensitivityResult, SimulateResult, Snapshot, StressResult,
+  SurfaceResult, SweepResult, TaxRegimeResult,
 } from "./types";
 
 export type Tab =
@@ -41,8 +41,8 @@ interface AppState {
   stressLoading: boolean;
   taxregime: TaxRegimeResult | null;
   taxregimeLoading: boolean;
-  rothtrad: RothTradResult | null;
-  rothtradLoading: boolean;
+  laddersavings: LadderSavingsResult | null;
+  laddersavingsLoading: boolean;
   bridgecrash: BridgeCrashResult | null;
   bridgecrashLoading: boolean;
   savedScenarios: string[];
@@ -66,7 +66,7 @@ interface AppState {
   runSensitivity: () => Promise<void>;
   runStress: (shockAge: number, duration: number) => Promise<void>;
   runTaxRegime: (sunsetAge: number) => Promise<void>;
-  runRothTrad: () => Promise<void>;
+  runLadderSavings: () => Promise<void>;
   runBridgeCrash: (drop: number, years: number) => Promise<void>;
   saveAs: (name: string) => Promise<void>;
   load: (name: string) => Promise<void>;
@@ -112,7 +112,7 @@ export const useStore = create<AppState>((set, get) => {
           set({
             result, simError: null,
             maxspend: null, surface: null, sensitivity: null, stress: null,
-            taxregime: null, rothtrad: null, bridgecrash: null,
+            taxregime: null, laddersavings: null, bridgecrash: null,
             sweep: dropSweep ? null : get().sweep,
           });
           if (hadFreedom) void get().runFreedom();
@@ -147,8 +147,8 @@ export const useStore = create<AppState>((set, get) => {
     stressLoading: false,
     taxregime: null,
     taxregimeLoading: false,
-    rothtrad: null,
-    rothtradLoading: false,
+    laddersavings: null,
+    laddersavingsLoading: false,
     bridgecrash: null,
     bridgecrashLoading: false,
     savedScenarios: [],
@@ -306,16 +306,16 @@ export const useStore = create<AppState>((set, get) => {
       }
     },
 
-    runRothTrad: async () => {
+    runLadderSavings: async () => {
       const scenario = get().scenario;
-      if (!scenario || get().rothtradLoading) return;
-      set({ rothtradLoading: true });
+      if (!scenario || get().laddersavingsLoading) return;
+      set({ laddersavingsLoading: true });
       try {
-        set({ rothtrad: await api.rothVsTrad(scenario) });
+        set({ laddersavings: await api.ladderSavings(scenario) });
       } catch (e) {
         set({ simError: String(e) });
       } finally {
-        set({ rothtradLoading: false });
+        set({ laddersavingsLoading: false });
       }
     },
 

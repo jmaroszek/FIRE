@@ -32,12 +32,6 @@ export default function Assumptions() {
 
   return (
     <div className="stack">
-      <p className="hint" style={{ marginTop: 0 }}>
-        The exogenous backdrop your plan runs against — market returns, inflation, your
-        profile, and the simulation settings. These are the things you can't control but
-        must assume; everything you actually decide lives on the other tabs.
-      </p>
-
       <div className="stat-grid">
         <Section title="Profile">
           <div className="fields">
@@ -45,9 +39,27 @@ export default function Assumptions() {
               <NumberInput value={s.profile.birth_year} step={1}
                 onChange={(v) => up({ profile: { ...s.profile, birth_year: v } })} />
             </Field>
-            <Field label="Plan To Age" info="Fixed planning horizon — no mortality table.">
+            <Field label="Coast Target Age">
+              <NumberInput value={s.sim.coast_target_age} step={1}
+                onChange={(v) => up({ sim: { ...s.sim, coast_target_age: v } })} />
+            </Field>
+            <Field label="Plan To">
               <NumberInput value={s.profile.horizon_age} step={1} min={50} max={105}
                 onChange={(v) => up({ profile: { ...s.profile, horizon_age: v } })} />
+            </Field>
+            <Field label="Success Threshold"
+              info="A retirement age 'works' when at least this share of paths never run out of money.">
+              <PercentInput value={s.sim.success_threshold} step={1}
+                onChange={(v) => up({ sim: { ...s.sim, success_threshold: v } })} />
+            </Field>
+            <Field label="Legacy (Today's $)" info={A.legacy}>
+              <NumberInput value={s.sim.legacy_target} step={10000} min={0}
+                onChange={(v) => up({ sim: { ...s.sim, legacy_target: v } })} />
+            </Field>
+            <Field label="State Tax"
+              info="Flat rate on taxable income — set once for where you'll live; you won't tweak it often.">
+              <PercentInput value={s.profile.state_tax_rate} step={0.5}
+                onChange={(v) => up({ profile: { ...s.profile, state_tax_rate: v } })} />
             </Field>
           </div>
         </Section>
@@ -63,19 +75,11 @@ export default function Assumptions() {
               <NumberInput value={s.sim.seed} step={1}
                 onChange={(v) => up({ sim: { ...s.sim, seed: v } })} />
             </Field>
-            <Field label="Success Threshold"
-              info="A retirement age 'works' when at least this share of paths never run out of money.">
-              <PercentInput value={s.sim.success_threshold} step={1}
-                onChange={(v) => up({ sim: { ...s.sim, success_threshold: v } })} />
-            </Field>
-            <Field label="Coast Target Age">
-              <NumberInput value={s.sim.coast_target_age} step={1}
-                onChange={(v) => up({ sim: { ...s.sim, coast_target_age: v } })} />
-            </Field>
           </div>
         </Section>
       </div>
 
+      <div className="stat-grid">
       <Section title="Market Model" info={A.cagr}>
         <div className="fields">
           <Field label="Mode" info={A.bootstrap}>
@@ -100,6 +104,10 @@ export default function Assumptions() {
               <PercentInput value={s.market.bonds.vol} step={1}
                 onChange={(v) => up({ market: { ...s.market, bonds: { ...s.market.bonds, vol: v } } })} />
             </span>
+          </Field>
+          <Field label="Expense Ratio" info={A.expenseRatio}>
+            <PercentInput value={s.market.expense_ratio} step={0.01}
+              onChange={(v) => up({ market: { ...s.market, expense_ratio: v } })} />
           </Field>
           <Field label="Mean Shift"
             info="Bootstrap mode only: shifts historical returns so their long-run average matches your entered CAGRs, keeping history's volatility and correlations.">
@@ -127,6 +135,7 @@ export default function Assumptions() {
         </div>
         <p className="hint">Bootstrap mode samples inflation jointly with returns from history; these AR(1) settings apply to parametric mode.</p>
       </Section>
+      </div>
 
       <Section title="Assumptions Summary"
         info="A read-only roll-up of the whole scenario — every assumption in one place, regardless of which tab you set it on. Use it to audit a plan before saving or comparing.">

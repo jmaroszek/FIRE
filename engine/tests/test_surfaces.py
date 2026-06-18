@@ -82,22 +82,17 @@ def test_income_stress_drops_success():
     assert res["shock_age"] == 30 and res["duration"] == 3
 
 
-def test_roth_vs_trad_structure_and_determinism():
-    s = example_scenario()
+def test_ladder_tax_savings_structure_and_determinism():
+    s = example_scenario()  # has a fill-bracket ladder
     s.sim.n_paths = 300
-    res = m.roth_vs_trad(s, n_paths=300)
-    for k in ("trad", "roth"):
-        assert 0.0 <= res[k]["success_rate"] <= 1.0
-        assert res[k]["lifetime_tax_real"] >= 0.0
-    # diffs are exactly the component differences
-    assert res["tax_diff"] == pytest.approx(
-        res["roth"]["lifetime_tax_real"] - res["trad"]["lifetime_tax_real"])
-    assert res["ending_diff"] == pytest.approx(
-        res["roth"]["ending_real"] - res["trad"]["ending_real"])
-    # the two strategies are genuinely different (not accidentally identical)
-    assert res["trad"]["lifetime_tax_real"] != res["roth"]["lifetime_tax_real"]
+    res = m.ladder_tax_savings(s, n_paths=300)
+    assert res["with_ladder_real"] >= 0.0
+    assert res["without_ladder_real"] >= 0.0
+    # saved is exactly the component difference
+    assert res["saved_real"] == pytest.approx(
+        res["without_ladder_real"] - res["with_ladder_real"])
     # same shared paths -> re-running gives identical numbers
-    assert m.roth_vs_trad(s, n_paths=300)["tax_diff"] == pytest.approx(res["tax_diff"])
+    assert m.ladder_tax_savings(s, n_paths=300)["saved_real"] == pytest.approx(res["saved_real"])
 
 
 def test_tax_regime_identity_when_multipliers_are_one():

@@ -29,6 +29,8 @@ export interface MarketModel {
   bootstrap_mean_block: number;
   bootstrap_mean_shift: boolean;
   dividend_yield: number;
+  /** Weighted fund expense ratio (e.g. 0.0005 = 0.05%); drags the invested return. */
+  expense_ratio: number;
 }
 
 export interface InflationModel {
@@ -179,6 +181,9 @@ export interface Profile {
 export interface SimSettings {
   n_paths: number; seed: number; start_year: number;
   success_threshold: number; coast_target_age: number;
+  /** Die-with-zero bequest floor (today's $); a path succeeds only if it ends
+   *  with at least this much real net worth. 0 = pure die-with-zero. */
+  legacy_target: number;
 }
 
 export interface Scenario {
@@ -240,6 +245,10 @@ export interface BridgeAnalysis {
   runway_p50?: number;
   resources_p50_real?: number;
   need_p50_real?: number;
+  // bridge funding plan: liquid pile needed before a retirement-start conversion seasons
+  bridge_funding_years?: number;
+  bridge_funding_total_real?: number;
+  bridge_funding_by_source?: { cash: number; taxable: number; roth_basis: number };
   min_accessible_real?: number[];
   at_retirement?: {
     accessible_real: number;
@@ -260,6 +269,7 @@ export interface SimulateResult {
   ladder_schedule: {
     year: number; age: number; amount_real: number; matures: number;
     trad_remaining_real: number; marginal_rate: number;
+    effective_rate: number; after_tax_income_real: number; surplus_real: number;
   }[];
   rmd_schedule: {
     year: number; age: number; amount_real: number;
@@ -285,12 +295,13 @@ export interface SimulateResult {
   healthcare: { net_cost_real?: number[]; subsidy_real?: number[] };
   // lifetime tax / income / inflation surfacing (ride every /simulate)
   ss_income_median_real: number[];
+  wages_median_real: number[];
   rmds_median_real: number[];
   marginal_rate_median: number[];
   effective_rate_median: number[];
   port_return_fan: FanSeries;
   inflation_fan: FanSeries;
-  lifetime_tax: { median_real: number; as_pct_of_spending: number };
+  lifetime_tax: { median_real: number; as_pct_of_spending: number; effective_rate: number };
   failure_magnitude: {
     failing_paths: number; total_paths: number;
     median_total_shortfall_real: number; p90_total_shortfall_real: number;
@@ -333,6 +344,10 @@ export interface MaxSpendResult {
   max_scale: number;
   base_living_annual: number;
   max_living_annual: number;
+  // retirement-only variant: flexes only retirement-and-later living expenses
+  retirement_max_scale: number;
+  retirement_max_living_annual: number;
+  retirement_capped: boolean;
   threshold: number;
   capped: boolean;
 }
@@ -390,15 +405,10 @@ export interface TaxRegimeResult {
   std_deduction_mult: number;
 }
 
-export interface RothTradVariant {
-  success_rate: number; lifetime_tax_real: number; ending_real: number;
-}
-export interface RothTradResult {
-  trad: RothTradVariant;
-  roth: RothTradVariant;
-  success_diff: number;
-  tax_diff: number;
-  ending_diff: number;
+export interface LadderSavingsResult {
+  with_ladder_real: number;
+  without_ladder_real: number;
+  saved_real: number;
 }
 
 export interface Snapshot {

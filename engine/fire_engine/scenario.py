@@ -72,6 +72,10 @@ class MarketModel(BaseModel):
     bootstrap_mean_shift: bool = False
     # Annual qualified dividend yield assumed for the taxable account's stock portion.
     dividend_yield: float = 0.02
+    # Weighted fund expense ratio (e.g. 0.0005 = 0.05%), applied as a drag on the
+    # invested (stock + bond) blended return each year. The dedicated cash pool is
+    # unaffected (you hold cash directly, not in a fund). 0 = free index funds.
+    expense_ratio: float = 0.0
 
 
 class InflationModel(BaseModel):
@@ -421,6 +425,11 @@ class SimSettings(BaseModel):
     start_year: int = 2026
     success_threshold: float = 0.90
     coast_target_age: int = 60
+    # Die-with-zero bequest floor (today's dollars). A path counts as a success
+    # only if it funds all spending AND ends with at least this much real net
+    # worth — a personal safety cushion or an intended inheritance/donation.
+    # 0 (default) = pure die-with-zero: any non-negative ending is a success.
+    legacy_target: float = 0.0
 
 
 class Scenario(BaseModel):

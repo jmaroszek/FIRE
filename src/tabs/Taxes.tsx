@@ -2,14 +2,14 @@ import React, { useState } from "react";
 import { A } from "../assumptions";
 import { AnnualTaxRateChart, TradOverfundingChart } from "../components/charts";
 import {
-  Collapsible, Field, Group, InfoTip, NumberInput, PercentInput, Section, Stat, fmtMoney, fmtPct,
+  Collapsible, Field, InfoTip, NumberInput, Section, Stat, fmtMoney, fmtPct,
 } from "../components/ui";
 import { useStore } from "../store";
 import type { Scenario } from "../types";
 
 export default function Taxes() {
   const { scenario, result, axisMode, taxregime, taxregimeLoading, runTaxRegime,
-          rothtrad, runRothTrad, rothtradLoading } = useStore();
+          laddersavings, runLadderSavings, laddersavingsLoading } = useStore();
   const setScenario = useStore((s) => s.setScenario);
   const [sunsetAge, setSunsetAge] = useState(scenario ? scenario.retirement_age : 60);
   if (!scenario) return null;
@@ -18,66 +18,16 @@ export default function Taxes() {
 
   return (
     <div className="stack">
-      <p className="hint" style={{ marginTop: 0 }}>
-        What your choices cost in tax, and how exposed you are to the law changing. You don't
-        set taxes directly — they're the consequence of income (Cash Flow), drawdown, and the
-        Roth conversion ladder (Accounts). This tab is the scoreboard.
-      </p>
-
       <Section title="Taxes Over Time — Annual $, Marginal & Effective Rate" info={A.marginalCurve}>
         {result ? (
           <AnnualTaxRateChart result={result} axisMode={axisMode}
             retirementAge={s.retirement_age} claimingAge={s.social_security.claiming_age}
             birthYear={s.profile.birth_year} />
         ) : <p className="hint">Simulation pending…</p>}
-        <div className="fields" style={{ marginTop: 8 }}>
-          <Field label="State Tax (Flat)" info={A.taxes}>
-            <PercentInput value={s.profile.state_tax_rate}
-              onChange={(v) => up({ profile: { ...s.profile, state_tax_rate: v } })} />
-          </Field>
-        </div>
       </Section>
 
-      <Group title="Roth vs Traditional">
-        <Section className="span1" title="Roth vs Traditional Contributions (IRA + 401k)" info={A.rothTrad}
-          actions={rothtrad && (
-            <button className="ghost" onClick={runRothTrad} disabled={rothtradLoading}>
-              {rothtradLoading ? "Computing…" : "Recompute"}
-            </button>
-          )}>
-          {rothtrad ? (
-            <>
-              <table className="table">
-                <thead><tr><th /><th>Traditional</th><th>Roth</th></tr></thead>
-                <tbody>
-                  <tr><td>Success Probability</td>
-                    <td>{fmtPct(rothtrad.trad.success_rate)}</td>
-                    <td>{fmtPct(rothtrad.roth.success_rate)}</td></tr>
-                  <tr><td>Lifetime Tax (Today's $)</td>
-                    <td>{fmtMoney(rothtrad.trad.lifetime_tax_real)}</td>
-                    <td>{fmtMoney(rothtrad.roth.lifetime_tax_real)}</td></tr>
-                  <tr><td>Median Ending Net Worth</td>
-                    <td>{fmtMoney(rothtrad.trad.ending_real)}</td>
-                    <td>{fmtMoney(rothtrad.roth.ending_real)}</td></tr>
-                </tbody>
-              </table>
-              <p className="hint">
-                Routing tax-advantaged contributions to{" "}
-                <strong>{rothtrad.ending_diff >= 0 ? "Roth" : "Traditional"}</strong>{" "}
-                ends with {fmtMoney(Math.abs(rothtrad.ending_diff))} more net worth (today's $);
-                lifetime tax differs by {fmtMoney(Math.abs(rothtrad.tax_diff))}. Roth often wins on
-                success even when Traditional wins on ending wealth — the Roth's liquidity helps
-                the pre-59½ bridge.
-              </p>
-            </>
-          ) : (
-            <button onClick={runRothTrad} disabled={rothtradLoading}>
-              {rothtradLoading ? "Computing…" : "Compare"}
-            </button>
-          )}
-        </Section>
-
-        <Section className="span1" title="Lifetime Tax" info={A.lifetimeTax}>
+      <div className="stat-grid">
+        <Section title="Lifetime Tax" info={A.lifetimeTax}>
           {result ? (
             <Stat label="Median Lifetime Tax (Today's $)"
               value={fmtMoney(result.lifetime_tax.median_real)}
@@ -85,8 +35,35 @@ export default function Taxes() {
               info={A.lifetimeTax} />
           ) : <p className="hint">Simulation pending…</p>}
         </Section>
-      </Group>
 
+        <Section title="Effective Lifetime Tax Rate" info={A.effLifetimeTax}>
+          {result ? (
+            <Stat label="Tax ÷ Lifetime Income"
+              value={fmtPct(result.lifetime_tax.effective_rate)}
+              sub="federal + state + FICA over all income you earn" info={A.effLifetimeTax} />
+          ) : <p className="hint">Simulation pending…</p>}
+        </Section>
+
+        <Section title="Tax Saved By The Ladder" info={A.ladderSavings}
+          actions={laddersavings && (
+            <button className="ghost" onClick={runLadderSavings} disabled={laddersavingsLoading}>
+              {laddersavingsLoading ? "Computing…" : "Recompute"}
+            </button>
+          )}>
+          {laddersavings ? (
+            <Stat label="Lifetime Tax Saved vs No Conversions"
+              value={fmtMoney(laddersavings.saved_real)}
+              sub={`${fmtMoney(laddersavings.without_ladder_real)} without → ${fmtMoney(laddersavings.with_ladder_real)} with`}
+              info={A.ladderSavings} />
+          ) : (
+            <button onClick={runLadderSavings} disabled={laddersavingsLoading}>
+              {laddersavingsLoading ? "Computing…" : "Compute"}
+            </button>
+          )}
+        </Section>
+      </div>
+
+      <div className="stat-grid">
       <Section title="Projected RMDs"
         info="From age 75 the IRS forces a minimum withdrawal from traditional accounts, taxed as ordinary income. If these land in a high bracket, lower the conversion-ladder Bracket Top on the Accounts tab so you drain more traditional before 75. Median path, today's dollars.">
         {result && result.rmd_schedule && result.rmd_schedule.length > 0 ? (
@@ -134,6 +111,7 @@ export default function Taxes() {
           </>
         ) : <p className="hint">Simulation pending…</p>}
       </Section>
+      </div>
 
       <Section title="Tax-Law Stress (TCJA Sunset)" info={A.taxRegime}
         actions={taxregime && (

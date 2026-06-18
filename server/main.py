@@ -203,14 +203,14 @@ def bridge_crash(req: BridgeCrashRequest) -> dict:
                                  n_paths=req.n_paths)
 
 
-class RothTradRequest(BaseModel):
+class LadderSavingsRequest(BaseModel):
     scenario: Scenario
     n_paths: int = 1000
 
 
-@app.post("/simulate/roth-vs-trad")
-def roth_vs_trad(req: RothTradRequest) -> dict:
-    return m.roth_vs_trad(req.scenario, n_paths=req.n_paths)
+@app.post("/simulate/ladder-savings")
+def ladder_savings(req: LadderSavingsRequest) -> dict:
+    return m.ladder_tax_savings(req.scenario, n_paths=req.n_paths)
 
 
 # ---------------------------------------------------------------- workspace

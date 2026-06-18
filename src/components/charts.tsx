@@ -440,7 +440,9 @@ export function AccessibilityFanChart(props: {
   if (props.retirementAge != null) {
     const ra = props.retirementAge;
     const off = props.axisMode === "age" ? 0 : (props.birthYear ?? 0);
-    xRange = [ra - 3 + off, 65 + off];
+    // Stop at the 59½ unlock (modeled at 60): this chart is about the bridge, and
+    // the post-60 spike when traditional opens up is a distraction from it.
+    xRange = [ra - 3 + off, 60 + off];
     // scale to the pre-60 (penalty-locked) era only; the 59½ unlock sends the
     // lines off the top, which reads correctly as "everything opens up at 60".
     let ymax = 0;
@@ -462,7 +464,7 @@ export function AccessibilityFanChart(props: {
     { x, y: fan.p50, type: "scatter", mode: "lines", name: "Median",
       line: { color: "#3fb950", width: 2.5 }, hovertemplate: "%{y:$,.0f}" },
     { x, y: fan.p5, type: "scatter", mode: "lines", name: "Worst 5%",
-      line: { color: "#f85149", width: 1.5, dash: "dot" }, hovertemplate: "%{y:$,.0f}" },
+      line: { color: "#ff7b72", width: 1.5, dash: "dot" }, hovertemplate: "%{y:$,.0f}" },
   ];
 
   const shapes: Partial<Shape>[] = [];
@@ -501,47 +503,62 @@ export function AccessibilityFanChart(props: {
   );
 }
 
-/** Median amount actually withdrawn from each source per year (stacked, today's
- * $) — the funding sequence the withdrawal policy produces, vs the accessibility
- * chart which shows what was merely available. */
-export function WithdrawalSourceChart(props: {
+/** How each year is funded (stacked, today's $): active work income and Social
+ * Security at the base, then the amount drawn from each account source on top.
+ * Makes the hand-off explicit — paychecks funding life early, accounts funding it
+ * later — so you can see exactly when you stop supplying income and start leaning
+ * on the portfolio. (Cash Flow tab; the accessibility chart shows what's merely
+ * available, this shows what actually flowed.) */
+export function FundingSourceChart(props: {
   result: SimulateResult; axisMode: "age" | "year"; height?: number;
 }) {
   const x = props.axisMode === "age" ? props.result.ages : props.result.years;
   const order = ["cash", "taxable", "roth_basis", "roth_matured_conversions",
                  "trad", "hsa", "roth_earnings"];
   const w = props.result.withdrawals_real ?? {};
+  const wages = props.result.wages_median_real ?? [];
+  const ssInc = props.result.ss_income_median_real ?? [];
   const present = order.filter((src) => w[src]?.some((v) => v > 1));
-  if (!present.length)
-    return (
-      <p className="hint">
-        No withdrawals on the median path yet — still accumulating, or spending is
-        covered by wages, Social Security, and RMDs.
-      </p>
-    );
-  const data: Data[] = present.map((src) => ({
-    x: [...x], y: w[src], type: "scatter" as const, mode: "lines" as const,
-    stackgroup: "one", name: SOURCE_LABELS[src] ?? src,
-    line: { width: 0.5, color: SOURCE_COLORS[src] },
-    fillcolor: (SOURCE_COLORS[src] ?? "#8b949e") + "66",
-    hovertemplate: "%{y:$,.0f}",
-  }));
+  const hasWork = wages.some((v) => v > 1);
+  const hasSS = ssInc.some((v) => v > 1);
+  if (!present.length && !hasWork && !hasSS)
+    return <p className="hint">No funding flows on the median path yet.</p>;
+  const data: Data[] = [];
+  if (hasWork)
+    data.push({
+      x: [...x], y: wages, type: "scatter", mode: "lines", stackgroup: "one",
+      name: "Active Income (Work)", line: { width: 0.5, color: "#79c0ff" },
+      fillcolor: "#79c0ff55", hovertemplate: "%{y:$,.0f}",
+    });
+  if (hasSS)
+    data.push({
+      x: [...x], y: ssInc, type: "scatter", mode: "lines", stackgroup: "one",
+      name: "Social Security", line: { width: 0.5, color: "#56d364" },
+      fillcolor: "#56d36455", hovertemplate: "%{y:$,.0f}",
+    });
+  present.forEach((src) =>
+    data.push({
+      x: [...x], y: w[src], type: "scatter", mode: "lines", stackgroup: "one",
+      name: SOURCE_LABELS[src] ?? src, line: { width: 0.5, color: SOURCE_COLORS[src] },
+      fillcolor: (SOURCE_COLORS[src] ?? "#8b949e") + "66", hovertemplate: "%{y:$,.0f}",
+    }));
   const totals = [...x].map((_, i) =>
-    present.reduce((sum, src) => sum + (w[src][i] ?? 0), 0));
+    (hasWork ? wages[i] ?? 0 : 0) + (hasSS ? ssInc[i] ?? 0 : 0)
+    + present.reduce((sum, src) => sum + (w[src][i] ?? 0), 0));
   data.push({
     x: [...x], y: totals, type: "scatter", mode: "lines", name: "Total",
     line: { width: 0 }, showlegend: false,
-    hovertemplate: "Total drawn: %{y:$,.0f}<extra></extra>",
+    hovertemplate: "Total inflow: %{y:$,.0f}<extra></extra>",
   });
   return (
     <Plot
       data={data}
       layout={{
-        ...baseLayout, height: props.height ?? 340, hovermode: "x unified",
+        ...baseLayout, height: props.height ?? 360, hovermode: "x unified",
         legend: { ...baseLayout.legend, traceorder: "reversed" },
         yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero" },
         xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
-        title: { text: "Spending Funded By Source — Median Path, Today's $", font: { size: 14 } },
+        title: { text: "Funding Sources — Work, Social Security & Account Draws, Today's $", font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}
@@ -790,23 +807,39 @@ export function HistogramChart(props: {
   markers?: { value: number; label: string; color?: string }[];
   uirevision?: string;
   height?: number;
+  // Fixed binning instead of auto (e.g. 50k buckets to 500k). When set with
+  // clampOverflow, values at/above `end` are folded into the final bin so a long
+  // tail becomes a single "end+" bucket rather than stretching the axis.
+  bins?: { start: number; size: number; end: number };
+  clampOverflow?: boolean;
 }) {
   const unit = props.unit ?? "money";
   const color = props.color ?? "rgba(88,166,255,0.55)";
+  const bins = props.bins;
+  const values = bins && props.clampOverflow
+    ? props.values.map((v) => Math.min(v, bins.end - bins.size / 2))
+    : props.values;
   const markers = props.markers ?? [{ value: median(props.values), label: "Median", color: ACCENT }];
   const hoverX = unit === "money" ? "%{x:$,.0f}" : unit === "percent" ? "%{x:.0%}" : "%{x:,.0f}";
-  const shapes: Partial<Shape>[] = markers.map((mk) => ({
-    type: "line", x0: mk.value, x1: mk.value, y0: 0, y1: 1, yref: "paper",
-    line: { color: mk.color ?? ACCENT, width: 1.5, dash: "dash" },
-  }));
-  const annotations = markers.map((mk) => ({
-    x: mk.value, y: 1, yref: "paper" as const, yanchor: "bottom" as const,
-    text: mk.label, showarrow: false, font: { color: mk.color ?? ACCENT, size: 11 },
-  }));
+  const shapes: Partial<Shape>[] = markers
+    .filter((mk) => !bins || (mk.value >= bins.start && mk.value <= bins.end))
+    .map((mk) => ({
+      type: "line", x0: mk.value, x1: mk.value, y0: 0, y1: 1, yref: "paper",
+      line: { color: mk.color ?? ACCENT, width: 1.5, dash: "dash" },
+    }));
+  const annotations = markers
+    .filter((mk) => !bins || (mk.value >= bins.start && mk.value <= bins.end))
+    .map((mk) => ({
+      x: mk.value, y: 1, yref: "paper" as const, yanchor: "bottom" as const,
+      text: mk.label, showarrow: false, font: { color: mk.color ?? ACCENT, size: 11 },
+    }));
   return (
     <Plot
       data={[{
-        x: props.values, type: "histogram", nbinsx: 40,
+        x: values, type: "histogram",
+        ...(bins
+          ? { xbins: { start: bins.start, end: bins.end, size: bins.size }, autobinx: false }
+          : { nbinsx: 40 }),
         marker: { color, line: { color: "#1c2128", width: 0.5 } },
         hovertemplate: `${hoverX}<br>%{y} paths<extra></extra>`,
       } as Data]}
@@ -814,7 +847,10 @@ export function HistogramChart(props: {
         ...baseLayout, height: props.height ?? 300, showlegend: false, bargap: 0.02,
         uirevision: props.uirevision ?? props.title,
         shapes, annotations: annotations as Layout["annotations"],
-        xaxis: { ...baseLayout.xaxis, tickformat: histTickFormat(unit), title: { text: props.xTitle } },
+        xaxis: {
+          ...baseLayout.xaxis, tickformat: histTickFormat(unit), title: { text: props.xTitle },
+          ...(bins ? { range: [bins.start, bins.end] } : {}),
+        },
         yaxis: { ...baseLayout.yaxis, title: { text: "Paths" } },
         title: { text: props.title, font: { size: 14 } },
       }}
@@ -874,26 +910,12 @@ export function SurfaceHeatmap(props: {
       colorbar: { tickformat: ".0%", title: { text: "Success", side: "right" } },
       hovertemplate: `Retire %{x} · spend %{y}% of plan<br>%{z:.0%} success<extra></extra>`,
     } as Data,
-    // the threshold iso-line IS the "retire-here-or-later" frontier — a drawn
-    // contour reads more precisely than the colour transition alone
-    {
-      x, y, z: matrix, type: "contour",
-      showscale: false, hoverinfo: "skip",
-      contours: { start: threshold, end: threshold, size: 0.0001, coloring: "lines" },
-      line: { color: "#f0f6fc", width: 2 },
-    } as Data,
+    // (No drawn threshold contour — the colour transition at your success target
+    // already marks the frontier, and the off-theme white iso-line read as a
+    // stray vertical bar. Hover any cell to read its exact success rate.)
   ];
-  // crosshair at the plan as configured today (planned age, 100% of spend)
-  const markX = props.currentAge != null
-    ? (props.axisMode === "age" ? props.currentAge : props.currentAge + props.birthYear)
-    : null;
-  if (markX != null) {
-    data.push({
-      x: [markX], y: [100], type: "scatter", mode: "markers", name: "You Are Here",
-      marker: { symbol: "circle-open", size: 16, color: "#f0f6fc", line: { width: 2.5 } },
-      hovertemplate: "Your plan: retire %{x}, 100% spend<extra></extra>",
-    } as Data);
-  }
+  // No drawn position marker — read your spot by hovering. (The old "You Are
+  // Here" crosshair was the off-theme vertical bar the user flagged.)
   return (
     <Plot
       data={data}
@@ -901,7 +923,7 @@ export function SurfaceHeatmap(props: {
         ...baseLayout, height: props.height ?? 360, showlegend: false,
         xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Retirement Age" : "Retirement Year" } },
         yaxis: { ...baseLayout.yaxis, title: { text: "Spending (% Of Plan)" } },
-        title: { text: `Success Surface (white line = ${(threshold * 100).toFixed(0)}% threshold)`, font: { size: 14 } },
+        title: { text: `Success Surface — Hover Any Cell (${(threshold * 100).toFixed(0)}% Threshold At The Colour Flip)`, font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}
@@ -1284,47 +1306,88 @@ export function SubsidyConversionChart(props: {
   );
 }
 
-/** Wealth & Flows: stacked tax-pool balances (left axis) with annual
- * contributions (up) and withdrawals (down) as bars on the right axis — merges
- * the Account Balances, Annual Investing, and Spending-By-Source charts. */
+/** Account balances by tax pool over the plan (stacked area, today's $). Purely
+ * the growth/composition story — the contribution and withdrawal FLOWS now live
+ * on the Cash Flow tab (ContributionsChart / FundingSourceChart), so a stock and
+ * a flow are no longer conflated on one chart. */
 export function WealthFlowsChart(props: {
   result: SimulateResult; axisMode: "age" | "year"; height?: number;
 }) {
   const xPools = xValues(props.result, props.axisMode); // T+1 (carries "today")
-  const xFlow = props.axisMode === "age" ? [...props.result.ages] : [...props.result.years]; // T
   const pools = props.result.pool_medians_real ?? {};
-  const inv = props.result.investing_real ?? {};
-  const wd = props.result.withdrawals_real ?? {};
   const poolKeys = POOL_ORDER.filter((k) => pools[k]?.some((v) => v > 1));
   const data: Data[] = poolKeys.map((k) => ({
     x: xPools, y: pools[k], type: "scatter" as const, mode: "lines" as const,
-    stackgroup: "bal", name: POOL_LABELS[k], yaxis: "y1",
+    stackgroup: "bal", name: POOL_LABELS[k],
     line: { width: 0.5, color: POOL_COLORS[k] }, fillcolor: POOL_COLORS[k] + "55",
     hovertemplate: "%{y:$,.0f}",
   }));
-  const contribTotal = xFlow.map((_, i) =>
-    Object.values(inv).reduce((s, arr) => s + (arr[i] ?? 0), 0));
-  const wdTotal = xFlow.map((_, i) =>
-    Object.values(wd).reduce((s, arr) => s + (arr[i] ?? 0), 0));
-  data.push(
-    { x: xFlow, y: contribTotal, type: "bar", name: "Contributions", yaxis: "y2",
-      marker: { color: "rgba(63,185,80,0.5)" }, hovertemplate: "Contributed %{y:$,.0f}<extra></extra>" },
-    { x: xFlow, y: wdTotal.map((v) => -v), type: "bar", name: "Withdrawals", yaxis: "y2",
-      marker: { color: "rgba(248,81,73,0.5)" }, hovertemplate: "Withdrew %{y:$,.0f}<extra></extra>" },
-  );
   return (
     <Plot
       data={data}
       layout={{
-        ...baseLayout, height: props.height ?? 380, hovermode: "x unified", barmode: "relative",
-        margin: { ...baseLayout.margin, r: 64 },
+        ...baseLayout, height: props.height ?? 380, hovermode: "x unified",
         legend: { ...baseLayout.legend, traceorder: "reversed" },
         yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero",
           title: { text: "Balance (Today's $)" } },
-        yaxis2: { tickformat: "$.3~s", overlaying: "y", side: "right", gridcolor: "transparent",
-          automargin: true, zeroline: true, title: { text: "Annual Flow", standoff: 8 } },
         xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
-        title: { text: "Wealth & Flows — Balances, Contributions, Withdrawals", font: { size: 14 } },
+        title: { text: "Account Balances By Pool — Median Path, Today's $", font: { size: 14 } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
+const CONTRIB_LABELS: Record<string, string> = {
+  match: "Employer Match", trad: "Traditional", roth: "Roth", hsa: "HSA",
+  taxable: "Brokerage", cash: "Cash",
+};
+const CONTRIB_COLORS: Record<string, string> = {
+  match: "#56d364", trad: "#d29922", roth: "#3fb950", hsa: "#bc8cff",
+  taxable: "#58a6ff", cash: "#8b949e",
+};
+
+/** Annual contributions by destination over time (stacked area, today's $) — the
+ * "where does each surplus dollar go" flow, split out of the old Wealth & Flows
+ * chart so it can live on Cash Flow beside the funding-sources view. */
+export function ContributionsChart(props: {
+  result: SimulateResult; axisMode: "age" | "year"; height?: number;
+}) {
+  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
+  const inv = props.result.investing_real ?? {};
+  const order = ["match", "trad", "roth", "hsa", "taxable", "cash"];
+  const present = order.filter((k) => inv[k]?.some((v) => v > 1));
+  if (!present.length)
+    return (
+      <p className="hint">
+        No contributions on the median path — already retired, or the waterfall isn't
+        capturing your surplus (check the Cash band on the Accounts tab).
+      </p>
+    );
+  const data: Data[] = present.map((k) => ({
+    x: [...x], y: inv[k], type: "scatter" as const, mode: "lines" as const,
+    stackgroup: "one", name: CONTRIB_LABELS[k] ?? k,
+    line: { width: 0.5, color: CONTRIB_COLORS[k] },
+    fillcolor: (CONTRIB_COLORS[k] ?? "#8b949e") + "66",
+    hovertemplate: "%{y:$,.0f}",
+  }));
+  const totals = [...x].map((_, i) =>
+    present.reduce((sum, k) => sum + (inv[k][i] ?? 0), 0));
+  data.push({
+    x: [...x], y: totals, type: "scatter", mode: "lines", name: "Total",
+    line: { width: 0 }, showlegend: false,
+    hovertemplate: "Total saved: %{y:$,.0f}<extra></extra>",
+  });
+  return (
+    <Plot
+      data={data}
+      layout={{
+        ...baseLayout, height: props.height ?? 340, hovermode: "x unified",
+        legend: { ...baseLayout.legend, traceorder: "reversed" },
+        yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero" },
+        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
+        title: { text: "Annual Contributions By Destination — Median Path, Today's $", font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}
@@ -1398,21 +1461,15 @@ export function SweepGainChart(props: {
     y0: props.sweep.threshold, y1: props.sweep.threshold, yref: "y",
     line: { color: "#3fb950", width: 1, dash: "dot" },
   }];
-  const annotations: any[] = [];
-  const crossIdx = success.findIndex((s) => s >= props.sweep.threshold);
-  if (crossIdx >= 0) {
-    shapes.push({ type: "line", x0: x[crossIdx], x1: x[crossIdx], y0: 0, y1: 1, yref: "paper",
-      line: { color: "#3fb950", width: 1.5, dash: "dot" } });
-    annotations.push({ x: x[crossIdx], y: 1, yref: "paper", yanchor: "bottom", xanchor: "left",
-      showarrow: false, text: " Earliest safe", font: { color: "#3fb950", size: 10 } });
-  }
+  // (No "earliest safe" vertical marker — the success curve and its threshold
+  // line already say it, and the bare vertical bar read as off-theme.)
   return (
     <Plot
       data={data}
       layout={{
         ...baseLayout, height: props.height ?? 340, hovermode: "x unified",
         margin: { ...baseLayout.margin, r: 64 },
-        shapes, annotations: annotations as Layout["annotations"],
+        shapes, annotations: [] as Layout["annotations"],
         yaxis: { ...baseLayout.yaxis, tickformat: ".0%", range: [-0.02, 1.05], automargin: true,
           title: { text: "Success" } },
         yaxis2: { tickformat: ".1%", overlaying: "y", side: "right", rangemode: "tozero",
