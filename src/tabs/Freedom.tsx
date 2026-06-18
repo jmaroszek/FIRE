@@ -29,9 +29,16 @@ export default function Freedom() {
           bridgecrash } = useStore();
   const setScenario = useStore((s) => s.setScenario);
 
-  // This tab owns the freedom bundle and the sweep; populate both on a cold visit.
+  // This tab owns the freedom bundle, the sweep, the sensitivity tornado and the
+  // success surface; populate them all on a cold visit. We fire them independently
+  // rather than chaining: each endpoint is a sync FastAPI handler that runs on its
+  // own threadpool thread, and the numpy-heavy Monte Carlo releases the GIL, so the
+  // requests genuinely overlap. Chaining would only add idle round-trips. Each tile
+  // shows its own spinner until its result lands.
   useEffect(() => { if (scenario && !freedom && !freedomLoading) void runFreedom(); }, [scenario, freedom]);
   useEffect(() => { if (scenario && !sweep && !sweeping) void runSweep(); }, [scenario, sweep]);
+  useEffect(() => { if (scenario && !sensitivity && !sensitivityLoading) void runSensitivity(); }, [scenario, sensitivity]);
+  useEffect(() => { if (scenario && !surface && !surfaceLoading) void runSurface(); }, [scenario, surface]);
 
   if (!scenario) return null;
   const s = scenario;
@@ -62,7 +69,9 @@ export default function Freedom() {
                 sub={`assumes ${fmtPct(freedom.coast.assumed_real_return)} real return for ${freedom.coast.years_to_target} years`} />
               <ProgressBar fraction={freedom.coast.progress} />
             </>
-          ) : <p className="hint">{freedomLoading ? "Computing…" : "—"}</p>}
+          ) : freedomLoading
+            ? <div className="tile-loading"><span className="spinner" />Computing…</div>
+            : <p className="hint">—</p>}
         </Section>
 
         <Section title="FIRE Number" info={A.fireMc}>
@@ -76,7 +85,9 @@ export default function Freedom() {
                 value={fmtMoney(freedom.fire_number_mc)} info={A.fireMc} />
               <ProgressBar fraction={freedom.fire_progress_mc ?? 0} />
             </>
-          ) : <p className="hint">{freedomLoading ? "Computing…" : "—"}</p>}
+          ) : freedomLoading
+            ? <div className="tile-loading"><span className="spinner" />Computing…</div>
+            : <p className="hint">—</p>}
         </Section>
 
         <Section title="Plan Success" info={A.successRate}>
@@ -101,10 +112,10 @@ export default function Freedom() {
         )}>
         {sweep ? (
           <SweepGainChart sweep={sweep} axisMode={axisMode} birthYear={s.profile.birth_year} />
+        ) : sweeping ? (
+          <div className="tile-loading"><span className="spinner" />Computing…</div>
         ) : (
-          <button onClick={runSweep} disabled={sweeping}>
-            {sweeping ? "Computing…" : "Compute"}
-          </button>
+          <button onClick={runSweep}>Compute</button>
         )}
         <div className="retire-control">
           <Field label={`Planned Retirement Age: ${s.retirement_age}`}
@@ -130,33 +141,35 @@ export default function Freedom() {
         </div>
       </Section>
 
-      <Section title="What Moves The Needle" info={A.tornado}
-        actions={sensitivity && (
-          <button className="ghost" onClick={runSensitivity} disabled={sensitivityLoading}>
-            {sensitivityLoading ? "Computing…" : "Recompute"}
-          </button>
-        )}>
-        {sensitivity ? <TornadoChart data={sensitivity} />
-          : <button onClick={runSensitivity} disabled={sensitivityLoading}>
-              {sensitivityLoading ? "Computing…" : "Compute Sensitivity"}
-            </button>}
-      </Section>
+      <div className="grid2">
+        <Section title="Sensitivity Analysis" info={A.tornado}
+          actions={sensitivity && (
+            <button className="ghost" onClick={runSensitivity} disabled={sensitivityLoading}>
+              {sensitivityLoading ? "Computing…" : "Recompute"}
+            </button>
+          )}>
+          {sensitivity ? <TornadoChart data={sensitivity} height={360} />
+            : sensitivityLoading
+              ? <div className="tile-loading"><span className="spinner" />Computing…</div>
+              : <button onClick={runSensitivity}>Compute Sensitivity</button>}
+        </Section>
 
-      <Section title="When & How Much: Success Surface" info={A.surface}
-        actions={surface && (
-          <button className="ghost" onClick={runSurface} disabled={surfaceLoading}>
-            {surfaceLoading ? "Computing…" : "Recompute"}
-          </button>
-        )}>
-        {surface ? (
-          <SurfaceHeatmap data={surface} axisMode={axisMode} birthYear={s.profile.birth_year}
-            currentAge={s.retirement_age} />
-        ) : (
-          <button onClick={runSurface} disabled={surfaceLoading}>
-            {surfaceLoading ? "Computing…" : "Compute Surface"}
-          </button>
-        )}
-      </Section>
+        <Section title="Success Surface" info={A.surface}
+          actions={surface && (
+            <button className="ghost" onClick={runSurface} disabled={surfaceLoading}>
+              {surfaceLoading ? "Computing…" : "Recompute"}
+            </button>
+          )}>
+          {surface ? (
+            <SurfaceHeatmap data={surface} axisMode={axisMode} birthYear={s.profile.birth_year}
+              currentAge={s.retirement_age} height={360} />
+          ) : surfaceLoading ? (
+            <div className="tile-loading"><span className="spinner" />Computing…</div>
+          ) : (
+            <button onClick={runSurface}>Compute Surface</button>
+          )}
+        </Section>
+      </div>
 
       {/* ───────────── UNDERSAVING ───────────── */}
       <Head id="freedom-under">Undersaving — Could It Fall Short?</Head>

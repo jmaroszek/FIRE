@@ -951,9 +951,8 @@ export function SurfaceHeatmap(props: {
       data={data}
       layout={{
         ...baseLayout, height: props.height ?? 360, showlegend: false,
-        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Retirement Age" : "Retirement Year" } },
+        xaxis: { ...baseLayout.xaxis, showspikes: false, title: { text: props.axisMode === "age" ? "Retirement Age" : "Retirement Year" } },
         yaxis: { ...baseLayout.yaxis, title: { text: "Spending (% Of Plan)" } },
-        title: { text: `Success Surface — Hover Any Cell (${(threshold * 100).toFixed(0)}% Threshold At The Colour Flip)`, font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}
@@ -981,6 +980,7 @@ export function TornadoChart(props: { data: SensitivityResult; height?: number }
       } as Data]}
       layout={{
         ...baseLayout, height: props.height ?? 40 + rows.length * 38, showlegend: false,
+        hovermode: "closest",
         shapes: [{
           type: "line", x0: base_success, x1: base_success, y0: -0.5, y1: rows.length - 0.5,
           line: { color: "#8b949e", width: 1.5, dash: "dash" },
@@ -989,9 +989,8 @@ export function TornadoChart(props: { data: SensitivityResult; height?: number }
           x: base_success, y: rows.length - 0.5, yanchor: "bottom", text: "base",
           showarrow: false, font: { color: "#8b949e", size: 11 },
         }] as Layout["annotations"],
-        xaxis: { ...baseLayout.xaxis, tickformat: ".0%", range: [0, 1], title: { text: "Success Rate (input ±10%, retire age ±2 yr)" } },
+        xaxis: { ...baseLayout.xaxis, showspikes: false, tickformat: ".0%", range: [0, 1], title: { text: "Success Rate (input ±10%, retire age ±2 yr)" } },
         yaxis: { ...baseLayout.yaxis, automargin: true },
-        title: { text: "What Moves The Needle", font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}
@@ -1529,7 +1528,6 @@ export function SweepGainChart(props: {
           gridcolor: "transparent", automargin: true, title: { text: "Gain / Year", standoff: 8 } },
         xaxis: { ...baseLayout.xaxis,
           title: { text: props.axisMode === "age" ? "Retirement Age" : "Retirement Year" } },
-        title: { text: "When Can I Retire — Success & The Gain From One More Year", font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}

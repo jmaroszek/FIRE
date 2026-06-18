@@ -400,7 +400,7 @@ def run(
     paths: MarketPaths | None = None,
     retirement_age: int | None = None,
     balance_scale: float = 1.0,
-    spending_scale: float = 1.0,
+    spending_scale: float | np.ndarray = 1.0,
     spending_scale_from_age: int | None = None,
     tax_regime: TaxRegimeShock | None = None,
     deterministic: bool = False,
@@ -535,9 +535,12 @@ def run(
         # spending_scale_from_age gates the lever to retirement-and-later years, so
         # the "max sustainable spending IN RETIREMENT" solver flexes only the
         # decumulation budget, not the accumulation-era expenses.
-        apply_scale = spending_scale != 1.0 and (
-            spending_scale_from_age is None or age >= spending_scale_from_age)
-        if apply_scale:
+        # spending_scale may be a scalar (the common case) OR a per-path (P,) array:
+        # the success surface evaluates several spending levels in ONE run by tiling
+        # the path set and passing a per-path scale, which broadcasts cleanly here.
+        gate_ok = spending_scale_from_age is None or age >= spending_scale_from_age
+        scale_is_vector = isinstance(spending_scale, np.ndarray)
+        if gate_ok and (scale_is_vector or spending_scale != 1.0):
             ess_nom = ess_med + (ess_nom - ess_med) * spending_scale
             disc_nom = disc_med + (disc_nom - disc_med) * spending_scale
         ess_nom = ess_nom + liab_payments[t]  # loan payments: essential, non-inflating

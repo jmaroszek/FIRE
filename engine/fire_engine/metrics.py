@@ -671,23 +671,53 @@ def max_sustainable_spend(scenario: Scenario, n_paths: int = 1000,
     }
 
 
+def _tile_paths(paths: MarketPaths, k: int) -> MarketPaths:
+    """Replicate a path set k times along the path axis (block layout: rows
+    [i·P:(i+1)·P] are an identical copy of the base sample). Lets one run()
+    evaluate k spending levels on a *shared* market sample — block i carries
+    spending scale i, every block sees the same returns."""
+    def tile(a: np.ndarray | None) -> np.ndarray | None:
+        return None if a is None else np.tile(a, (k, 1))
+    return MarketPaths(
+        stock=tile(paths.stock), bond=tile(paths.bond), cash=tile(paths.cash),
+        inflation=tile(paths.inflation), cum_inflation=tile(paths.cum_inflation),
+        income_z=tile(paths.income_z),
+    )
+
+
 def success_surface(scenario: Scenario, ages: list[int] | None = None,
                     spending_scales: list[float] | None = None,
                     n_paths: int = 800) -> dict:
     """Success rate over a (retirement age × spending scale) grid, reusing one
     set of market paths across every cell. The whole when-and-how-much frontier
-    at a glance."""
+    at a glance.
+
+    All spending scales for a given age are evaluated in a SINGLE run(): the
+    shared path set is tiled k=len(spending_scales) times and each block is
+    handed its own per-path spending scale. This collapses the grid from
+    len(ages)·k engine runs to len(ages) — same shared-paths result as the
+    per-cell loop, far fewer (GIL-bound) per-year passes."""
     start_age = scenario.start_age
     if ages is None:
         ages = list(range(max(start_age, 40), 68, 2))
     if spending_scales is None:
-        spending_scales = [round(0.8 + 0.1 * i, 2) for i in range(7)]  # 0.8 .. 1.4
-    paths = sample_paths(scenario, n_paths=n_paths)
-    matrix = [
-        [run(scenario, paths=paths, retirement_age=a, spending_scale=sc).success_rate
-         for a in ages]
-        for sc in spending_scales
-    ]
+        spending_scales = [round(0.8 + 0.1 * i, 2) for i in range(5)]  # 0.8 .. 1.2
+    base_paths = sample_paths(scenario, n_paths=n_paths)
+    P = base_paths.n_paths
+    k = len(spending_scales)
+    tiled = _tile_paths(base_paths, k)
+    scale_vec = np.repeat(np.asarray(spending_scales, dtype=float), P)  # block i -> scale i
+
+    # matrix[i][j] = success at spending_scales[i], ages[j]
+    matrix: list[list[float]] = [[0.0] * len(ages) for _ in range(k)]
+    for j, a in enumerate(ages):
+        r = run(scenario, paths=tiled, retirement_age=a, spending_scale=scale_vec)
+        failed = r.fail.any(axis=1)
+        if r.legacy_met is not None:
+            failed = failed | ~r.legacy_met
+        succ = 1.0 - failed.reshape(k, P).mean(axis=1)  # success per scale block
+        for i in range(k):
+            matrix[i][j] = float(succ[i])
     return {
         "ages": ages,
         "spending_scales": spending_scales,

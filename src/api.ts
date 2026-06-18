@@ -23,7 +23,10 @@ export const api = {
   defaults: () => req<Scenario>("/defaults"),
   simulate: (scenario: Scenario) =>
     req<SimulateResult>("/simulate", { method: "POST", body: JSON.stringify(scenario) }),
-  sweep: (scenario: Scenario, nPaths = 800) =>
+  // Success-probability analyses default to the scenario's own path count so they
+  // sample the SAME seeded paths as the main /simulate run — every success number
+  // on the Freedom tab then agrees exactly (no 800-vs-2000 sampling-noise gaps).
+  sweep: (scenario: Scenario, nPaths = scenario.sim.n_paths) =>
     req<SweepResult>("/simulate/sweep", {
       method: "POST",
       body: JSON.stringify({ scenario, n_paths: nPaths }),
@@ -37,11 +40,11 @@ export const api = {
     req<MaxSpendResult>("/simulate/max-spend", {
       method: "POST", body: JSON.stringify({ scenario, n_paths: nPaths }),
     }),
-  surface: (scenario: Scenario, nPaths = 800) =>
+  surface: (scenario: Scenario, nPaths = scenario.sim.n_paths) =>
     req<SurfaceResult>("/simulate/surface", {
       method: "POST", body: JSON.stringify({ scenario, n_paths: nPaths }),
     }),
-  sensitivity: (scenario: Scenario, nPaths = 2000) =>
+  sensitivity: (scenario: Scenario, nPaths = scenario.sim.n_paths) =>
     req<SensitivityResult>("/simulate/sensitivity", {
       method: "POST", body: JSON.stringify({ scenario, n_paths: nPaths }),
     }),
