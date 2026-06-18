@@ -8,6 +8,22 @@ playing with futures, not filling out forms.
 **Read [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md) before trusting any number.**
 Architecture: [docs/DESIGN.md](docs/DESIGN.md).
 
+## How many Monte Carlo paths?
+
+Set `n_paths` (Assumptions tab) for the precision you need:
+
+- **< 2,000 — testing/iteration.** Fast, and the headline success rate is good
+  to a few points — enough to see whether a change moved the needle. Default
+  for everyday tinkering.
+- **5,000+ — a "real" runthrough.** Once you've settled on a plan, bump it up.
+  The headline tightens to ~±1pt, and (more importantly) the *tails* — shortfall
+  depth, age-at-ruin, ending-balance percentiles — stop swinging run-to-run.
+  Those are what you actually plan against, and they need the paths far more
+  than the mean does.
+
+Rule of thumb: raise `n_paths` until the 95% interval shown on the Plan Success
+tile is narrower than the margin that would change your decision.
+
 ## Stack
 
 - `engine/` — pure Python simulation library (NumPy, vectorized; 2,000 paths × 65 years ≈ 185 ms)
