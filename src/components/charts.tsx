@@ -416,10 +416,20 @@ export function AccessibilityFanChart(props: {
   retirementMarker?: number | null; retirementAge?: number | null;
   birthYear?: number; height?: number;
 }) {
-  const fan = props.result.accessibility_fan;
+  const rawFan = props.result.accessibility_fan;
   const ages = props.result.ages;
-  const x = props.axisMode === "age" ? [...ages] : [...props.result.years];
-  if (!fan || !fan.p50) return <p className="hint">Simulation pending…</p>;
+  const xRaw = props.axisMode === "age" ? [...ages] : [...props.result.years];
+  if (!rawFan || !rawFan.p50) return <p className="hint">Simulation pending…</p>;
+
+  // Clip every series at age 60. The bridge ends at 59½; once traditional
+  // unlocks at 60 the lines shoot up, and even with the x-axis capped Plotly
+  // would draw the 59→60 segment rising into view as a spike at the right edge.
+  // Dropping the age-60+ points removes that segment entirely.
+  const cut = ages.findIndex((a) => a >= 60);
+  const end = cut === -1 ? ages.length : cut;
+  const x = xRaw.slice(0, end);
+  const fan: Record<string, number[]> = {};
+  for (const k of Object.keys(rawFan)) fan[k] = (rawFan as any)[k].slice(0, end);
 
   // Focus the view on the bridge era. After 59½ the traditional pool unlocks and
   // decades of compounding blow the y-scale into the tens of millions, burying the
@@ -429,15 +439,13 @@ export function AccessibilityFanChart(props: {
   if (props.retirementAge != null) {
     const ra = props.retirementAge;
     const off = props.axisMode === "age" ? 0 : (props.birthYear ?? 0);
-    // Stop at the 59½ marker: this chart is about the bridge, and the age-60 jump
-    // when traditional unlocks is a distraction. Ending at 59.5 (not 60) drops that
-    // spike point while keeping the 59½ guide at the right edge.
+    // The chart ends at the 59½ marker (data is already clipped before age 60),
+    // so the unlock spike never enters the view.
     xRange = [ra - 3 + off, 59.5 + off];
-    // scale to the pre-60 (penalty-locked) era only; the 59½ unlock sends the
-    // lines off the top, which reads correctly as "everything opens up at 60".
+    // scale to the pre-60 (penalty-locked) era only.
     let ymax = 0;
-    for (let i = 0; i < ages.length; i++) {
-      if (ages[i] >= ra - 1 && ages[i] < 60) ymax = Math.max(ymax, fan.p95[i] ?? 0);
+    for (let i = 0; i < end; i++) {
+      if (ages[i] >= ra - 1 && ages[i] < 60) ymax = Math.max(ymax, fan.p90[i] ?? 0);
     }
     if (ymax > 0) yRange = [0, ymax * 1.12];
   }
@@ -448,22 +456,32 @@ export function AccessibilityFanChart(props: {
     { x, y: fan[hi], type: "scatter", mode: "lines", fill: "tonexty",
       fillcolor: color, line: { width: 0 }, name: label, hoverinfo: "skip" },
   ];
+  // Invisible (width-0) lines purely to surface a value in the unified hover for
+  // the band-boundary percentiles that have no drawn line of their own. Plotly
+  // orders x-unified entries top-to-bottom by y position, so 90 lands at the top
+  // and 10 at the bottom automatically.
+  const hoverOnly = (key: string, name: string): Data => ({
+    x, y: fan[key], type: "scatter", mode: "lines", name,
+    line: { width: 0 }, showlegend: false, hovertemplate: "%{y:$,.0f}",
+  });
+  // Order matters: Plotly lists x-unified hover entries in REVERSE trace order
+  // (last trace on top), so add low→high to get 90th at the top, 10th at bottom.
   const data: Data[] = [
-    ...band("p5", "p95", "rgba(63,185,80,0.10)", "5–95%"),
+    ...band("p10", "p90", "rgba(63,185,80,0.10)", "10–90%"),
     ...band("p25", "p75", "rgba(63,185,80,0.22)", "25–75%"),
-    { x, y: fan.p50, type: "scatter", mode: "lines", name: "Median",
-      line: { color: "#3fb950", width: 2.5 }, hovertemplate: "%{y:$,.0f}" },
-    { x, y: fan.p5, type: "scatter", mode: "lines", name: "Worst 5%",
+    { x, y: fan.p10, type: "scatter", mode: "lines", name: "Worst 10%",
       line: { color: "#ff7b72", width: 1.5, dash: "dot" }, hovertemplate: "%{y:$,.0f}" },
+    hoverOnly("p25", "25th"),
+    { x, y: fan.p50, type: "scatter", mode: "lines", name: "Median (50th)",
+      line: { color: "#3fb950", width: 2.5 }, hovertemplate: "%{y:$,.0f}" },
+    hoverOnly("p75", "75th"),
+    hoverOnly("p90", "90th"),
   ];
 
   const shapes: Partial<Shape>[] = [];
   const annotations: Partial<Layout["annotations"][number]>[] = [];
-  const pf = props.axisMode === "age" ? 59.5 : (props.birthYear ?? 0) + 59.5;
-  shapes.push({ type: "line", x0: pf, x1: pf, y0: 0, y1: 1, yref: "paper",
-    line: { color: "#f0883e", width: 1.5, dash: "dash" } });
-  annotations.push({ x: pf, y: 1, yref: "paper", text: "59½", showarrow: false,
-    yanchor: "bottom", font: { color: "#f0883e", size: 11 } });
+  // The x-axis already ends at 59½ (data is clipped before 60), so a dashed
+  // guide there would just sit on the edge — omit it.
   if (props.retirementMarker != null) {
     shapes.push({ type: "line", x0: props.retirementMarker, x1: props.retirementMarker,
       y0: 0, y1: 1, yref: "paper", line: { color: "#8b949e", width: 1.5, dash: "dash" } });

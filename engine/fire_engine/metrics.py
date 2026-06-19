@@ -929,7 +929,10 @@ def summarize(result: SimResult) -> dict:
         "pool_medians_real": pool_medians_real(result),
         "survival_curve": survival_curve(result),
         "accessibility_real": accessibility_medians_real(result),
-        "accessibility_fan": accessibility_fan(result),
+        # Bridge fan is framed as the worst 1-in-10 scenario, so it carries
+        # p10/p90 bands (not the default p5/p95) — the worst-10% line is the
+        # bridge-failure signal the chart highlights.
+        "accessibility_fan": accessibility_fan(result, percentiles=(10, 25, 50, 75, 90)),
         "bridge": bridge_analysis(result),
         "withdrawals_real": withdrawal_source_medians_real(result),
         "ladder_schedule": ladder_schedule(result),

@@ -144,7 +144,7 @@ export const A = {
   bridgePenalty:
     "How often, and how much, the plan leans on the 10% last-resort early withdrawal from traditional accounts before 59½ (enabled by the 'Last Resort' toggle in Withdrawal Policy). A path can clear the success bar while quietly bleeding penalties for years — pure deadweight loss this surfaces. The dollar figure is the median total penalty, in today's dollars, among paths that pay any.",
   bridgeFan:
-    "The spread of total penalty-free assets across all paths, in today's dollars — not just the median. The companion median stack shows what your money is made of; this shows the dispersion. Watch the worst-5% line: if it dives toward zero before the 59½ marker, the bridge runs dry in bad markets even when the median looks comfortable.",
+    "The spread of total penalty-free assets across all paths, in today's dollars — not just the median. The companion median stack shows what your money is made of; this shows the dispersion. Watch the worst-10% line: if it dives toward zero before the 59½ marker, the bridge runs dry in bad markets even when the median looks comfortable.",
   bridgeMinAccessible:
     "For each path, the lowest your penalty-free balance ever falls during the bridge. The mass near (or at) zero is the set of futures where you nearly — or actually — run out of reachable money before 59½. A thick left tail means the bridge is the fragile part of the plan.",
   bridgeSplit:

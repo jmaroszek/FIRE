@@ -200,6 +200,17 @@ def plan_withdrawals(
         avail[src] -= take
         remaining -= take
 
+    # Last resort: the cash buffer is an emergency reserve, not an untouchable
+    # floor. If spending still isn't met after walking the full order, tap
+    # whatever cash remains (the held-back buffer) before recording a shortfall
+    # — in a year you'd otherwise go broke, you spend your emergency cash too.
+    # This also lets the worst-case accessible balance fall to zero rather than
+    # bottoming out at the buffer.
+    buffer_left = np.maximum(state.cash - takes[WithdrawalSource.cash], 0.0)
+    last_resort = np.minimum(remaining, buffer_left)
+    takes[WithdrawalSource.cash] += last_resort
+    remaining -= last_resort
+
     plan = WithdrawalPlan(takes=takes, shortfall=remaining)
     trad_take = takes[WithdrawalSource.trad]
     plan.ordinary_income = trad_take + takes[WithdrawalSource.hsa]

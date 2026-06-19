@@ -306,34 +306,29 @@ export default function Freedom() {
           </HeroRow>
 
           <Section title="Bridge Confidence: Can You Reach 59½?" info={A.bridgeConfidence}>
-            <p className="hint" style={{ marginTop: 0 }}>
-              <strong>Bridge Holds</strong> (above) is the dynamic verdict — it credits the Roth
-              ladder maturing mid-bridge. The fan below shows the dispersion a median view hides:
-              watch the worst-5% line dive toward zero before 59½. The full penalty-free balance by
-              source, across every age, lives on the Accounts tab under Liquidity &amp; Conversions.
-            </p>
             <AccessibilityFanChart result={result} axisMode={axisMode}
               retirementMarker={retMarker} retirementAge={s.retirement_age}
               birthYear={s.profile.birth_year} />
-            {bridge.min_accessible_real && bridge.min_accessible_real.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <div className="card-head"><h3 style={{ fontSize: 13, margin: 0 }}>
-                  Lowest Penalty-Free Balance During The Bridge<InfoTip text={A.bridgeMinAccessible} />
-                </h3></div>
-                <HistogramChart values={bridge.min_accessible_real} unit="money"
-                  color="rgba(63,185,80,0.5)" title=""
-                  bins={{ start: 0, size: 50000, end: 500000 }} clampOverflow
-                  xTitle="Low-Water Mark Of Penalty-Free Assets (Today's $, 500k+ grouped)" />
-              </div>
-            )}
+            {bridge.min_accessible_real && bridge.min_accessible_real.length > 0 && (() => {
+              const sorted = [...bridge.min_accessible_real].sort((a, b) => a - b);
+              const n = sorted.length;
+              const med = n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+              return (
+                <div style={{ marginTop: 8 }}>
+                  <div className="card-head"><h3 style={{ fontSize: 13, margin: 0 }}>
+                    Lowest Penalty-Free Balance During The Bridge<InfoTip text={A.bridgeMinAccessible} />
+                  </h3></div>
+                  <HistogramChart values={bridge.min_accessible_real} unit="money"
+                    color="rgba(63,185,80,0.5)" title=""
+                    markers={[{ value: med, label: `Median ${fmtMoney(med)}` }]}
+                    bins={{ start: 0, size: 50000, end: 500000 }} clampOverflow
+                    xTitle="Low-Water Mark Of Penalty-Free Assets (Today's $, 500k+ grouped)" />
+                </div>
+              );
+            })()}
           </Section>
 
           <Section title="Retire Into A Crash" info={A.bridgeCrash}>
-            <p className="hint" style={{ marginTop: 0 }}>
-              A what-if: stress the first retirement years with a market crash and see what it does
-              both to the bridge and to your overall plan. The Roth ladder that feeds this bridge is
-              tuned on the Accounts tab, under Liquidity &amp; Conversions.
-            </p>
             <div className="fields">
               <Field label="Crash Size (Stock Drop)">
                 <select value={String(crashDrop)} onChange={(e) => setCrashDrop(parseFloat(e.target.value))}>
@@ -452,9 +447,11 @@ export default function Freedom() {
           const size = niceStep(p99 / 35);
           const start = Math.min(0, Math.floor(percentile(vals, 1) / size) * size);
           const end = Math.ceil(p99 / size) * size;
+          const med = percentile(vals, 50);
           return (
             <HistogramChart values={vals} unit="money" uirevision={display}
               bins={{ start, size, end }}
+              markers={[{ value: med, label: `Median ${fmtMoney(med)}` }]}
               clampOverflow title=""
               xTitle={`Net Worth At Age ${s.profile.horizon_age}`} />
           );
