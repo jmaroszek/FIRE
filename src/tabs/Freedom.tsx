@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { A } from "../assumptions";
 import {
-  FrontierChart, FulfillmentChart, HistogramChart, RuinAgeChart, SpendingDepthChart,
-  SurfaceHeatmap, SurvivalChart, SweepGainChart, TornadoChart,
+  AccessibilityFanChart, FrontierChart, FulfillmentChart, HistogramChart, RuinAgeChart,
+  SpendingDepthChart, SurfaceHeatmap, SurvivalChart, SweepGainChart, TornadoChart,
 } from "../components/charts";
 import {
-  Field, NumberInput, PercentInput, ProgressBar, Section, Stat, fmtMoney, fmtPct,
+  Field, HeroRow, HeroStat, InfoTip, NumberInput, PercentInput, ProgressBar, Section, Stat,
+  fmtMoney, fmtPct,
 } from "../components/ui";
 import { useStore } from "../store";
 import type { Scenario } from "../types";
@@ -38,10 +39,12 @@ export default function Freedom() {
           sweep, sweeping, runSweep,
           surface, surfaceLoading, runSurface,
           sensitivity, sensitivityLoading, runSensitivity,
-          bridgecrash } = useStore();
+          bridgecrash, bridgecrashLoading, runBridgeCrash } = useStore();
   const setScenario = useStore((s) => s.setScenario);
   const [goGoEnd, setGoGoEnd] = useState(75);
   const [enjoyFloor, setEnjoyFloor] = useState(0.3);
+  const [crashDrop, setCrashDrop] = useState(0.35);
+  const [crashYears, setCrashYears] = useState(2);
 
   // This tab owns the freedom bundle, the sweep, the sensitivity tornado and the
   // success surface; populate them all on a cold visit. We fire them independently
@@ -68,6 +71,14 @@ export default function Freedom() {
   const retIdx = result ? result.ages.findIndex((a) => a >= s.retirement_age) : -1;
   const nwAtRetirement = result && retIdx >= 0 ? (result.fan.real.p50[retIdx + 1] ?? 0) : 0;
   const growthMultiple = nwAtRetirement > 0 ? lastReal / nwAtRetirement : 0;
+  // Retirement-bridge headline data (retire → 59½). The runway is framed against
+  // the wait until your first Roth conversion seasons penalty-free (+5 yr), not the
+  // full retirement→59½ window — that's the span liquid assets must bridge alone.
+  const bridge = result?.bridge;
+  const hasBridge = !!bridge?.has_bridge;
+  const ladderGap = result && result.ladder_schedule.length
+    ? Math.max(0, result.ladder_schedule[0].age + 5 - s.retirement_age)
+    : (bridge?.bridge_years ?? 0);
   // Bridge draw rate (undersaving): the share of penalty-free ACCESSIBLE money
   // drawn each year over the bridge (retirement → 59½, before locked accounts
   // open), averaged across those years and capped at 100%/yr so the year the
@@ -259,15 +270,6 @@ export default function Freedom() {
             </Section>
           )}
 
-          {bridgecrash && bridgecrash.has_bridge && (
-            <Section title="Retire Into A Crash — Overall Success" info={A.bridgeCrash}>
-              <Stat label="Success: Baseline → Crash"
-                value={`${fmtPct(bridgecrash.base_success, 0)} → ${fmtPct(bridgecrash.stressed_success, 0)}`}
-                sub={`${bridgecrash.success_delta >= 0 ? "+" : ""}${fmtPct(bridgecrash.success_delta)} vs baseline · a ${fmtPct(bridgecrash.drop, 0)} drop over ${bridgecrash.years} yr at age ${bridgecrash.retirement_age}`} />
-              <p className="hint">Run or tune this crash test on the Accounts tab (Bridge section) — its bridge-specific break and early-penalty rates live there.</p>
-            </Section>
-          )}
-
           <p className="hint" style={{ maxWidth: "none" }}>
             The steepest part of the survival curve is the decade right after you retire, because
             several forces pile up there at once. A market drop the moment you stop earning forces you
@@ -279,6 +281,88 @@ export default function Freedom() {
             glidepath (Accounts), flexible spending through guardrails or VPW (Cash Flow), a larger
             liquid bridge, working a year or two longer, or a little part-time income early on.
           </p>
+        </>
+      )}
+
+      {/* ───────────── RETIREMENT BRIDGE ───────────── */}
+      <Head id="freedom-bridge">Retirement Bridge — Reaching 59½</Head>
+      {!result ? (
+        <p className="hint">Simulation pending…</p>
+      ) : !hasBridge || !bridge ? (
+        <Section title="Bridge Confidence: Can You Reach 59½?" info={A.bridgeConfidence}>
+          <p className="hint">No bridge to cross — your retirement age is at or past 59½.</p>
+        </Section>
+      ) : (
+        <>
+          <HeroRow>
+            <HeroStat tone="green" label="Bridge Holds" value={fmtPct(1 - (bridge.bridge_break_rate ?? 0), 0)}
+              sub="penalty-free money lasts to 59½ (no early-penalty raid)" info={A.bridgeHolds} />
+            <HeroStat label="Liquid Needed" value={fmtMoney(bridge.bridge_funding_total_real ?? 0)}
+              sub={`first ${bridge.bridge_funding_years} retirement years · ${fmtMoney(bridge.bridge_funding_by_source?.cash ?? 0)} cash + ${fmtMoney(bridge.bridge_funding_by_source?.taxable ?? 0)} taxable + ${fmtMoney(bridge.bridge_funding_by_source?.roth_basis ?? 0)} Roth basis`}
+              info={A.bridgeFunding} />
+            <HeroStat tone="amber" label="Runway" value={`${Math.round(bridge.runway_p50 ?? 0)} yr`}
+              sub={`covers the ${ladderGap}-yr wait until your first conversion seasons · worst 5%: ${Math.round(bridge.runway_p5 ?? 0)} yr`}
+              info={A.bridgeCoverage} />
+          </HeroRow>
+
+          <Section title="Bridge Confidence: Can You Reach 59½?" info={A.bridgeConfidence}>
+            <p className="hint" style={{ marginTop: 0 }}>
+              <strong>Bridge Holds</strong> (above) is the dynamic verdict — it credits the Roth
+              ladder maturing mid-bridge. The fan below shows the dispersion a median view hides:
+              watch the worst-5% line dive toward zero before 59½. The full penalty-free balance by
+              source, across every age, lives on the Accounts tab under Liquidity &amp; Conversions.
+            </p>
+            <AccessibilityFanChart result={result} axisMode={axisMode}
+              retirementMarker={retMarker} retirementAge={s.retirement_age}
+              birthYear={s.profile.birth_year} />
+            {bridge.min_accessible_real && bridge.min_accessible_real.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <div className="card-head"><h3 style={{ fontSize: 13, margin: 0 }}>
+                  Lowest Penalty-Free Balance During The Bridge<InfoTip text={A.bridgeMinAccessible} />
+                </h3></div>
+                <HistogramChart values={bridge.min_accessible_real} unit="money"
+                  color="rgba(63,185,80,0.5)" title=""
+                  bins={{ start: 0, size: 50000, end: 500000 }} clampOverflow
+                  xTitle="Low-Water Mark Of Penalty-Free Assets (Today's $, 500k+ grouped)" />
+              </div>
+            )}
+          </Section>
+
+          <Section title="Retire Into A Crash" info={A.bridgeCrash}>
+            <p className="hint" style={{ marginTop: 0 }}>
+              A what-if: stress the first retirement years with a market crash and see what it does
+              both to the bridge and to your overall plan. The Roth ladder that feeds this bridge is
+              tuned on the Accounts tab, under Liquidity &amp; Conversions.
+            </p>
+            <div className="fields">
+              <Field label="Crash Size (Stock Drop)">
+                <select value={String(crashDrop)} onChange={(e) => setCrashDrop(parseFloat(e.target.value))}>
+                  <option value="0.2">−20%</option>
+                  <option value="0.35">−35% (2008-scale)</option>
+                  <option value="0.5">−50% (Depression-scale)</option>
+                </select>
+              </Field>
+              <Field label="Duration (Years)">
+                <NumberInput value={crashYears} step={1} min={1} max={5} onChange={setCrashYears} />
+              </Field>
+              <button onClick={() => runBridgeCrash(crashDrop, crashYears)} disabled={bridgecrashLoading}>
+                {bridgecrashLoading ? "Computing…" : "Run Crash Test"}
+              </button>
+            </div>
+            {bridgecrash && bridgecrash.has_bridge && (
+              <div className="stat-grid" style={{ marginTop: 10 }}>
+                <Stat label="Overall Success: Baseline → Crash"
+                  value={`${fmtPct(bridgecrash.base_success, 0)} → ${fmtPct(bridgecrash.stressed_success, 0)}`}
+                  sub={`${bridgecrash.success_delta >= 0 ? "+" : ""}${fmtPct(bridgecrash.success_delta)} vs baseline · a ${fmtPct(bridgecrash.drop, 0)} drop over ${bridgecrash.years} yr at age ${bridgecrash.retirement_age}`} />
+                <Stat label="Bridge Breaks: Baseline → Crash"
+                  value={`${fmtPct(bridgecrash.base_bridge_break_rate, 0)} → ${fmtPct(bridgecrash.stressed_bridge_break_rate, 0)}`}
+                  sub="penalty-free money runs out before 59½" />
+                <Stat label="Early-Penalty Reliance: Baseline → Crash"
+                  value={`${fmtPct(bridgecrash.base_early_penalty_rate, 0)} → ${fmtPct(bridgecrash.stressed_early_penalty_rate, 0)}`}
+                  sub="paths forced to raid traditional early" />
+              </div>
+            )}
+          </Section>
         </>
       )}
 
