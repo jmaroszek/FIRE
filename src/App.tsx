@@ -24,16 +24,13 @@ const UTILITY: { id: Tab; label: string }[] = [
   { id: "settings", label: "Settings" },
 ];
 
-/** The single, always-visible home for the real/nominal and age/year lenses. */
+/** The single, always-visible home for the age/year lens. Every chart reports in
+ *  today's dollars, so there's no real/nominal control — see the Settings note. */
 function DisplayControls() {
-  const { axisMode, setAxisMode, display, setDisplay, scenario } = useStore();
+  const { axisMode, setAxisMode, scenario } = useStore();
   if (!scenario) return null;
   return (
     <span className="display-controls pair">
-      <select value={display} onChange={(e) => setDisplay(e.target.value as "real" | "nominal")}>
-        <option value="real">Today's $</option>
-        <option value="nominal">Nominal $</option>
-      </select>
       <select value={axisMode} onChange={(e) => setAxisMode(e.target.value as "age" | "year")}>
         <option value="age">My Age</option>
         <option value="year">Calendar Year</option>

@@ -18,7 +18,7 @@ function yearsToFi(slot: CompareSlot): string {
 }
 
 export default function Compare() {
-  const { compare, addToCompare, removeFromCompare, result, axisMode, display } = useStore();
+  const { compare, addToCompare, removeFromCompare, result, axisMode } = useStore();
   const anySweep = compare.some((c) => c.sweep);
   const anyBridge = compare.some((c) => c.result.bridge?.has_bridge);
 
@@ -39,7 +39,7 @@ export default function Compare() {
           </p>
         ) : (
           <>
-            <CompareChart slots={compare} axisMode={axisMode} display={display} />
+            <CompareChart slots={compare} axisMode={axisMode} />
             <table className="table">
               <thead>
                 <tr>

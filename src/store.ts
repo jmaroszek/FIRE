@@ -50,7 +50,6 @@ interface AppState {
   snapshots: Snapshot[];
   categories: Category[];
   axisMode: "age" | "year";
-  display: "real" | "nominal";
   sidebarCollapsed: boolean;
   engineUp: boolean | null;
 
@@ -78,7 +77,6 @@ interface AppState {
   addSnapshot: (snap: Snapshot) => Promise<void>;
   deleteSnapshot: (date: string) => Promise<void>;
   setAxisMode: (m: "age" | "year") => void;
-  setDisplay: (d: "real" | "nominal") => void;
 }
 
 let simTimer: ReturnType<typeof setTimeout> | null = null;
@@ -156,7 +154,6 @@ export const useStore = create<AppState>((set, get) => {
     snapshots: [],
     categories: [],
     axisMode: "age",
-    display: "real",
     sidebarCollapsed: false,
     engineUp: null,
 
@@ -402,6 +399,5 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     setAxisMode: (axisMode) => set({ axisMode }),
-    setDisplay: (display) => set({ display }),
   };
 });

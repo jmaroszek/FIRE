@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Plotly from "plotly.js-dist-min";
 import type { Config, Data, Layout, Shape } from "plotly.js";
 import createPlotlyComponent from "react-plotly.js/factory";
@@ -7,7 +7,37 @@ import type {
   Category, FanSeries, SensitivityResult, SimulateResult, Snapshot, SurfaceResult, SweepResult,
 } from "../types";
 
-const Plot = createPlotlyComponent(Plotly);
+const RawPlot = createPlotlyComponent(Plotly);
+
+/** Wraps react-plotly so each chart resizes to its CONTAINER, not just the window.
+ * Plotly's `responsive: true` only listens for window resizes; but our auto-fit grids
+ * (`repeat(auto-fit, minmax(...))`) reflow their column count on window maximize/restore,
+ * which changes a tile's width WITHOUT a window resize Plotly reacts to in time — leaving
+ * the chart stuck at a stale width until a remount (which is why swapping tabs "fixes" it).
+ * A ResizeObserver on the wrapping div catches the real element resize whatever its cause.
+ * onInitialized/onUpdate are forwarded so callers (e.g. FanChart's hover) still get the gd. */
+function Plot(props: React.ComponentProps<typeof RawPlot>) {
+  const gdRef = useRef<any>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (gdRef.current) void Plotly.Plots.resize(gdRef.current);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div ref={wrapRef} style={{ width: "100%" }}>
+      <RawPlot
+        {...props}
+        onInitialized={(fig, gd) => { gdRef.current = gd; props.onInitialized?.(fig, gd); }}
+        onUpdate={(fig, gd) => { gdRef.current = gd; props.onUpdate?.(fig, gd); }}
+      />
+    </div>
+  );
+}
 
 const FG = "#c9d1d9";
 const GRID = "#2d333b";
@@ -666,14 +696,14 @@ export function SpendingActualsChart(props: {
 }
 
 export function CompareChart(props: {
-  slots: CompareSlot[]; axisMode: "age" | "year"; display: "real" | "nominal"; height?: number;
+  slots: CompareSlot[]; axisMode: "age" | "year"; height?: number;
 }) {
   const palette = ["#58a6ff", "#3fb950", "#d29922", "#bc8cff", "#f0883e", "#ff7b72"];
   const data: Data[] = [];
   props.slots.forEach((slot, i) => {
     const color = palette[i % palette.length];
     const x = xValues(slot.result, props.axisMode);
-    const fan = slot.result.fan[props.display];
+    const fan = slot.result.fan.real;
     data.push(
       { x, y: fan.p25, type: "scatter", mode: "lines", line: { width: 0 },
         hoverinfo: "skip", showlegend: false },
@@ -691,7 +721,7 @@ export function CompareChart(props: {
         height: props.height ?? 460,
         yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero" },
         xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
-        title: { text: `Median Net Worth With 25–75% Bands (${props.display === "real" ? "Today's" : "Nominal"} $)`, font: { size: 14 } },
+        title: { text: "Median Net Worth With 25–75% Bands (Today's $)", font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}

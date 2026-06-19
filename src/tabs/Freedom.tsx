@@ -34,7 +34,7 @@ function niceStep(raw: number): number {
 }
 
 export default function Freedom() {
-  const { scenario, result, display, axisMode,
+  const { scenario, result, axisMode,
           freedom, freedomLoading, runFreedom,
           sweep, sweeping, runSweep,
           surface, surfaceLoading, runSurface,
@@ -442,14 +442,14 @@ export default function Freedom() {
 
       <Section title="Ending Net Worth Distribution" info={A.endingBalance}>
         {result ? (() => {
-          const vals = result.ending_balance[display];
+          const vals = result.ending_balance.real;
           const p99 = Math.max(percentile(vals, 99), 1);
           const size = niceStep(p99 / 35);
           const start = Math.min(0, Math.floor(percentile(vals, 1) / size) * size);
           const end = Math.ceil(p99 / size) * size;
           const med = percentile(vals, 50);
           return (
-            <HistogramChart values={vals} unit="money" uirevision={display}
+            <HistogramChart values={vals} unit="money" uirevision="ending-real"
               bins={{ start, size, end }}
               markers={[{ value: med, label: `Median ${fmtMoney(med)}` }]}
               clampOverflow title=""
