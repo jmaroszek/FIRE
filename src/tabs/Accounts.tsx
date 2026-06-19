@@ -116,6 +116,54 @@ function WaterfallTable({ steps, onChange }: {
   );
 }
 
+type Alloc = { stocks: number; bonds: number; cash: number };
+
+/** One allocation mix as a vertical table (Asset Class / Weight). Rendered for
+ * the base mix and for each glidepath phase, laid out side-by-side. */
+function AllocTable({ alloc, onChange, head, className }: {
+  alloc: Alloc; onChange: (a: Alloc) => void; head: React.ReactNode; className?: string;
+}) {
+  const total = alloc.stocks + alloc.bonds + alloc.cash;
+  return (
+    <div className={["glide-col", className ?? ""].join(" ").trim()}>
+      <div className="glide-col-head">{head}</div>
+      <table className="table">
+        <thead><tr><th>Asset Class</th><th style={{ textAlign: "right" }}>Weight</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Stocks</td>
+            <td style={{ textAlign: "right" }}>
+              <PercentInput value={alloc.stocks} step={5}
+                onChange={(v) => onChange({ stocks: v, bonds: Math.max(0, 1 - v - alloc.cash), cash: alloc.cash })} />
+            </td>
+          </tr>
+          <tr>
+            <td>Bonds</td>
+            <td style={{ textAlign: "right" }}>
+              <PercentInput value={alloc.bonds} step={5}
+                onChange={(v) => onChange({ stocks: Math.max(0, 1 - v - alloc.cash), bonds: v, cash: alloc.cash })} />
+            </td>
+          </tr>
+          <tr>
+            <td>Cash</td>
+            <td style={{ textAlign: "right" }}>
+              <PercentInput value={alloc.cash} step={1}
+                onChange={(v) => onChange({ stocks: Math.max(0, 1 - v - alloc.bonds), bonds: alloc.bonds, cash: v })} />
+            </td>
+          </tr>
+          <tr style={{ borderTop: "1px solid var(--border)" }}>
+            <td style={{ fontWeight: 600 }}>Total</td>
+            <td style={{ textAlign: "right", fontWeight: 600,
+              color: Math.abs(total - 1) < 1e-6 ? "var(--muted)" : "#f0883e" }}>
+              {fmtPct(total, 0)}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 interface SnapDraft {
   balances: Record<string, number>;
   spending: Record<string, number>;
@@ -162,10 +210,12 @@ export default function Accounts() {
   const cr = s.conversion_rule;
   const convStrategy =
     cr.kind === "none" ? "none"
+    : cr.kind === "fixed" ? "fixed"
     : cr.kind === "fill_bracket" && cr.bracket_top === "custom" ? "custom"
     : "fill_bracket";
   const setConvStrategy = (v: string) => {
     if (v === "none") up({ conversion_rule: { ...cr, kind: "none" } });
+    else if (v === "fixed") up({ conversion_rule: { ...cr, kind: "fixed" } });
     else if (v === "custom") up({ conversion_rule: { ...cr, kind: "fill_bracket", bracket_top: "custom" } });
     else up({ conversion_rule: { ...cr, kind: "fill_bracket", bracket_top: cr.bracket_top === "custom" ? "12" : cr.bracket_top } });
   };
@@ -182,11 +232,11 @@ export default function Accounts() {
 
       {/* ───────────── OVERVIEW ───────────── */}
       <Head id="acc-overview">Overview</Head>
-      <div className="group-grid">
+      <div className="group-grid stretch acc-overview">
         <Section title="Net Worth" className="span1">
           <Stat label={debt > 0 ? "Assets Minus Liabilities" : "Total Across All Pools"}
             value={fmtMoney(total)} />
-          <div style={{ maxHeight: 240, overflowY: "auto" }}>
+          <div className="acc-scroll">
           <table className="table">
             <tbody>
               {POOLS.map((p) => (
@@ -221,7 +271,7 @@ export default function Accounts() {
               {Object.entries(ACCOUNT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           }>
-          <div style={{ maxHeight: 300, overflowY: "auto" }}>
+          <div className="acc-scroll">
           <table className="table">
             <thead>
               <tr><th>Account</th><th>Balance</th>
@@ -298,13 +348,13 @@ export default function Accounts() {
 
       {/* ───────────── STRATEGY ───────────── */}
       <Head id="acc-strategy">Strategy</Head>
-      <div className="group-grid">
-        <Collapsible title="Contribution Waterfall" info={A.waterfall} defaultOpen
+      <div className="group-grid strategy-grid">
+        <Section title="Contribution Waterfall" info={A.waterfall}
           actions={
             <button className="ghost" onClick={() =>
               up({ waterfall: [...s.waterfall, { account: "taxable", kind: "max" }] })}>+ Step</button>
           }>
-          <p className="hint" style={{ marginTop: 0 }}>Surplus each year flows down this list. Add phases below to change the routing at chosen ages — e.g. divert from the 401k to taxable while saving for a house.</p>
+          <div className="strategy-scroll">
           <WaterfallTable steps={s.waterfall} onChange={(waterfall) => up({ waterfall })} />
           <div className="card-head" style={{ marginTop: 12 }}>
             <h3 style={{ fontSize: 13, margin: 0 }}>Phases (Age-Keyed Overrides)</h3>
@@ -330,9 +380,10 @@ export default function Accounts() {
                 onChange={(steps) => up({ waterfall_schedule: (s.waterfall_schedule ?? []).map((x, j) => j === si ? { ...x, steps } : x) })} />
             </div>
           ))}
-        </Collapsible>
+          </div>
+        </Section>
 
-        <Collapsible title="Withdrawal Policy" info={A.policy} defaultOpen>
+        <Section title="Withdrawal Policy" info={A.policy} className="strategy-policy">
           <div className="policy-row">
             {(["order", "late_order"] as const).map((which) => {
               const list = s.withdrawal_policy[which]
@@ -361,41 +412,42 @@ export default function Accounts() {
                 </div>
               );
             })}
-            <div className="fields">
-              <Field label="Cash Buffer"
-                info="The withdrawal policy never draws the cash pool below this amount — your untouchable reserve.">
-                <NumberInput value={s.withdrawal_policy.cash_buffer} step={1000}
-                  onChange={(v) => up({ withdrawal_policy: { ...s.withdrawal_policy, cash_buffer: v } })} />
-              </Field>
-              <Field label="Last Resort: Early Trad + Penalty"
-                info="If every other source is empty before 59½, tap traditional early and pay the 10% penalty rather than miss a year. Note: relying on this now counts as a FAILURE — it only changes how a failed path keeps going, not the success rate.">
-                <input type="checkbox" checked={s.withdrawal_policy.allow_early_trad_with_penalty}
-                  onChange={(e) => up({ withdrawal_policy: { ...s.withdrawal_policy, allow_early_trad_with_penalty: e.target.checked } })} />
-              </Field>
+            <div className="policy-settings">
+              <div className="policy-col-head">Reserves</div>
+              <div className="fields">
+                <Field label="Cash Buffer"
+                  info="The withdrawal policy never draws the cash pool below this amount — your untouchable reserve.">
+                  <NumberInput value={s.withdrawal_policy.cash_buffer} step={1000}
+                    onChange={(v) => up({ withdrawal_policy: { ...s.withdrawal_policy, cash_buffer: v } })} />
+                </Field>
+                <Field label="Last Resort"
+                  info="Last resort = tapping traditional early and paying the 10% penalty. If every other source is empty before 59½, draw traditional early rather than miss a year. Note: relying on this now counts as a FAILURE — it only changes how a failed path keeps going, not the success rate.">
+                  <input type="checkbox" checked={s.withdrawal_policy.allow_early_trad_with_penalty}
+                    onChange={(e) => up({ withdrawal_policy: { ...s.withdrawal_policy, allow_early_trad_with_penalty: e.target.checked } })} />
+                </Field>
+              </div>
+              <div className="policy-col-head">HSA<InfoTip text={A.hsa} /></div>
+              <div className="fields">
+                <Field label="Cash Buffer" info={A.hsaBuffer}>
+                  <NumberInput value={s.hsa.cash_buffer} step={500}
+                    onChange={(v) => up({ hsa: { ...s.hsa, cash_buffer: v } })} />
+                </Field>
+                <Field label="Utilization"
+                  info={"The share of HSA-eligible medical spending paid tax-free from the HSA each year; the rest is paid out of pocket."}>
+                  <PercentInput value={s.hsa.utilization} step={5}
+                    onChange={(v) => up({ hsa: { ...s.hsa, utilization: v } })} />
+                </Field>
+                <Field label="Coverage">
+                  <select value={s.hsa.coverage}
+                    onChange={(e) => up({ hsa: { ...s.hsa, coverage: e.target.value as any } })}>
+                    <option value="self_only">Self-Only</option>
+                    <option value="family">Family</option>
+                  </select>
+                </Field>
+              </div>
             </div>
           </div>
-        </Collapsible>
-
-        <Collapsible title="HSA Settings" info={A.hsa} defaultOpen>
-          <div className="fields">
-            <Field label="Utilization"
-              info={"The share of HSA-eligible medical spending paid tax-free from the HSA each year; the rest is paid out of pocket."}>
-              <PercentInput value={s.hsa.utilization} step={5}
-                onChange={(v) => up({ hsa: { ...s.hsa, utilization: v } })} />
-            </Field>
-            <Field label="Cash Buffer" info={A.hsaBuffer}>
-              <NumberInput value={s.hsa.cash_buffer} step={500}
-                onChange={(v) => up({ hsa: { ...s.hsa, cash_buffer: v } })} />
-            </Field>
-            <Field label="Coverage">
-              <select value={s.hsa.coverage}
-                onChange={(e) => up({ hsa: { ...s.hsa, coverage: e.target.value as any } })}>
-                <option value="self_only">Self-Only</option>
-                <option value="family">Family</option>
-              </select>
-            </Field>
-          </div>
-        </Collapsible>
+        </Section>
       </div>
 
       {/* ───────────── GROWTH ───────────── */}
@@ -407,8 +459,9 @@ export default function Accounts() {
           value={growthMultiple > 0 ? `${growthMultiple.toFixed(1)}×` : "—"}
           sub={`median ending ÷ ${fmtMoney(assets)} invested today`}
           info="How many times your current invested balance the median path ends with, in today's dollars — the real (inflation-adjusted) growth multiple." />
-        <HeroStat tone="amber" label="Median Max Drawdown" value={result ? fmtPct(medianMaxDD, 0) : "—"}
-          sub="deepest real peak-to-trough fall" />
+        <HeroStat tone="amber" label="Median Max Drawdown" value={result ? fmtMoney(medianMaxDD * total) : "—"}
+          sub={result ? `${fmtPct(medianMaxDD, 0)} of today's ${fmtMoney(total)}` : "deepest real peak-to-trough fall"}
+          info="The deepest real peak-to-trough fall on the median path, shown in today's dollars against your current net worth — how much wealth you'd watch evaporate at the bottom." />
       </HeroRow>
       <Collapsible title="Allocation & Glidepath"
         info="Portfolio weights applied across all accounts. The base mix holds until the first glide phase; each phase re-sets the mix from its age onward — e.g. de-risk approaching retirement, or a rising-equity glide through it."
@@ -420,69 +473,25 @@ export default function Accounts() {
             + Add Phase
           </button>
         }>
-        <table className="table" style={{ maxWidth: 340 }}>
-          <thead><tr><th>Asset Class</th><th style={{ textAlign: "right" }}>Weight</th></tr></thead>
-          <tbody>
-            <tr>
-              <td>Stocks</td>
-              <td style={{ textAlign: "right" }}>
-                <PercentInput value={s.allocation.stocks} step={5}
-                  onChange={(v) => up({ allocation: { ...s.allocation, stocks: v, bonds: Math.max(0, 1 - v - s.allocation.cash) } })} />
-              </td>
-            </tr>
-            <tr>
-              <td>Bonds</td>
-              <td style={{ textAlign: "right" }}>
-                <PercentInput value={s.allocation.bonds} step={5}
-                  onChange={(v) => up({ allocation: { ...s.allocation, bonds: v, stocks: Math.max(0, 1 - v - s.allocation.cash) } })} />
-              </td>
-            </tr>
-            <tr>
-              <td>Cash</td>
-              <td style={{ textAlign: "right" }}>
-                <PercentInput value={s.allocation.cash} step={1}
-                  onChange={(v) => up({ allocation: { ...s.allocation, cash: v, stocks: Math.max(0, 1 - v - s.allocation.bonds) } })} />
-              </td>
-            </tr>
-            <tr style={{ borderTop: "1px solid var(--border)" }}>
-              <td style={{ fontWeight: 600 }}>Total</td>
-              <td style={{ textAlign: "right", fontWeight: 600,
-                color: Math.abs(s.allocation.stocks + s.allocation.bonds + s.allocation.cash - 1) < 1e-6
-                  ? "var(--muted)" : "#f0883e" }}>
-                {fmtPct(s.allocation.stocks + s.allocation.bonds + s.allocation.cash, 0)}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        {(s.allocation_schedule ?? []).length > 0 && (
-          <div style={{ marginTop: 8 }}>
-            <div className="card-head"><h3 style={{ fontSize: 13, margin: 0 }}>Glidepath Phases (Age-Keyed)</h3></div>
-            {(s.allocation_schedule ?? []).map((seg, i) => {
-              const setSeg = (alloc: typeof seg.allocation) =>
-                up({ allocation_schedule: (s.allocation_schedule ?? []).map((x, j) => j === i ? { ...x, allocation: alloc } : x) });
-              return (
-                <div key={i} className="fields" style={{ marginBottom: 6 }}>
-                  <Field label="From Age">
-                    <NumberInput value={seg.start_age} step={1} min={startAge} max={s.profile.horizon_age}
-                      onChange={(v) => up({ allocation_schedule: (s.allocation_schedule ?? []).map((x, j) => j === i ? { ...x, start_age: v } : x) })} />
-                  </Field>
-                  <Field label="Stocks / Bonds / Cash">
-                    <span className="pair">
-                      <PercentInput value={seg.allocation.stocks} step={5}
-                        onChange={(v) => setSeg({ stocks: v, bonds: Math.max(0, 1 - v - seg.allocation.cash), cash: seg.allocation.cash })} />
-                      <PercentInput value={seg.allocation.bonds} step={5}
-                        onChange={(v) => setSeg({ stocks: Math.max(0, 1 - v - seg.allocation.cash), bonds: v, cash: seg.allocation.cash })} />
-                      <PercentInput value={seg.allocation.cash} step={1}
-                        onChange={(v) => setSeg({ stocks: Math.max(0, 1 - v - seg.allocation.bonds), bonds: seg.allocation.bonds, cash: v })} />
-                    </span>
-                  </Field>
-                  <button className="ghost" onClick={() =>
-                    up({ allocation_schedule: (s.allocation_schedule ?? []).filter((_, j) => j !== i) })}>✕ Remove</button>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <div className="glide-tables">
+          <AllocTable alloc={s.allocation}
+            className={(s.allocation_schedule ?? []).length > 0 ? "glide-base" : ""}
+            onChange={(a) => up({ allocation: a })}
+            head={<span className="glide-tag">Base Mix</span>} />
+          {(s.allocation_schedule ?? []).map((seg, i) => (
+            <AllocTable key={i} alloc={seg.allocation}
+              onChange={(a) => up({ allocation_schedule: (s.allocation_schedule ?? []).map((x, j) => j === i ? { ...x, allocation: a } : x) })}
+              head={
+                <span className="pair">
+                  <span className="glide-tag">From Age</span>
+                  <NumberInput value={seg.start_age} step={1} min={startAge} max={s.profile.horizon_age}
+                    onChange={(v) => up({ allocation_schedule: (s.allocation_schedule ?? []).map((x, j) => j === i ? { ...x, start_age: v } : x) })} />
+                  <button className="ghost" title="Remove Phase" onClick={() =>
+                    up({ allocation_schedule: (s.allocation_schedule ?? []).filter((_, j) => j !== i) })}>✕</button>
+                </span>
+              } />
+          ))}
+        </div>
       </Collapsible>
 
       <Section className="full" title="Account Balances By Pool"
@@ -505,8 +514,8 @@ export default function Accounts() {
                     <th style={{ textAlign: "right" }}>On Your {fmtMoney(total)}</th></tr>
                 </thead>
                 <tbody>
-                  {([["Typical (median)", 50], ["1-In-4 Bad (p75)", 75],
-                     ["1-In-10 (p90)", 90], ["Worst 5% (p95)", 95]] as [string, number][]).map(([label, p]) => {
+                  {([["Typical", 50], ["1-In-4", 75],
+                     ["1-In-10", 90], ["1-In-20", 95]] as [string, number][]).map(([label, p]) => {
                     const dd = pctile(result.max_drawdown, p);
                     return (
                       <tr key={label}>
@@ -546,7 +555,8 @@ export default function Accounts() {
             <select value={convStrategy} onChange={(e) => setConvStrategy(e.target.value)}>
               <option value="none">None</option>
               <option value="fill_bracket">Fill To Bracket Top</option>
-              <option value="custom">Custom Target</option>
+              <option value="custom">Fill To Income Target</option>
+              <option value="fixed">Convert Fixed Amount</option>
             </select>
           </Field>
           {convStrategy === "fill_bracket" && (
@@ -565,6 +575,13 @@ export default function Accounts() {
               info="Fill ordinary income to this taxable-income level each year (today's $), net of RMDs, SS, and traditional spending withdrawals.">
               <NumberInput value={cr.custom_top ?? 0} step={1000}
                 onChange={(v) => up({ conversion_rule: { ...cr, custom_top: v } })} />
+            </Field>
+          )}
+          {convStrategy === "fixed" && (
+            <Field label="Conversion Amount"
+              info="Convert this dollar amount from Traditional to Roth each year (today's $), regardless of your other income — capped only by the available traditional balance. Unlike the targets above, it does not shrink as RMDs or other income grow, so watch the marginal rate column.">
+              <NumberInput value={cr.annual_amount ?? 0} step={1000}
+                onChange={(v) => up({ conversion_rule: { ...cr, annual_amount: v } })} />
             </Field>
           )}
           <Field label="From / Until Age"

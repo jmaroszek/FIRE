@@ -195,6 +195,38 @@ main { padding: 18px; max-width: 1500px; width: 100%; margin: 0 auto; }
   padding: 14px 16px;
   overflow-x: auto;
 }
+
+/* Overview + Strategy: cards in a stretched row become flex columns so an inner
+   scroll region can fill the equalised height. */
+.acc-overview .card, .strategy-grid .card { display: flex; flex-direction: column; }
+.acc-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; max-height: 340px; }
+/* the waterfall body fills the card's height and scrolls; its cap is near the
+   base (un-phased) content so extra phases scroll rather than grow the card */
+.strategy-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; max-height: 270px; }
+/* Strategy cards grow to share the row's full width; align-items:stretch makes
+   the waterfall and withdrawal-policy cards the same height (the taller drives,
+   the waterfall scrolls beyond its cap). On narrow viewports the policy card
+   wraps below the waterfall. */
+.strategy-grid { align-items: stretch; }
+.strategy-grid .card { flex-grow: 1; }
+/* withdrawal-policy right block: Reserves row, then HSA row, each laid out as a
+   horizontal row, sitting beside the Before/After 59½ lists. */
+.policy-settings { display: flex; flex-direction: column; gap: 4px; }
+/* override .policy-row .fields (which stacks, and is defined later) so each
+   settings group lays out as a horizontal row */
+.policy-row .policy-settings .fields { margin-bottom: 6px; flex-direction: row; flex-wrap: nowrap; align-items: flex-end; gap: 12px 24px; }
+
+/* Glidepath: base mix + phase mixes as side-by-side tables, scrolling sideways
+   when many phases are added. */
+.glide-tables { display: flex; gap: 16px; overflow-x: auto; align-items: flex-start; padding-bottom: 4px; }
+.glide-col { flex: 0 0 auto; min-width: 220px; }
+/* set the base mix apart from the age-keyed phase columns */
+.glide-col.glide-base { border-right: 1px solid var(--border); padding-right: 32px; margin-right: 24px; }
+.glide-col-head { display: flex; align-items: center; min-height: 30px; margin-bottom: 4px; }
+.glide-tag {
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--muted); white-space: nowrap;
+}
 .card-head {
   display: flex;
   justify-content: space-between;
