@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { A } from "../assumptions";
 import {
-  ContributionsChart, FulfillmentChart, FundingSourceChart, HealthcareCostChart,
-  RetirementSpendingChart, SpendingActualsChart, SpendingDepthChart,
+  ContributionsChart, FundingSourceChart, HealthcareCostChart,
+  RetirementSpendingChart, SpendingActualsChart,
 } from "../components/charts";
 import TimelineEditor from "../components/TimelineEditor";
 import {
@@ -122,8 +122,6 @@ export default function CashFlow() {
   const midCareer = Math.round((startAge + s.retirement_age) / 2);
   const [shockAge, setShockAge] = useState(midCareer);
   const [shockDur, setShockDur] = useState(3);
-  const [goGoEnd, setGoGoEnd] = useState(75);
-  const [enjoyFloor, setEnjoyFloor] = useState(0.3);
 
   const upStream = (i: number, patch: Partial<ExpenseStream>) =>
     up({ expense_streams: s.expense_streams.map((e, j) => (j === i ? { ...e, ...patch } : e)) });
@@ -538,55 +536,6 @@ export default function CashFlow() {
           <p className="hint">This portfolio-percentage strategy replaces the guardrails: discretionary spending tracks your balance each year (essentials always funded first).</p>
         )}
       </Collapsible>
-
-      <Section title="Spending vs Ability To Enjoy It" info={A.fulfillment}>
-        {result ? (() => {
-          const ages = result.ages;
-          const spend = result.expenses_median_real;
-          const total = spend.reduce((a, b) => a + b, 0);
-          const shareWhere = (pred: (age: number) => boolean) =>
-            total > 0 ? spend.reduce((acc, v, i) => acc + (pred(ages[i]) ? v : 0), 0) / total : 0;
-          const goGo = shareWhere((a) => a <= goGoEnd);
-          const slowGo = shareWhere((a) => a > goGoEnd && a <= 85);
-          const noGo = shareWhere((a) => a > 85);
-          return (
-            <>
-              <div className="fields">
-                <Field label="Go-Go Years End At Age"
-                  info="Through this age a dollar buys full enjoyment; after it, enjoyment tapers as health and energy fade.">
-                  <NumberInput value={goGoEnd} step={1} min={s.retirement_age} max={90} onChange={setGoGoEnd} />
-                </Field>
-                <Field label="Late-Life Enjoyment Floor"
-                  info="How much a dollar is still worth from age 90 on, relative to the go-go years. Perkins' rough default is 30%.">
-                  <PercentInput value={enjoyFloor} step={5} onChange={setEnjoyFloor} />
-                </Field>
-              </div>
-              <div className="stat-grid">
-                <Stat label="Spent In Go-Go Years" value={fmtPct(goGo, 0)} sub={`through age ${goGoEnd}`} info={A.fulfillment} />
-                <Stat label="Slow-Go" value={fmtPct(slowGo, 0)} sub={`${goGoEnd + 1}–85`} />
-                <Stat label="No-Go" value={fmtPct(noGo, 0)} sub="86+" />
-              </div>
-              <FulfillmentChart result={result} axisMode={axisMode}
-                retirementAge={s.retirement_age} birthYear={s.profile.birth_year}
-                goGoEnd={goGoEnd} floor={enjoyFloor} />
-            </>
-          );
-        })() : <p className="hint">Simulation pending…</p>}
-      </Section>
-
-      {(s.spending_strategy.kind !== "constant_dollar" || s.guardrails.enabled) && (
-        <Section title="Realized Spending Level" info={A.spendingDepth}>
-          {result ? (
-            <SpendingDepthChart result={result} axisMode={axisMode} retirementAge={s.retirement_age}
-              enabled={s.spending_strategy.kind !== "constant_dollar" || s.guardrails.enabled}
-              floor={s.spending_strategy.kind === "floor_ceiling" ? s.spending_strategy.floor_mult
-                : s.spending_strategy.kind === "constant_dollar" ? s.guardrails.floor_mult : 0}
-              cap={s.spending_strategy.kind === "floor_ceiling" ? s.spending_strategy.ceiling_mult
-                : s.spending_strategy.kind === "constant_dollar" ? s.guardrails.cap_mult : 0}
-              birthYear={s.profile.birth_year} />
-          ) : <p className="hint">Simulation pending…</p>}
-        </Section>
-      )}
 
       {/* ───────────── HEALTHCARE ───────────── */}
       <Head id="cf-health">Healthcare</Head>

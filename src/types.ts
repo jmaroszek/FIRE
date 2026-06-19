@@ -278,6 +278,7 @@ export interface SimulateResult {
   taxes_median_real: number[];
   expenses_median_real: number[];
   spending_mult_median: number[];
+  spending_mult_fan: FanSeries;
   investing_real: Record<string, number[]>;
   liability_balance: number[];
   // outcome-distribution & robustness views

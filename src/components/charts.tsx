@@ -20,10 +20,12 @@ export const baseLayout: Partial<Layout> = {
   margin: { l: 70, r: 20, t: 30, b: 45 },
   // themed hover spikeline (was an off-theme white/red default under x-unified hover).
   // showspikes + spikemode are required — without them Plotly's unified-hover line
-  // falls back to its default white/red styling and ignores spikecolor.
+  // falls back to its default white/red styling and ignores spikecolor. Snap to the
+  // hovered point and keep it a dim, dotted slate guide so it reads as part of the
+  // theme rather than a bright crosshair.
   xaxis: {
     gridcolor: GRID, zeroline: false, showspikes: true, spikemode: "across",
-    spikesnap: "cursor", spikecolor: "#6e7681", spikethickness: 1, spikedash: "dot",
+    spikesnap: "hovered data", spikecolor: "#6e7681", spikethickness: 1, spikedash: "dot",
   },
   yaxis: { gridcolor: GRID, zeroline: false },
   showlegend: true,
@@ -231,7 +233,6 @@ export function SweepChart(props: {
           y0: props.sweep.threshold, y1: props.sweep.threshold,
           line: { color: "#d29922", width: 1, dash: "dot" },
         }],
-        title: { text: "Success Probability vs Retirement Age", font: { size: 14 } },
         showlegend: false,
       }}
       config={config}
@@ -292,22 +293,6 @@ export function FrontierChart(props: {
     showarrow: false, text: `${Math.round(props.sweep.threshold * 100)}% target`,
     font: { color: "#3fb950", size: 10 },
   }];
-  // sweet spot: earliest retirement age clearing the success threshold — anything
-  // later mostly trades years of life for estate you won't spend.
-  const crossIdx = success.findIndex((s) => s >= props.sweep.threshold);
-  if (crossIdx >= 0) {
-    const cx = x[crossIdx];
-    shapes.push({ type: "line", x0: cx, x1: cx, y0: 0, y1: 1, yref: "paper",
-      line: { color: "#3fb950", width: 1.5, dash: "dot" } });
-    annotations.push({ x: cx, y: 0.5, yref: "paper", yanchor: "bottom", xanchor: "left",
-      showarrow: false, text: " Earliest safe", font: { color: "#3fb950", size: 10 } });
-  }
-  if (props.retirementMarker != null) {
-    shapes.push({ type: "line", x0: props.retirementMarker, x1: props.retirementMarker,
-      y0: 0, y1: 1, yref: "paper", line: { color: "#8b949e", width: 1.5, dash: "dash" } });
-    annotations.push({ x: props.retirementMarker, y: 1, yref: "paper", yanchor: "bottom",
-      showarrow: false, text: "Planned", font: { color: "#8b949e", size: 10 } });
-  }
   return (
     <Plot
       data={data}
@@ -322,7 +307,6 @@ export function FrontierChart(props: {
           title: { text: "Estate Left", font: { color: "#f0883e" }, standoff: 8 } },
         xaxis: { ...baseLayout.xaxis,
           title: { text: props.axisMode === "age" ? "Retirement Age" : "Retirement Year" } },
-        title: { text: "Over-Saving Frontier: Success vs Estate You Leave", font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}
@@ -875,10 +859,11 @@ export function HistogramChart(props: {
       } as Data]}
       layout={{
         ...baseLayout, height: props.height ?? 300, showlegend: false, bargap: 0.02,
-        uirevision: props.uirevision ?? props.title,
+        hovermode: "x", uirevision: props.uirevision ?? props.title,
         shapes, annotations: annotations as Layout["annotations"],
         xaxis: {
-          ...baseLayout.xaxis, tickformat: histTickFormat(unit), title: { text: props.xTitle },
+          ...baseLayout.xaxis, tickformat: histTickFormat(unit),
+          title: { text: props.xTitle },
           ...(bins ? { range: [bins.start, bins.end] } : {}),
         },
         yaxis: { ...baseLayout.yaxis, title: { text: "Paths" } },
@@ -894,7 +879,7 @@ export function HistogramChart(props: {
 export function RuinAgeChart(props: {
   data: SimulateResult["age_at_ruin"]; height?: number;
 }) {
-  const { ages, counts, total_paths, success_paths } = props.data;
+  const { ages, counts } = props.data;
   if (!ages.length) {
     return (
       <p className="hint">
@@ -902,21 +887,22 @@ export function RuinAgeChart(props: {
       </p>
     );
   }
+  // Cumulative paths failed at or before each age — the running total behind the
+  // survival curve, surfaced on hover beside the per-age count.
+  let running = 0;
+  const cumulative = counts.map((c) => (running += c));
   return (
     <Plot
       data={[{
         x: ages, y: counts, type: "bar",
         marker: { color: "#ff7b72" },
-        hovertemplate: "Age %{x}<br>%{y} paths fail here<extra></extra>",
+        customdata: cumulative,
+        hovertemplate: "Age %{x}<br>%{y} paths fail here<br>%{customdata} failed by this age<extra></extra>",
       }]}
       layout={{
-        ...baseLayout, height: props.height ?? 300, showlegend: false,
+        ...baseLayout, height: props.height ?? 300, showlegend: false, hovermode: "x",
         xaxis: { ...baseLayout.xaxis, title: { text: "Age At First Shortfall" } },
         yaxis: { ...baseLayout.yaxis, title: { text: "Paths" } },
-        title: {
-          text: `When Plans Fail — ${success_paths} of ${total_paths} never run short`,
-          font: { size: 14 },
-        },
       }}
       config={config}
       style={{ width: "100%" }}
@@ -1082,17 +1068,18 @@ export function PercentileFanChart(props: {
   x: number[]; fan: FanSeries; axisMode: "age" | "year"; yFormat: YFmt; title: string;
   color?: string; markers?: { shapes: Partial<Shape>[]; annotations: any[] };
   refLines?: { value: number; label: string; color?: string }[]; height?: number;
+  yRange?: [number, number];
 }) {
   const c = props.color ?? ACCENT;
-  const band = (lo: string, hi: string, alpha: string): Data[] => [
+  const band = (lo: string, hi: string, alpha: string, label: string): Data[] => [
     { x: props.x, y: props.fan[lo], type: "scatter", mode: "lines",
       line: { width: 0 }, hoverinfo: "skip", showlegend: false },
     { x: props.x, y: props.fan[hi], type: "scatter", mode: "lines", fill: "tonexty",
-      fillcolor: c + alpha, line: { width: 0 }, hoverinfo: "skip", showlegend: false },
+      fillcolor: c + alpha, line: { width: 0 }, name: label, hoverinfo: "skip" },
   ];
   const data: Data[] = [
-    ...band("p5", "p95", "12"),
-    ...band("p25", "p75", "24"),
+    ...band("p5", "p95", "12", "5–95% Of Paths"),
+    ...band("p25", "p75", "24", "25–75% Of Paths"),
     { x: props.x, y: props.fan.p50, type: "scatter", mode: "lines", name: "Median",
       line: { color: c, width: 2 }, hovertemplate: `${yHover(props.yFormat)}<extra></extra>` },
   ];
@@ -1112,13 +1099,15 @@ export function PercentileFanChart(props: {
     <Plot
       data={data}
       layout={{
-        ...baseLayout, height: props.height ?? 320, showlegend: false,
+        ...baseLayout, height: props.height ?? 320, showlegend: true,
         shapes, annotations: annotations as Layout["annotations"],
         yaxis: {
           ...baseLayout.yaxis, tickformat: yTick(props.yFormat),
           ticksuffix: props.yFormat === "multiplier" ? "×" : undefined,
+          ...(props.yRange ? { range: props.yRange, autorange: false } : {}),
         },
-        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
+        xaxis: { ...baseLayout.xaxis, showspikes: false,
+          title: { text: props.axisMode === "age" ? "Age" : "Year" } },
         title: { text: props.title, font: { size: 14 } },
       }}
       config={config}
@@ -1147,29 +1136,11 @@ export function FulfillmentChart(props: {
   birthYear?: number; goGoEnd?: number; floor?: number; height?: number;
 }) {
   const goGoEnd = props.goGoEnd ?? 75;
-  const slowGoEnd = 85;
   const floor = props.floor ?? 0.3;
   const ages = props.result.ages;
   const x = props.axisMode === "age" ? [...ages] : [...props.result.years];
   const spend = props.result.expenses_median_real;
   const weighted = spend.map((v, i) => v * enjoymentFactor(ages[i], goGoEnd, floor));
-  const off = props.axisMode === "age" ? 0 : (props.birthYear ?? 0);
-  const xEnd = x[x.length - 1];
-  const band = (a0: number, a1: number, color: string, label: string) => {
-    const x0 = Math.max(a0 + off, x[0]);
-    const x1 = Math.min(a1 + off, xEnd);
-    return {
-      shape: { type: "rect" as const, xref: "x" as const, yref: "paper" as const,
-        x0, x1, y0: 0, y1: 1, fillcolor: color, line: { width: 0 }, layer: "below" as const },
-      anno: { x: (x0 + x1) / 2, y: 0.98, yref: "paper" as const, yanchor: "top" as const,
-        showarrow: false, text: label, font: { size: 10, color: "#8b949e" } },
-    };
-  };
-  const bands = [
-    band(0, goGoEnd, "rgba(63,185,80,0.08)", "Go-Go"),
-    band(goGoEnd, slowGoEnd, "rgba(210,153,34,0.08)", "Slow-Go"),
-    band(slowGoEnd, 200, "rgba(248,81,73,0.08)", "No-Go"),
-  ];
   const retire = lifeStageMarkers(props.axisMode, props.birthYear,
     [{ age: props.retirementAge, label: "Retire", color: "#d29922" }]);
   return (
@@ -1178,11 +1149,8 @@ export function FulfillmentChart(props: {
         { name: "Planned Spending", values: spend, color: ACCENT, fill: true },
         { name: "Enjoyment-Weighted", values: weighted, color: "#f0883e" },
       ]}
-      markers={{
-        shapes: [...bands.map((b) => b.shape), ...retire.shapes],
-        annotations: [...bands.map((b) => b.anno), ...retire.annotations],
-      }}
-      title="Spending vs Ability To Enjoy It — Median Path, Today's $" />
+      markers={retire}
+      title="" />
   );
 }
 
@@ -1253,7 +1221,7 @@ export function SurvivalChart(props: {
       series={[{ name: "Still Funded", values: props.result.survival_curve, color: "#3fb950", fill: true }]}
       refLines={props.threshold != null ? [{ value: props.threshold, label: "Success Threshold", color: "#d29922" }] : []}
       markers={lifeStageMarkers(props.axisMode, props.birthYear, [{ age: props.retirementAge, label: "Retire", color: "#d29922" }])}
-      title="Survival Curve — Share Of Paths Still Funded By Each Age" />
+      title="" />
   );
 }
 
@@ -1269,16 +1237,61 @@ export function SpendingDepthChart(props: {
         market would flex spending year to year.
       </p>
     );
-  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
+  const x = props.axisMode === "age" ? [...props.result.ages] : [...props.result.years];
   const refs = [{ value: 1, label: "Plan (100%)", color: "#8b949e" }];
-  if (props.floor > 0) refs.push({ value: props.floor, label: "Floor", color: "#ff7b72" });
+  if (props.floor > 0) refs.push({ value: props.floor, label: "Floor", color: "#8b949e" });
   if (props.cap > 1) refs.push({ value: props.cap, label: "Cap", color: "#3fb950" });
+  const markers = lifeStageMarkers(props.axisMode, props.birthYear,
+    [{ age: props.retirementAge, label: "Retire", color: "#d29922" }]);
+  const shapes: Partial<Shape>[] = [...markers.shapes];
+  const annotations: any[] = [...markers.annotations];
+  for (const r of refs) {
+    shapes.push({ type: "line", xref: "paper", x0: 0, x1: 1, y0: r.value, y1: r.value,
+      line: { color: r.color, width: 1, dash: "dot" } });
+    annotations.push({ xref: "paper", x: 0, y: r.value, xanchor: "left", yanchor: "bottom",
+      showarrow: false, text: r.label, font: { color: r.color, size: 10 } });
+  }
+  const fan = props.result.spending_mult_fan;
+  // Realized spending is bounded above by the plan/cap, so the only story is the
+  // DOWNSIDE — how far the bad paths cut. Show the median and the percentiles at or
+  // below it (not a symmetric fan), which is what "how low can it go" actually asks.
+  if (fan && fan.p50) {
+    const data: Data[] = [
+      // faint shading of the whole downside zone (10th pct up to the median)
+      { x, y: fan.p10, type: "scatter", mode: "lines", line: { width: 0 },
+        hoverinfo: "skip", showlegend: false },
+      { x, y: fan.p50, type: "scatter", mode: "lines", fill: "tonexty",
+        fillcolor: ACCENT + "10", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
+      { x, y: fan.p10, type: "scatter", mode: "lines", name: "10th percentile (worst)",
+        line: { color: "#ff7b72", width: 1.5, dash: "dashdot" },
+        hovertemplate: "10th pct: %{y:.0%}<extra></extra>" },
+      { x, y: fan.p25, type: "scatter", mode: "lines", name: "25th percentile",
+        line: { color: "#f0883e", width: 1.5, dash: "dash" },
+        hovertemplate: "25th pct: %{y:.0%}<extra></extra>" },
+      { x, y: fan.p50, type: "scatter", mode: "lines", name: "Median (50th)",
+        line: { color: ACCENT, width: 2 },
+        hovertemplate: "Median: %{y:.0%}<extra></extra>" },
+    ];
+    return (
+      <Plot
+        data={data}
+        layout={{
+          ...baseLayout, height: 320, hovermode: "x unified",
+          shapes, annotations: annotations as Layout["annotations"],
+          yaxis: { ...baseLayout.yaxis, tickformat: ".0%",
+            range: [0, Math.max(1, props.cap) * 1.02], autorange: false },
+          xaxis: { ...baseLayout.xaxis,
+            title: { text: props.axisMode === "age" ? "Age" : "Year" } },
+        }}
+        config={config}
+        style={{ width: "100%" }}
+      />
+    );
+  }
   return (
     <SeriesChart x={x} axisMode={props.axisMode} yFormat="percent"
       series={[{ name: "Discretionary vs Plan", values: props.result.spending_mult_median, color: ACCENT, fill: true }]}
-      refLines={refs}
-      markers={lifeStageMarkers(props.axisMode, props.birthYear, [{ age: props.retirementAge, label: "Retire", color: "#d29922" }])}
-      title="Realized Spending Level — Median Path (% Of Planned Discretionary)" />
+      refLines={refs} markers={markers} title="" />
   );
 }
 
@@ -1513,15 +1526,22 @@ export function SweepGainChart(props: {
     y0: props.sweep.threshold, y1: props.sweep.threshold, yref: "y",
     line: { color: "#3fb950", width: 1, dash: "dot" },
   }];
-  // (No "earliest safe" vertical marker — the success curve and its threshold
-  // line already say it, and the bare vertical bar read as off-theme.)
+  // Earliest retirement age that clears (and stays above) the success threshold.
+  const annotations: any[] = [];
+  const crossIdx = success.findIndex((sv) => sv >= props.sweep.threshold);
+  if (crossIdx >= 0) {
+    shapes.push({ type: "line", x0: x[crossIdx], x1: x[crossIdx], y0: 0, y1: 1, yref: "paper",
+      line: { color: "#3fb950", width: 1.5, dash: "dash" } });
+    annotations.push({ x: x[crossIdx], y: 1, yref: "paper", yanchor: "bottom", xanchor: "left",
+      showarrow: false, text: "Earliest safe", font: { color: "#3fb950", size: 10 } });
+  }
   return (
     <Plot
       data={data}
       layout={{
         ...baseLayout, height: props.height ?? 340, hovermode: "x unified",
         margin: { ...baseLayout.margin, r: 64 },
-        shapes, annotations: [] as Layout["annotations"],
+        shapes, annotations: annotations as Layout["annotations"],
         yaxis: { ...baseLayout.yaxis, tickformat: ".0%", range: [-0.02, 1.05], automargin: true,
           title: { text: "Success" } },
         yaxis2: { tickformat: ".1%", overlaying: "y", side: "right", rangemode: "tozero",

@@ -437,6 +437,13 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .chart-tip-value { font-size: 15px; font-weight: 600; }
 .chart-tip-sub { font-size: 11px; color: var(--muted); }
 
+/* Plotly draws each hover spikeline as two stacked lines: a hardcoded white
+   contrast halo (solid, no dasharray) under the themed line. The halo overpowers
+   our dim dotted slate spike and reads as a bright white/red crosshair. Our spikes
+   always use spikedash "dot" (so they carry a stroke-dasharray); the halo never
+   does — so hide just the halo and keep the themed dotted line. */
+line.spikeline:not([stroke-dasharray]) { display: none !important; }
+
 .snap-head {
   font-size: 12px;
   text-transform: uppercase;

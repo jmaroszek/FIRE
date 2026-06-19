@@ -554,6 +554,18 @@ def inflation_fan(result: SimResult,
             for p in percentiles}
 
 
+def spending_mult_fan(result: SimResult,
+                      percentiles=(10, 25, 50, 75, 90)) -> dict[str, list[float]]:
+    """Percentile fan of the discretionary spending multiplier (realized vs plan)
+    over time. The median alone hides that on the bad paths guardrails cut spending
+    to the floor; the low percentiles make that downside — the very paths that
+    later run short — visible beside the median. Realized spending is capped at the
+    plan, so only the downside (10th/25th) carries information; the chart shows just
+    that side."""
+    return {f"p{p}": np.percentile(result.spending_mult, p, axis=0).tolist()
+            for p in percentiles}
+
+
 def lifetime_tax(result: SimResult) -> dict:
     """Median lifetime real tax for the current plan, as a share of lifetime
     delivered spending, and as an effective rate on lifetime income — the headline
@@ -931,6 +943,7 @@ def summarize(result: SimResult) -> dict:
         "expenses_median_real": np.median(
             result.expenses / _flow_deflator(result), axis=0).tolist(),
         "spending_mult_median": np.median(result.spending_mult, axis=0).tolist(),
+        "spending_mult_fan": spending_mult_fan(result),
         "ss_income_median_real": ss_income_median_real(result),
         "wages_median_real": wages_median_real(result),
         "marginal_rate_median": marginal_rate_median(result),

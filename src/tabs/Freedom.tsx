@@ -1,10 +1,12 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { A } from "../assumptions";
 import {
-  FrontierChart, HistogramChart, RuinAgeChart, SurfaceHeatmap, SurvivalChart,
-  SweepGainChart, TornadoChart,
+  FrontierChart, FulfillmentChart, HistogramChart, RuinAgeChart, SpendingDepthChart,
+  SurfaceHeatmap, SurvivalChart, SweepGainChart, TornadoChart,
 } from "../components/charts";
-import { Field, ProgressBar, Section, SectionNav, Stat, fmtMoney, fmtPct } from "../components/ui";
+import {
+  Field, NumberInput, PercentInput, ProgressBar, Section, Stat, fmtMoney, fmtPct,
+} from "../components/ui";
 import { useStore } from "../store";
 import type { Scenario } from "../types";
 
@@ -20,6 +22,16 @@ function percentile(xs: number[], p: number): number {
   return s[idx];
 }
 
+/** Round a raw step up to a "nice" 1 / 2 / 2.5 / 5 × 10ⁿ value, so histogram bin
+ * edges land on natural round numbers (… 250k, 500k, 1M …) instead of 437k. */
+function niceStep(raw: number): number {
+  if (raw <= 0) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const f = raw / pow;
+  const nice = f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10;
+  return nice * pow;
+}
+
 export default function Freedom() {
   const { scenario, result, display, axisMode,
           freedom, freedomLoading, runFreedom,
@@ -28,6 +40,8 @@ export default function Freedom() {
           sensitivity, sensitivityLoading, runSensitivity,
           bridgecrash } = useStore();
   const setScenario = useStore((s) => s.setScenario);
+  const [goGoEnd, setGoGoEnd] = useState(75);
+  const [enjoyFloor, setEnjoyFloor] = useState(0.3);
 
   // This tab owns the freedom bundle, the sweep, the sensitivity tornado and the
   // success surface; populate them all on a cold visit. We fire them independently
@@ -47,16 +61,37 @@ export default function Freedom() {
   const suggestedAge = sweep && sweep.years_to_fi != null ? startAge + sweep.years_to_fi : null;
   const retMarker = axisMode === "age" ? s.retirement_age : s.profile.birth_year + s.retirement_age;
   const lastReal = result?.fan.real.p50[result.fan.real.p50.length - 1] ?? 0;
-  const dollars = display === "real" ? "Today's" : "Nominal";
+  // Portfolio growth multiple (oversaving): median ending net worth ÷ median net
+  // worth at the retirement year. fan.real.p50 carries a leading "today" point, so
+  // age ages[k] sits at fan index k+1. Above 1× means the portfolio outgrew your
+  // spending — you lived on less than it produced.
+  const retIdx = result ? result.ages.findIndex((a) => a >= s.retirement_age) : -1;
+  const nwAtRetirement = result && retIdx >= 0 ? (result.fan.real.p50[retIdx + 1] ?? 0) : 0;
+  const growthMultiple = nwAtRetirement > 0 ? lastReal / nwAtRetirement : 0;
+  // Bridge draw rate (undersaving): the share of penalty-free ACCESSIBLE money
+  // drawn each year over the bridge (retirement → 59½, before locked accounts
+  // open), averaged across those years and capped at 100%/yr so the year the
+  // bridge fund is intentionally drained to ~0 can't explode the mean. High = the
+  // liquid runway is strained. accessibility_fan is an end-of-year stock, so the
+  // balance available to fund year k is the prior year-end value. null = no bridge.
+  const bridgeDrawRate = (() => {
+    if (!result) return null;
+    const w = result.withdrawals_real ?? {};
+    const acc = result.accessibility_fan?.p50;
+    if (!acc) return null;
+    let sum = 0, n = 0;
+    for (let k = 0; k < result.ages.length; k++) {
+      const age = result.ages[k];
+      if (age < s.retirement_age || age >= 60) continue;
+      const draw = Object.values(w).reduce((a, arr) => a + (arr?.[k] ?? 0), 0);
+      const bal = acc[k > 0 ? k - 1 : 0] ?? 0;
+      if (bal > 0) { sum += Math.min(draw / bal, 1); n++; }
+    }
+    return n > 0 ? sum / n : null;
+  })();
 
   return (
     <div className="stack">
-      <SectionNav items={[
-        { id: "freedom-success", label: "Overall Success" },
-        { id: "freedom-under", label: "Undersaving" },
-        { id: "freedom-over", label: "Oversaving" },
-      ]} />
-
       {/* ───────────── OVERALL SUCCESS ───────────── */}
       <Head id="freedom-success">Overall Success</Head>
       <div className="stat-grid">
@@ -179,18 +214,20 @@ export default function Freedom() {
             <div className="stat-grid">
               <Section title="Paths That Run Short" info={A.failureSeverity}>
                 <Stat label="Of All Monte Carlo Paths"
-                  value={`${result.failure_magnitude.failing_paths} of ${result.failure_magnitude.total_paths}`}
-                  sub={`${fmtPct(result.failure_magnitude.failing_paths / result.failure_magnitude.total_paths, 0)} of scenarios`} />
+                  value={fmtPct(result.failure_magnitude.failing_paths / result.failure_magnitude.total_paths, 0)}
+                  sub={`${result.failure_magnitude.failing_paths} of ${result.failure_magnitude.total_paths} paths`} />
               </Section>
               <Section title="Median Shortfall" info={A.failureSeverity}>
                 <Stat label="Among Failing Paths (Today's $)"
                   value={fmtMoney(result.failure_magnitude.median_total_shortfall_real)}
                   sub={`worst 10%: ${fmtMoney(result.failure_magnitude.p90_total_shortfall_real)}`} />
               </Section>
-              <Section title="Median Years Short" info={A.failureSeverity}>
-                <Stat label="Years Spending Goes Unfunded"
-                  value={String(result.failure_magnitude.median_years_short)}
-                  sub="how long the shortfall lasts" />
+              <Section title="Bridge Draw Rate" info={A.bridgeDrawRate}>
+                {bridgeDrawRate != null ? (
+                  <Stat label="Draw ÷ Accessible, Avg Over The Bridge"
+                    value={fmtPct(bridgeDrawRate, 0)}
+                    sub="penalty-free money, retire→59½; high = strained" info={A.bridgeDrawRate} />
+                ) : <p className="hint">No bridge — retiring at/after 59½.</p>}
               </Section>
             </div>
           ) : (
@@ -210,6 +247,18 @@ export default function Freedom() {
             </Section>
           </div>
 
+          {(s.spending_strategy.kind !== "constant_dollar" || s.guardrails.enabled) && (
+            <Section title="Realized Spending" info={A.spendingDepth}>
+              <SpendingDepthChart result={result} axisMode={axisMode} retirementAge={s.retirement_age}
+                enabled={s.spending_strategy.kind !== "constant_dollar" || s.guardrails.enabled}
+                floor={s.spending_strategy.kind === "floor_ceiling" ? s.spending_strategy.floor_mult
+                  : s.spending_strategy.kind === "constant_dollar" ? s.guardrails.floor_mult : 0}
+                cap={s.spending_strategy.kind === "floor_ceiling" ? s.spending_strategy.ceiling_mult
+                  : s.spending_strategy.kind === "constant_dollar" ? s.guardrails.cap_mult : 0}
+                birthYear={s.profile.birth_year} />
+            </Section>
+          )}
+
           {bridgecrash && bridgecrash.has_bridge && (
             <Section title="Retire Into A Crash — Overall Success" info={A.bridgeCrash}>
               <Stat label="Success: Baseline → Crash"
@@ -220,14 +269,15 @@ export default function Freedom() {
           )}
 
           <p className="hint" style={{ maxWidth: "none" }}>
-            <strong>Why the years just after retirement are the riskiest:</strong> a market drop right
-            when you stop earning forces selling depressed assets you can't rebuy (sequence-of-returns
-            risk); the penalty-free bridge is longest and most strained; there's no wage income to
-            cushion it; and Social Security hasn't started. Clear that first decade with assets intact
-            and the hazard falls fast — which is exactly why the survival curve drops, then levels off.
-            The levers that help most: a cash-bucket or rising-equity glidepath (Accounts), flexible
-            spending (guardrails / VPW, Cash Flow), a bigger liquid bridge, retiring a year or two
-            later, or part-time income early.
+            The steepest part of the survival curve is the decade right after you retire, because
+            several forces pile up there at once. A market drop the moment you stop earning forces you
+            to sell depressed assets you can't buy back — sequence-of-returns risk — and there is no
+            paycheck to cushion the blow, Social Security hasn't started, and the penalty-free bridge
+            is at its longest and most strained. Clear that first decade with your assets intact and
+            the hazard fades quickly, which is exactly why the curve drops early and then levels off.
+            The levers that help most all soften those early years: a cash buffer or rising-equity
+            glidepath (Accounts), flexible spending through guardrails or VPW (Cash Flow), a larger
+            liquid bridge, working a year or two longer, or a little part-time income early on.
           </p>
         </>
       )}
@@ -235,19 +285,6 @@ export default function Freedom() {
       {/* ───────────── OVERSAVING ───────────── */}
       <Head id="freedom-over">Oversaving — Could You Stop Sooner?</Head>
       <div className="stat-grid">
-        <Section title="Median Ending Net Worth" info={A.headroom}>
-          {result ? (
-            <Stat label="At The Horizon (Today's $)" value={fmtMoney(lastReal)}
-              sub="unconsumed margin, not a goal" info={A.headroom} />
-          ) : <p className="hint">Simulation pending…</p>}
-        </Section>
-        <Section title="Years Of Spending Unspent" info={A.estateYears}>
-          {result && freedom && freedom.annual_retirement_expenses > 0 ? (
-            <Stat label="Median Estate ÷ Annual Spending"
-              value={`${Math.round(lastReal / freedom.annual_retirement_expenses)} yr`}
-              sub="years of life converted to an estate" info={A.estateYears} />
-          ) : <p className="hint">{result ? "—" : "Simulation pending…"}</p>}
-        </Section>
         <Section title="Estate Above Your Legacy" info={A.estateAboveLegacy}>
           {result ? (
             <Stat label="Beyond Both Spending & Bequest"
@@ -258,9 +295,23 @@ export default function Freedom() {
               info={A.estateAboveLegacy} />
           ) : <p className="hint">Simulation pending…</p>}
         </Section>
+        <Section title="Years Of Spending Unspent" info={A.estateYears}>
+          {result && freedom && freedom.annual_retirement_expenses > 0 ? (
+            <Stat label="Median Estate ÷ Annual Spending"
+              value={`${Math.round(lastReal / freedom.annual_retirement_expenses)} yr`}
+              sub="years of life converted to an estate" info={A.estateYears} />
+          ) : <p className="hint">{result ? "—" : "Simulation pending…"}</p>}
+        </Section>
+        <Section title="Portfolio Growth In Retirement" info={A.growthMultiple}>
+          {result && growthMultiple > 0 ? (
+            <Stat label="Median Ending ÷ Median At Retirement"
+              value={`${growthMultiple.toFixed(1)}×`}
+              sub="you lived on less than it earned" info={A.growthMultiple} />
+          ) : <p className="hint">{result ? "—" : "Simulation pending…"}</p>}
+        </Section>
       </div>
 
-      <Section title="Over-Saving Frontier: When To Pull The Trigger" info={A.frontier}
+      <Section title="Over-Saving Frontier" info={A.frontier}
         actions={sweep && (
           <button className="ghost" onClick={runSweep} disabled={sweeping}>
             {sweeping ? "Computing…" : "Recompute"}
@@ -277,16 +328,51 @@ export default function Freedom() {
         )}
       </Section>
 
+      <Section title="Spending and Satisfaction" info={A.fulfillment}>
+        {result ? (() => {
+          const ages = result.ages;
+          const spend = result.expenses_median_real;
+          const total = spend.reduce((a, b) => a + b, 0);
+          const shareWhere = (pred: (age: number) => boolean) =>
+            total > 0 ? spend.reduce((acc, v, i) => acc + (pred(ages[i]) ? v : 0), 0) / total : 0;
+          const active = shareWhere((a) => a <= goGoEnd);
+          const inactive = shareWhere((a) => a > goGoEnd);
+          return (
+            <>
+              <div className="fields">
+                <Field label="Active Years End At Age"
+                  info="Through this age a dollar buys full enjoyment; after it, enjoyment tapers as health and energy fade.">
+                  <NumberInput value={goGoEnd} step={1} min={s.retirement_age} max={90} onChange={setGoGoEnd} />
+                </Field>
+                <Field label="Late-Life Enjoyment Floor"
+                  info="How much a dollar is still worth from age 90 on, relative to the active years. Perkins' rough default is 30%.">
+                  <PercentInput value={enjoyFloor} step={5} onChange={setEnjoyFloor} />
+                </Field>
+              </div>
+              <div className="stat-grid" style={{ marginTop: 12 }}>
+                <Stat label="Spent While Active" value={fmtPct(active, 0)} sub={`through age ${goGoEnd}`} info={A.fulfillment} />
+                <Stat label="Spent While Inactive" value={fmtPct(inactive, 0)} sub={`age ${goGoEnd + 1}+`} />
+              </div>
+              <FulfillmentChart result={result} axisMode={axisMode}
+                retirementAge={s.retirement_age} birthYear={s.profile.birth_year}
+                goGoEnd={goGoEnd} floor={enjoyFloor} />
+            </>
+          );
+        })() : <p className="hint">Simulation pending…</p>}
+      </Section>
+
       <Section title="Ending Net Worth Distribution" info={A.endingBalance}>
         {result ? (() => {
           const vals = result.ending_balance[display];
-          const end = Math.max(percentile(vals, 99), 1);
-          const size = Math.max(1000, Math.ceil(end / 40 / 1000) * 1000);
+          const p99 = Math.max(percentile(vals, 99), 1);
+          const size = niceStep(p99 / 35);
+          const start = Math.min(0, Math.floor(percentile(vals, 1) / size) * size);
+          const end = Math.ceil(p99 / size) * size;
           return (
             <HistogramChart values={vals} unit="money" uirevision={display}
-              bins={{ start: Math.min(0, percentile(vals, 1)), size, end: Math.ceil(end / size) * size }}
+              bins={{ start, size, end }}
               clampOverflow title=""
-              xTitle={`Net Worth At Age ${s.profile.horizon_age} (${dollars} $, p99+ grouped)`} />
+              xTitle={`Net Worth At Age ${s.profile.horizon_age}`} />
           );
         })() : <p className="hint">Simulation pending…</p>}
       </Section>
