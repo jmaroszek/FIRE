@@ -310,6 +310,9 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .policy-row .fields { flex-direction: column; align-items: flex-start; gap: 12px; }
 
 .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+/* size to content and let empty space pool at the right, instead of stretching
+   sparse columns full-width with uneven gaps (Cash Flow income/expense tables) */
+.table.fit { width: auto; }
 .table th {
   text-align: left;
   color: var(--muted);
@@ -321,9 +324,41 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .table input { max-width: 110px; }
 .table .numwrap input { max-width: 88px; }
 .agecell { white-space: nowrap; }
-.agecell input { max-width: 52px; }
+.table .agecell .numwrap input { max-width: 46px; }
 .namecell input { max-width: none; width: 190px; }
 .cpicell .numwrap input { max-width: 56px; }
+
+/* Income/Expenses cards: content-width table on the left, a live "mix" breakdown
+   filling the right gutter. The table keeps its natural width; the panel takes the
+   leftover space (capped so its bars don't stretch absurdly wide), and the row
+   wraps the panel below the table on narrow viewports. */
+.card-split { display: flex; flex-wrap: wrap; gap: 16px 36px; align-items: flex-start; }
+.card-split-main { flex: 0 0 auto; }
+.mixpanel { flex: 1 1 260px; min-width: 220px; max-width: 460px;
+  display: flex; flex-direction: column; gap: 9px; }
+.mixpanel-title { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+.mixrow { display: flex; flex-direction: column; gap: 3px; }
+.mixrow-head { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+.mixrow-label { color: var(--fg); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; max-width: 58%; }
+.mixrow-val { color: var(--muted); white-space: nowrap; }
+.mixbar-track { display: block; height: 7px; background: #1c2128; border-radius: 4px; overflow: hidden; }
+.mixbar-fill { display: block; height: 100%; border-radius: 4px; }
+.mixpanel-foot { margin-top: 3px; padding-top: 8px; border-top: 1px solid var(--border);
+  color: var(--muted); font-size: 12px; }
+
+/* Inline "Spending Mix" column in the Expenses table: the bar shares the row with
+   its input (continuous left-to-right), and this column absorbs the table's slack
+   (width:100%) so it fills the gutter while the input columns stay content-sized. */
+.mixcol, .mixcell { width: 100%; }
+.mixcell { padding-left: 18px; }
+.mixbar-inline { display: flex; align-items: center; gap: 10px; }
+.mixbar-inline .mixbar-track { flex: 1; min-width: 40px; }
+.mixbar-val { color: var(--muted); font-size: 12px; white-space: nowrap;
+  min-width: 30px; text-align: right; }
+.table-summary { margin-top: 10px; color: var(--muted); font-size: 12px; }
+.mix-future { color: var(--muted); font-size: 12px; font-style: italic; opacity: .85; }
+.table th.essential-col, .table td.essential-col { text-align: center; }
 
 /* hints wrap instead of stretching their card wide */
 .hint { color: var(--muted); font-size: 13px; max-width: 440px; }

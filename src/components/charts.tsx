@@ -353,14 +353,41 @@ const SOURCE_LABELS: Record<string, string> = {
   hsa: "HSA (65+)",
   roth_earnings: "Roth earnings (59½+)",
 };
-const SOURCE_COLORS: Record<string, string> = {
-  cash: "#8b949e",
-  taxable: "#58a6ff",
+/** App-wide semantic palette — the single source of truth for flow/account colors.
+ * One hue family per tax bucket, so a given concept keeps the SAME color on every
+ * chart, and semantically-related flows share a family but stay distinguishable by
+ * shade:
+ *   • Traditional / pre-tax → gold   (Traditional, Employer Match)
+ *   • Roth                  → green  (contributions → conversions → earnings, dark→light)
+ *   • Taxable / Brokerage   → blue
+ *   • HSA                   → purple
+ *   • Cash                  → gray
+ * Income flows (not accounts) sit off the account hues so they never read as a draw:
+ *   • Active Income (work)  → teal
+ *   • Social Security       → magenta
+ */
+export const FLOW_COLORS: Record<string, string> = {
+  wages: "#39c5cf",                    // active income — teal
+  ss: "#f778ba",                       // social security — magenta
+  cash: "#8b949e",                     // gray
+  taxable: "#58a6ff",                  // blue
+  trad: "#d29922",                     // traditional / pre-tax — gold
+  match: "#e3b341",                    // employer match (pre-tax) — light gold
+  roth: "#3fb950",                     // roth contributions / basis — green
   roth_basis: "#3fb950",
-  roth_matured_conversions: "#2ea043",
-  trad: "#d29922",
-  hsa: "#bc8cff",
-  roth_earnings: "#56d364",
+  roth_matured_conversions: "#1a7f37", // matured conversions — dark green
+  roth_earnings: "#7ee787",            // roth earnings — light green
+  hsa: "#bc8cff",                      // purple
+};
+
+const SOURCE_COLORS: Record<string, string> = {
+  cash: FLOW_COLORS.cash,
+  taxable: FLOW_COLORS.taxable,
+  roth_basis: FLOW_COLORS.roth_basis,
+  roth_matured_conversions: FLOW_COLORS.roth_matured_conversions,
+  trad: FLOW_COLORS.trad,
+  hsa: FLOW_COLORS.hsa,
+  roth_earnings: FLOW_COLORS.roth_earnings,
 };
 
 export function AccessibilityChart(props: {
@@ -565,14 +592,14 @@ export function FundingSourceChart(props: {
   if (hasWork)
     data.push({
       x: [...x], y: wages, type: "scatter", mode: "lines", stackgroup: "one",
-      name: "Active Income (Work)", line: { width: 0.5, color: "#79c0ff" },
-      fillcolor: "#79c0ff55", hovertemplate: "%{y:$,.0f}",
+      name: "Active Income (Work)", line: { width: 0.5, color: FLOW_COLORS.wages },
+      fillcolor: FLOW_COLORS.wages + "55", hovertemplate: "%{y:$,.0f}",
     });
   if (hasSS)
     data.push({
       x: [...x], y: ssInc, type: "scatter", mode: "lines", stackgroup: "one",
-      name: "Social Security", line: { width: 0.5, color: "#56d364" },
-      fillcolor: "#56d36455", hovertemplate: "%{y:$,.0f}",
+      name: "Social Security", line: { width: 0.5, color: FLOW_COLORS.ss },
+      fillcolor: FLOW_COLORS.ss + "55", hovertemplate: "%{y:$,.0f}",
     });
   present.forEach((src) =>
     data.push({
@@ -583,18 +610,12 @@ export function FundingSourceChart(props: {
   const totals = [...x].map((_, i) =>
     (hasWork ? wages[i] ?? 0 : 0) + (hasSS ? ssInc[i] ?? 0 : 0)
     + present.reduce((sum, src) => sum + (w[src][i] ?? 0), 0));
-  // Deficit: planned spending the funding strategy didn't cover (median path).
-  // Stacks on top in red so the stack's full height = what the year needed, and
-  // the red slice = the gap. On a healthy plan this is empty; it only appears when
-  // even the median path can't fund spending — exactly when you want to see it.
-  const exp = props.result.expenses_median_real ?? [];
-  const deficit = [...x].map((_, i) => Math.max(0, (exp[i] ?? 0) - totals[i]));
-  if (deficit.some((v) => v > 1))
-    data.push({
-      x: [...x], y: deficit, type: "scatter", mode: "lines", stackgroup: "one",
-      name: "Deficit (Unfunded Spending)", line: { width: 0.5, color: "#f85149" },
-      fillcolor: "#f8514966", hovertemplate: "Unfunded: %{y:$,.0f}",
-    });
+  // This is a funding-MIX chart: where each year's money comes from, on the median
+  // path. We deliberately do NOT overlay a spending/deficit line here — every series
+  // above is an independent per-year median across paths, and medians aren't additive
+  // (median(expenses) ≠ Σ median(source)), so differencing them invents a "deficit"
+  // no real path has. The honest shortfall story lives on Freedom (failure magnitude
+  // / survival), computed per-path.
   data.push({
     x: [...x], y: totals, type: "scatter", mode: "lines", name: "Total",
     line: { width: 0 }, showlegend: false,
@@ -620,7 +641,8 @@ const POOL_LABELS: Record<string, string> = {
   taxable: "Brokerage", trad: "Traditional", roth: "Roth", hsa: "HSA", cash: "Cash",
 };
 const POOL_COLORS: Record<string, string> = {
-  taxable: "#58a6ff", trad: "#d29922", roth: "#3fb950", hsa: "#bc8cff", cash: "#8b949e",
+  taxable: FLOW_COLORS.taxable, trad: FLOW_COLORS.trad, roth: FLOW_COLORS.roth,
+  hsa: FLOW_COLORS.hsa, cash: FLOW_COLORS.cash,
 };
 const POOL_ORDER = ["taxable", "trad", "roth", "hsa", "cash"];
 
@@ -1345,30 +1367,6 @@ export function SpendingDepthChart(props: {
 
 // ---- Phase 2C composites (merge several scattered charts into one) --------
 
-/** Retirement Spending: living expenses + net healthcare (ACA/IRMAA) on one
- * age axis — merges the old Spending Trajectory and Healthcare Cost charts. */
-export function RetirementSpendingChart(props: {
-  result: SimulateResult; axisMode: "age" | "year"; retirementAge: number;
-  coverageEndAge?: number; birthYear?: number; height?: number;
-}) {
-  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
-  const hc = props.result.healthcare?.net_cost_real;
-  const series = [
-    { name: "Living Expenses", values: props.result.expenses_median_real, color: ACCENT, fill: true },
-  ];
-  if (hc?.some((v) => v > 1))
-    series.push({ name: "Net Healthcare", values: hc, color: "#bc8cff", fill: false });
-  const marks: LifeMark[] = [{ age: props.retirementAge, label: "Retire", color: "#d29922" }];
-  if (props.coverageEndAge)
-    marks.push({ age: props.coverageEndAge, label: `Medicare ${props.coverageEndAge}`, color: "#bc8cff" });
-  return (
-    <SeriesChart x={[...x]} axisMode={props.axisMode} yFormat="money" legend height={props.height}
-      series={series}
-      markers={lifeStageMarkers(props.axisMode, props.birthYear, marks)}
-      title="Retirement Spending — Living + Net Healthcare, Today's $" />
-  );
-}
-
 /** Net healthcare cost over life: ACA premium after subsidy (pre-65) plus the
  * IRMAA surcharge (65+), with the subsidy shown alongside. Median path, today's
  * $. Empty (both ACA and IRMAA off) -> the caller shows a hint instead. */
@@ -1459,8 +1457,8 @@ const CONTRIB_LABELS: Record<string, string> = {
   taxable: "Brokerage", cash: "Cash",
 };
 const CONTRIB_COLORS: Record<string, string> = {
-  match: "#56d364", trad: "#d29922", roth: "#3fb950", hsa: "#bc8cff",
-  taxable: "#58a6ff", cash: "#8b949e",
+  match: FLOW_COLORS.match, trad: FLOW_COLORS.trad, roth: FLOW_COLORS.roth,
+  hsa: FLOW_COLORS.hsa, taxable: FLOW_COLORS.taxable, cash: FLOW_COLORS.cash,
 };
 
 /** Annual contributions by destination over time (stacked area, today's $) — the
@@ -1482,7 +1480,9 @@ export function ContributionsChart(props: {
     );
   const data: Data[] = present.map((k) => ({
     x: [...x], y: inv[k], type: "bar" as const, name: CONTRIB_LABELS[k] ?? k,
-    marker: { color: CONTRIB_COLORS[k] ?? "#8b949e" },
+    // Same hues as the account/pool charts, but softened to ~60% so the solid bars
+    // sit at the muted weight of those translucent area fills instead of glaring.
+    marker: { color: (CONTRIB_COLORS[k] ?? "#8b949e") + "99" },
     hovertemplate: "%{y:$,.0f}",
   }));
   const totals = [...x].map((_, i) =>

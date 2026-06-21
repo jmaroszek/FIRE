@@ -2,11 +2,11 @@ import React, { useState } from "react";
 import { A } from "../assumptions";
 import {
   ContributionsChart, FundingSourceChart, HealthcareCostChart,
-  RetirementSpendingChart, SpendingActualsChart,
+  SpendingActualsChart,
 } from "../components/charts";
 import TimelineEditor from "../components/TimelineEditor";
 import {
-  Collapsible, Field, HeroRow, HeroStat, InfoTip, NumberInput, PercentInput,
+  Field, HeroRow, HeroStat, InfoTip, MixPanel, NumberInput, PercentInput,
   Section, SectionNav, Stat, fmtMoney, fmtPct,
 } from "../components/ui";
 import { KIND_META, KIND_ORDER, displayKindOf, newEventOf, type DisplayKind } from "../events";
@@ -19,6 +19,10 @@ import type {
 function Head({ id, children }: { id: string; children: React.ReactNode }) {
   return <h2 className="group-title" id={id} style={{ scrollMarginTop: 96 }}>{children}</h2>;
 }
+
+/** Age ranges in the income/expense tables are inclusive on both endpoints. */
+const ageRangeTip =
+  "Both ends inclusive — 30–40 runs from the year you turn 30 through the year you turn 40 (11 years).";
 
 /** One editable row in the Life Events list. The crash/allocation branches stay
  * editable for existing events, but both are dropped from the add menu (better
@@ -132,6 +136,8 @@ export default function CashFlow() {
     [expense_streams[i], expense_streams[j]] = [expense_streams[j], expense_streams[i]];
     up({ expense_streams });
   };
+  const sortExpensesByAmount = () =>
+    up({ expense_streams: [...s.expense_streams].sort((a, b) => b.annual - a.annual) });
   const upMedical = (i: number, patch: Partial<ExpenseStream>) =>
     up({ medical_streams: (s.medical_streams ?? []).map((e, j) => (j === i ? { ...e, ...patch } : e)) });
   const upIncome = (i: number, patch: Partial<IncomeStream>) =>
@@ -151,6 +157,29 @@ export default function CashFlow() {
   const contribNow = result
     ? Object.values(result.investing_real ?? {}).reduce((sum, arr) => sum + (arr?.[0] ?? 0), 0) : 0;
   const savingsRate = grossIncomeNow > 0 ? contribNow / grossIncomeNow : 0;
+
+  // ---- gutter "mix" breakdowns beside the Income / Expenses tables (today's $) ---
+  const employerMatchNow = s.income.gross_salary * s.income.employer_match_pct;
+  // The income mix is only worth showing once there's more than one source to
+  // compare — salary alone (plus a sliver of match) is a pointless two-bar chart.
+  const hasSideIncome = (s.income_streams ?? [])
+    .some((i) => activeNow(i.start_age, i.end_age) && i.annual > 0);
+  const incomeMix = [
+    { label: "Primary Salary", value: s.income.gross_salary, color: "#58a6ff" },
+    ...(s.income_streams ?? [])
+      .filter((i) => activeNow(i.start_age, i.end_age))
+      .map((i) => ({ label: i.name || "Side Income", value: i.annual, color: "#58a6ff" })),
+    { label: "Employer Match", value: employerMatchNow, color: "#58a6ff" },
+  ];
+  // Spending-mix bars reflect spending ACTIVE AT THE CURRENT AGE, so a future-dated
+  // stream (e.g. a mortgage that starts at 40) doesn't draw a bar that distorts today's
+  // mix — it gets a "from age X" note instead. Sized/summed over the active subset.
+  const activeExpenses = s.expense_streams.filter((e) => activeNow(e.start_age, e.end_age));
+  const expMax = Math.max(0, ...activeExpenses.map((e) => e.annual));
+  const expTotal = activeExpenses.reduce((a, e) => a + e.annual, 0);
+  const expEssential = activeExpenses.filter((e) => e.essential).reduce((a, e) => a + e.annual, 0);
+  const upcomingExpenses = s.expense_streams
+    .filter((e) => e.annual > 0 && !activeNow(e.start_age, e.end_age)).length;
 
   const retIdx = result ? result.ages.findIndex((a) => a >= s.retirement_age) : -1;
   const netHc = result?.healthcare?.net_cost_real ?? [];
@@ -173,13 +202,15 @@ export default function CashFlow() {
   return (
     <div className="stack">
       <SectionNav items={[
-        { id: "cf-overview", label: "Overview" },
-        { id: "cf-retire", label: "Retirement" },
+        { id: "cf-earn", label: "Earning & Saving" },
+        { id: "cf-flow", label: "Cash Flow Over Time" },
+        { id: "cf-headroom", label: "Headroom & Resilience" },
+        { id: "cf-retire", label: "Spending In Retirement" },
         { id: "cf-health", label: "Healthcare" },
       ]} />
 
-      {/* ───────────── OVERVIEW ───────────── */}
-      <Head id="cf-overview">Overview</Head>
+      {/* ───────────── EARNING & SAVING ───────────── */}
+      <Head id="cf-earn">Earning &amp; Saving</Head>
       <HeroRow>
         <HeroStat label="Gross Income" value={`${fmtMoney(grossIncomeNow)}/yr`}
           sub={nStreams > 0 ? `salary + ${nStreams} other stream${nStreams > 1 ? "s" : ""}` : "primary salary"} />
@@ -190,7 +221,6 @@ export default function CashFlow() {
           info="This year's modeled contributions (all destinations) as a share of gross income." />
       </HeroRow>
 
-      <div className="group-grid">
       <Section title="Income"
         info="Salary in today's dollars; the primary salary stops at retirement unless a New Salary event sets another. Add other streams below for side income.">
         <div className="fields">
@@ -198,16 +228,19 @@ export default function CashFlow() {
             <NumberInput value={s.income.gross_salary} step={1000}
               onChange={(v) => up({ income: { ...s.income, gross_salary: v } })} />
           </Field>
-          <Field label="Annual Raise (Nominal)"
-            info="The raise number on your review letter (e.g. 3%). The engine subtracts expected inflation internally to get real growth.">
+          <Field label="Annual Raise"
+            info="Nominal — the raise number on your review letter (e.g. 3%). The engine subtracts expected inflation internally to get real growth.">
             <PercentInput value={s.income.real_growth} step={0.25}
               onChange={(v) => up({ income: { ...s.income, real_growth: v, growth_mode: "nominal" } })} />
           </Field>
-          <Field label="Employer Match (% Of Salary)">
+          <Field label="Employer Match"
+            info="Percent of your salary your employer adds to your 401(k), on top of your own contributions.">
             <PercentInput value={s.income.employer_match_pct} step={0.5}
               onChange={(v) => up({ income: { ...s.income, employer_match_pct: v } })} />
           </Field>
         </div>
+        <div className="card-split">
+          <div className="card-split-main">
         <div className="card-head" style={{ marginTop: 12 }}>
           <h3 style={{ fontSize: 13, margin: 0 }}>
             Other Income Streams
@@ -219,8 +252,8 @@ export default function CashFlow() {
           </button>
         </div>
         {(s.income_streams ?? []).length > 0 && (
-          <table className="table">
-            <thead><tr><th>Name</th><th>$ / Yr</th><th>Ages</th><th>Raise / Yr</th><th>Volatility</th><th /></tr></thead>
+          <table className="table fit">
+            <thead><tr><th>Name</th><th>$ / Yr</th><th>Ages<InfoTip text={ageRangeTip} /></th><th>Raise / Yr</th><th>Volatility</th><th /></tr></thead>
             <tbody>
               {(s.income_streams ?? []).map((inc, i) => (
                 <tr key={i}>
@@ -246,25 +279,35 @@ export default function CashFlow() {
             </tbody>
           </table>
         )}
+          </div>
+          {hasSideIncome && (
+            <MixPanel title="Income Mix" items={incomeMix}
+              footer={<>{fmtMoney(grossIncomeNow)}/yr gross · {fmtMoney(employerMatchNow)} employer match</>} />
+          )}
+        </div>
       </Section>
 
       <Section
         title="Expenses"
         info="Baseline living costs in today's dollars. Medical spending goes in its own section below; loan payments belong under Debt & Liabilities on the Accounts tab."
         actions={
-          <button className="ghost" onClick={() =>
-            up({ expense_streams: [...s.expense_streams, {
-              name: "New Stream", annual: 0, inflates: true, extra_inflation: 0,
-              is_medical: false, essential: false,
-            }] })}>+ Add Stream</button>
+          <span className="pair">
+            <button className="ghost" disabled={s.expense_streams.length < 2}
+              title="Reorder the streams largest-first (you can still nudge them with ↑ ↓ after)"
+              onClick={sortExpensesByAmount}>Sort By Amount</button>
+            <button className="ghost" onClick={() =>
+              up({ expense_streams: [...s.expense_streams, {
+                name: "New Stream", annual: 0, inflates: true, extra_inflation: 0,
+                is_medical: false, essential: false,
+              }] })}>+ Add Stream</button>
+          </span>
         }>
         <table className="table">
           <thead>
             <tr>
-              <th>Name</th><th>$ / Yr</th><th>Ages</th>
-              <th>CPI +<InfoTip text={A.cpiPlus} /></th>
-              <th>Inflates<InfoTip text={A.inflatesFlag} /></th>
-              <th>Essential<InfoTip text="Essential streams are exempt from guardrail spending cuts." /></th>
+              <th>Name</th><th>$ / Yr</th><th>Ages<InfoTip text={ageRangeTip} /></th>
+              <th className="essential-col">Essential<InfoTip text="Essential streams are exempt from guardrail spending cuts." /></th>
+              <th className="mixcol">Spending Mix<InfoTip text="Each stream's share of spending active at your current age, in the order you list them. Solid = essential, faded = discretionary." /></th>
               <th /><th />
             </tr>
           </thead>
@@ -280,12 +323,27 @@ export default function CashFlow() {
                   <NumberInput value={e.end_age ?? s.profile.horizon_age} step={1}
                     onChange={(v) => upStream(i, { end_age: v })} />
                 </td>
-                <td className="cpicell"><PercentInput value={e.extra_inflation} step={0.25}
-                  onChange={(v) => upStream(i, { extra_inflation: v })} /></td>
-                <td><input type="checkbox" checked={e.inflates}
-                  onChange={(ev) => upStream(i, { inflates: ev.target.checked })} /></td>
-                <td><input type="checkbox" checked={e.essential}
+                <td className="essential-col"><input type="checkbox" checked={e.essential}
                   onChange={(ev) => upStream(i, { essential: ev.target.checked })} /></td>
+                <td className="mixcell">
+                  {activeNow(e.start_age, e.end_age)
+                    ? e.annual > 0 && (
+                      <span className="mixbar-inline">
+                        <span className="mixbar-track">
+                          <span className="mixbar-fill" style={{
+                            width: `${expMax > 0 ? (e.annual / expMax) * 100 : 0}%`,
+                            background: "#58a6ff", opacity: e.essential ? 1 : 0.5 }} />
+                        </span>
+                        <span className="mixbar-val">{fmtPct(expTotal > 0 ? e.annual / expTotal : 0, 0)}</span>
+                      </span>
+                    )
+                    : e.annual > 0 && (
+                      <span className="mix-future">
+                        {(e.start_age ?? startAge) > startAge
+                          ? `from age ${e.start_age}` : `ended age ${e.end_age}`}
+                      </span>
+                    )}
+                </td>
                 <td>
                   <span className="pair">
                     <button className="ghost" disabled={i === 0} onClick={() => moveStream(i, -1)}>↑</button>
@@ -298,8 +356,13 @@ export default function CashFlow() {
             ))}
           </tbody>
         </table>
+        {expTotal > 0 && (
+          <div className="table-summary">
+            {fmtMoney(expTotal)}/yr active now · {fmtPct(expEssential / expTotal, 0)} essential
+            {upcomingExpenses > 0 && ` · ${upcomingExpenses} not active at age ${startAge}`}
+          </div>
+        )}
       </Section>
-      </div>
 
       <Section
         title="Life Events"
@@ -343,9 +406,23 @@ export default function CashFlow() {
         )}
       </Section>
 
-      <Section title="Lifestyle Creep"
-        info="Your recorded annual spending by category, converted to today's dollars using the assumed mean inflation, against the dashed line of what your plan budgets. Creep is the bars climbing past the line in real terms.">
-        {snapshots.some((sn) => sn.spending && Object.values(sn.spending).some((v) => v > 0)) ? (
+      {/* ───────────── CASH FLOW OVER TIME ───────────── */}
+      <Head id="cf-flow">Cash Flow Over Time</Head>
+      <Section title="Funding Sources — Work vs Accounts" info={A.withdrawalSource}>
+        {result ? <FundingSourceChart result={result} axisMode={axisMode} />
+          : <p className="hint">Simulation pending…</p>}
+      </Section>
+
+      <Section title="Annual Contributions" info={A.investing}>
+        {result ? <ContributionsChart result={result} axisMode={axisMode} />
+          : <p className="hint">Simulation pending…</p>}
+      </Section>
+
+      {/* Snapshot-driven, so the section only appears once a year has been recorded —
+          no empty stub on a fresh plan. */}
+      {snapshots.some((sn) => sn.spending && Object.values(sn.spending).some((v) => v > 0)) && (
+        <Section title="Lifestyle Creep"
+          info="Your recorded annual spending by category, converted to today's dollars using the assumed mean inflation, against the dashed line of what your plan budgets. Creep is the bars climbing past the line in real terms.">
           <SpendingActualsChart
             snapshots={snapshots}
             categories={categories}
@@ -354,14 +431,11 @@ export default function CashFlow() {
               .filter((e) => (e.start_age ?? 0) <= startAge && startAge <= (e.end_age ?? 999))
               .reduce((a, e) => a + e.annual, 0)}
           />
-        ) : (
-          <p className="hint">
-            No spending recorded yet. Use Record A Snapshot on the Accounts tab and fill the Annual
-            Spending section — once a year is enough to see the trend.
-          </p>
-        )}
-      </Section>
+        </Section>
+      )}
 
+      {/* ───────────── HEADROOM & RESILIENCE ───────────── */}
+      <Head id="cf-headroom">Headroom &amp; Resilience</Head>
       <div className="group-grid">
       <Section title="Income Shock Stress Test" info={A.stressTest}>
         <div className="fields">
@@ -411,18 +485,8 @@ export default function CashFlow() {
       </Section>
       </div>
 
-      <Section title="Funding Sources — Work vs Accounts" info={A.withdrawalSource}>
-        {result ? <FundingSourceChart result={result} axisMode={axisMode} />
-          : <p className="hint">Simulation pending…</p>}
-      </Section>
-
-      <Section title="Annual Contributions" info={A.investing}>
-        {result ? <ContributionsChart result={result} axisMode={axisMode} />
-          : <p className="hint">Simulation pending…</p>}
-      </Section>
-
-      {/* ───────────── RETIREMENT ───────────── */}
-      <Head id="cf-retire">Retirement</Head>
+      {/* ───────────── SPENDING IN RETIREMENT ───────────── */}
+      <Head id="cf-retire">Spending In Retirement</Head>
       <HeroRow>
         <HeroStat label="Annual Retirement Spend" value={`${fmtMoney(annualRetSpend)}/yr`}
           sub={`living + net healthcare at age ${s.retirement_age}`} />
@@ -432,16 +496,8 @@ export default function CashFlow() {
         <HeroStat tone="amber" label="Lifetime Retirement Spending" value={fmtMoney(lifetimeRetSpend)}
           sub={`age ${s.retirement_age}–${s.profile.horizon_age}, today's $`} />
       </HeroRow>
-      <Section title="Retirement Spending"
-        info="What a year in retirement costs on the median path: living expenses plus net healthcare (ACA premium after subsidy, then IRMAA at 65+).">
-        {result ? (
-          <RetirementSpendingChart result={result} axisMode={axisMode}
-            retirementAge={s.retirement_age} coverageEndAge={s.aca.coverage_end_age}
-            birthYear={s.profile.birth_year} />
-        ) : <p className="hint">Simulation pending…</p>}
-      </Section>
 
-      <Collapsible title="Social Security" info={A.ss}>
+      <Section title="Social Security" info={A.ss}>
         <div className="fields">
           <Field label="Monthly Benefit At FRA (Today's $)">
             <NumberInput value={s.social_security.monthly_at_fra} step={100}
@@ -466,9 +522,9 @@ export default function CashFlow() {
           Benefit is income; how it's taxed (the provisional-income "torpedo") is on the Taxes tab.{" "}
           <a className="ext" href="https://www.ssa.gov/myaccount/" target="_blank" rel="noreferrer">Estimate your benefit at ssa.gov ↗</a>
         </p>
-      </Collapsible>
+      </Section>
 
-      <Collapsible title="Spending Strategy" info={A.spendingStrategy} defaultOpen>
+      <Section title="Spending Strategy" info={A.spendingStrategy}>
         <div className="fields">
           <Field label="Strategy"
             info="How much to spend each retirement year — separate from the Withdrawal Policy (on Accounts), which only chooses which account to tap.">
@@ -535,7 +591,7 @@ export default function CashFlow() {
         ) : (
           <p className="hint">This portfolio-percentage strategy replaces the guardrails: discretionary spending tracks your balance each year (essentials always funded first).</p>
         )}
-      </Collapsible>
+      </Section>
 
       {/* ───────────── HEALTHCARE ───────────── */}
       <Head id="cf-health">Healthcare</Head>
@@ -562,9 +618,9 @@ export default function CashFlow() {
             }] })}>+ Add Medical</button>
         }>
         {(s.medical_streams ?? []).length > 0 ? (
-          <table className="table">
+          <table className="table fit">
             <thead>
-              <tr><th>Name</th><th>$ / Yr</th><th>Ages</th>
+              <tr><th>Name</th><th>$ / Yr</th><th>Ages<InfoTip text={ageRangeTip} /></th>
                 <th>CPI +<InfoTip text={A.cpiPlus} /></th><th /></tr>
             </thead>
             <tbody>
@@ -592,7 +648,7 @@ export default function CashFlow() {
         )}
       </Section>
 
-      <Collapsible title="ACA Premium Subsidy (Pre-65)" info={A.aca}>
+      <Section title="ACA Premium Subsidy (Pre-65)" info={A.aca} className="span1">
         <div className="fields">
           <Field label="Enabled">
             <input type="checkbox" checked={s.aca.enabled}
@@ -614,7 +670,7 @@ export default function CashFlow() {
           </Field>
         </div>
         <p className="hint">Models the post-2021 subsidy (caps at 8.5% of MAGI, no income cliff). Roth conversions raise MAGI and shrink the subsidy — the collision the Accounts tab's subsidy-vs-conversion view surfaces. Don't also list this premium as an expense stream.</p>
-      </Collapsible>
+      </Section>
       </div>
 
       <Section title="Net Healthcare Cost" info={A.healthcareTrajectory}>

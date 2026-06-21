@@ -215,3 +215,40 @@ export function ProgressBar({ fraction }: { fraction: number }) {
     </div>
   );
 }
+
+/** A compact horizontal-bar breakdown for a card's right gutter — turns the table
+ * beside it into a "where it goes / comes from" view. Bars scale to the largest
+ * value (so the biggest fills the track); the readout shows each item's share of
+ * the total. Zero-value items are dropped; `muted` fades a bar (e.g. discretionary
+ * vs essential spending). Renders nothing if no item has a positive value. */
+export function MixPanel(props: {
+  title: string;
+  items: { label: string; value: number; color?: string; muted?: boolean }[];
+  footer?: React.ReactNode;
+}) {
+  const items = props.items.filter((i) => i.value > 0).sort((a, b) => b.value - a.value);
+  if (!items.length) return null;
+  const max = Math.max(...items.map((i) => i.value));
+  const total = items.reduce((s, i) => s + i.value, 0);
+  return (
+    <div className="mixpanel">
+      <div className="mixpanel-title">{props.title}</div>
+      {items.map((it, k) => (
+        <div className="mixrow" key={k}>
+          <div className="mixrow-head">
+            <span className="mixrow-label" title={it.label}>{it.label}</span>
+            <span className="mixrow-val">{fmtMoney(it.value)} · {fmtPct(it.value / total, 0)}</span>
+          </div>
+          <div className="mixbar-track">
+            <div className="mixbar-fill" style={{
+              width: `${(it.value / max) * 100}%`,
+              background: it.color ?? "var(--accent)",
+              opacity: it.muted ? 0.5 : 1,
+            }} />
+          </div>
+        </div>
+      ))}
+      {props.footer && <div className="mixpanel-foot">{props.footer}</div>}
+    </div>
+  );
+}

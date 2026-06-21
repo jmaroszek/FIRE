@@ -9,6 +9,20 @@ import type {
 export type Tab =
   | "assumptions" | "cashflow" | "accounts" | "taxes" | "freedom" | "compare" | "settings";
 
+/** Every living expense is subject to inflation — the per-stream Inflates / CPI+
+ * controls were removed from the UI, so we enforce the invariant here at the single
+ * chokepoint where any scenario enters state (fresh, loaded, or edited). This keeps
+ * old saved scenarios and engine requests consistent without surfacing the fields.
+ * (Medical streams keep their own CPI+ control, so they're left untouched.) */
+function normalizeScenario(s: Scenario): Scenario {
+  if (!s.expense_streams?.some((e) => !e.inflates || e.extra_inflation)) return s;
+  return {
+    ...s,
+    expense_streams: s.expense_streams.map((e) =>
+      e.inflates && !e.extra_inflation ? e : { ...e, inflates: true, extra_inflation: 0 }),
+  };
+}
+
 export interface CompareSlot {
   name: string;
   scenario: Scenario;
@@ -189,11 +203,13 @@ export const useStore = create<AppState>((set, get) => {
           ? await api.loadScenario(names[0])
           : await api.defaults();
       }
-      set({ savedScenarios: names, snapshots, categories, scenario, savedAs: "", dirty: false });
+      set({ savedScenarios: names, snapshots, categories,
+            scenario: normalizeScenario(scenario), savedAs: "", dirty: false });
       scheduleSimulate();
     },
 
     setScenario: (scenario) => {
+      scenario = normalizeScenario(scenario);
       const prev = get().scenario;
       if (!prev || sweepKey(prev) !== sweepKey(scenario)) sweepInvalidated = true;
       set({ scenario, dirty: true });
@@ -339,7 +355,7 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     load: async (name) => {
-      const scenario = await api.loadScenario(name);
+      const scenario = normalizeScenario(await api.loadScenario(name));
       set({ scenario, savedAs: name, dirty: false, result: null, sweep: null, freedom: null });
       scheduleSimulate();
       void api.saveWorkspace(scenario).catch(() => {});
