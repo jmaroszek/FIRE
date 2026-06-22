@@ -54,6 +54,8 @@ export interface IncomeStream {
   real_growth: number;
   growth_mode: "nominal" | "real";
   vol: number;
+  /** Own FICA/SE-taxed wages — counts toward the Social Security record. */
+  ss_covered?: boolean;
 }
 
 export interface ExpenseStream {
@@ -128,6 +130,12 @@ export interface ConversionRule {
 
 export interface SocialSecurity {
   monthly_at_fra: number; claiming_age: number; haircut: number;
+  /** "manual" = use monthly_at_fra (ssa.gov figure); "estimated" = derive it
+   * from the plan's covered-earnings history. */
+  benefit_mode?: "manual" | "estimated";
+  work_start_age?: number | null;   // first year of covered earnings (estimated)
+  prior_avg_earnings?: number;       // today's $, flat fill before plan start
+  recorded_earnings?: Record<number, number>;  // age -> today's $ (from snapshots)
 }
 
 export interface HSARule {
@@ -300,6 +308,8 @@ export interface SimulateResult {
   // lifetime tax / income / inflation surfacing (ride every /simulate)
   ss_income_median_real: number[];
   wages_median_real: number[];
+  /** PIA (monthly at FRA, today's $) estimated from the plan's covered earnings. */
+  ss_estimated_monthly_at_fra: number;
   rmds_median_real: number[];
   marginal_rate_median: number[];
   effective_rate_median: number[];
@@ -420,6 +430,8 @@ export interface Snapshot {
   balances: Record<string, number>;
   /** annual spending by category slug, nominal $ at the snapshot date */
   spending?: Record<string, number>;
+  /** Social-Security-covered earnings that year, nominal $ at the snapshot date. */
+  earnings?: number;
   /** outstanding loan balances by liability name */
   liabilities?: Record<string, number>;
   note?: string;

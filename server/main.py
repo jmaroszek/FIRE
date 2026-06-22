@@ -313,6 +313,8 @@ class Snapshot(BaseModel):
     spending: dict[str, float] = Field(default_factory=dict)
     # outstanding loan balances by liability name
     liabilities: dict[str, float] = Field(default_factory=dict)
+    # Social-Security-covered earnings that year, nominal $ at the snapshot date
+    earnings: float = 0.0
     note: str = ""
 
 

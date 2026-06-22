@@ -23,6 +23,25 @@ function normalizeScenario(s: Scenario): Scenario {
   };
 }
 
+/** In estimated-SS mode, fold any snapshots that recorded covered earnings into
+ * social_security.recorded_earnings (age -> today's $). Done at request time so
+ * the stored scenario stays clean and the map can't go stale against snapshots.
+ * Past nominal earnings are grown to today's dollars by the assumed mean inflation,
+ * mirroring the Lifestyle Creep chart's deflation. */
+function withRecordedEarnings(s: Scenario, snapshots: Snapshot[]): Scenario {
+  if (s.social_security?.benefit_mode !== "estimated") return s;
+  const nowYear = new Date().getFullYear();
+  const infl = s.inflation.mean;
+  const recorded: Record<number, number> = {};
+  for (const snap of snapshots) {
+    if (!snap.earnings || snap.earnings <= 0) continue;
+    const snapYear = new Date(snap.date).getFullYear();
+    const age = snapYear - s.profile.birth_year;
+    recorded[age] = snap.earnings * Math.pow(1 + infl, nowYear - snapYear);
+  }
+  return { ...s, social_security: { ...s.social_security, recorded_earnings: recorded } };
+}
+
 export interface CompareSlot {
   name: string;
   scenario: Scenario;
@@ -122,7 +141,7 @@ export const useStore = create<AppState>((set, get) => {
       const seq = ++simSeq;
       set({ simulating: true });
       try {
-        const result = await api.simulate(scenario);
+        const result = await api.simulate(withRecordedEarnings(scenario, get().snapshots));
         if (seq === simSeq) {
           // Freedom is stale-while-revalidate: keep the prior bundle visible and
           // recompute it in the background, so the Freedom tab's Coast/FIRE

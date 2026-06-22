@@ -38,7 +38,7 @@ export const A = {
   ladder:
     "Conversions are ordinary income in the conversion year and become penalty-free after 5 calendar years (or at 59½, whichever comes first). 'Fill to bracket' tops up ordinary income to the chosen bracket each year — net of RMDs and the taxable part of Social Security. It's a lifetime tool: before 59½ it builds the penalty-free bridge; after, it keeps draining traditional cheaply to shrink RMDs at 75.",
   ss:
-    "Enter your ssa.gov estimate at full retirement age (67). Caution: that estimate assumes you keep earning until claiming — early retirement makes the real number lower. Use the haircut to absorb both trust-fund risk and that gap.",
+    "Two ways to set your benefit. 'From ssa.gov statement': enter the estimate at full retirement age (67) — but note it assumes you keep earning until you claim, so early retirement makes the real number lower. 'Estimate from my income': the app derives it from your plan's 35 highest earning years (covered wages, capped each year), counting the $0 years after you retire — the early-retiree correction the statement omits. Either way, the haircut models trust-fund risk and the claiming age (62–70) scales the benefit.",
   hsa:
     "Utilization = the share of medical expenses paid from the HSA each year (tax-free). At 65+, non-medical HSA withdrawals are penalty-free ordinary income, like a traditional IRA.",
   fireSimple:

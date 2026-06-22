@@ -985,6 +985,7 @@ def summarize(result: SimResult) -> dict:
         "sequence_scatter": sequence_scatter(result),
         "success_ci": success_ci(result),
         "healthcare": healthcare_medians_real(result),
+        "ss_estimated_monthly_at_fra": result.ss_estimated_monthly_at_fra,
         "ages": result.ages.tolist(),
         "years": result.years.tolist(),
         "sweep": sweep,

@@ -128,6 +128,10 @@ class IncomeStream(BaseModel):
     real_growth: float = 0.0
     growth_mode: Literal["nominal", "real"] = "nominal"
     vol: float = 0.0  # per-path lognormal volatility of this stream's annual income
+    # True only for the filer's own FICA/SE-taxed wages (a bonus, consulting,
+    # self-employment) — counts toward the Social Security earnings record.
+    # Leave False for portfolio income, rent, pensions, or a spouse's wages.
+    ss_covered: bool = False
 
     def effective_real_growth(self, mean_inflation: float) -> float:
         if self.growth_mode == "nominal":
@@ -325,9 +329,20 @@ class ConversionRule(BaseModel):
 
 
 class SocialSecurity(BaseModel):
-    monthly_at_fra: float = 0.0  # today's dollars, from ssa.gov statement
+    # "manual": monthly_at_fra is the user's ssa.gov figure. "estimated": the
+    # engine derives monthly_at_fra from the plan's covered-earnings history
+    # (see social_security.py), so the post-retirement $0 years are counted —
+    # the correction an ssa.gov projection (work-until-FRA) omits.
+    benefit_mode: Literal["manual", "estimated"] = "manual"
+    monthly_at_fra: float = 0.0  # today's dollars, from ssa.gov statement (manual mode)
     claiming_age: int = 67
     haircut: float = 1.0  # 1.0 / 0.75 / 0.50 / 0.25 / 0.0
+    # Estimated mode — your work history before the plan's start age:
+    work_start_age: Optional[int] = None  # first year of covered earnings
+    prior_avg_earnings: float = 0.0  # today's $, flat fill for work_start_age..start
+    # Recorded actuals (age -> today's $ covered earnings), e.g. from snapshots;
+    # override the prior-history fill for the ages they cover.
+    recorded_earnings: dict[int, float] = Field(default_factory=dict)
 
 
 # PIA adjustment by claiming age, FRA=67 (born 1960+).

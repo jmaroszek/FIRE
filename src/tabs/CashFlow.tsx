@@ -302,7 +302,7 @@ export default function CashFlow() {
         </div>
         {(s.income_streams ?? []).length > 0 && (
           <table className="table fit">
-            <thead><tr><th>Name</th><th>$ / Yr</th><th>Ages<InfoTip text={ageRangeTip} /></th><th>Raise / Yr</th><th>Volatility</th><th /></tr></thead>
+            <thead><tr><th>Name</th><th>$ / Yr</th><th>Ages<InfoTip text={ageRangeTip} /></th><th>Raise / Yr</th><th>Volatility</th><th>SS Wages<InfoTip text="Check if this is your own FICA/self-employment-taxed income (a bonus, consulting, a side business) — it then counts toward your Social Security earnings record. Leave off for rental, dividends, pensions, or a spouse's wages." /></th><th /></tr></thead>
             <tbody>
               {(s.income_streams ?? []).map((inc, i) => (
                 <tr key={i}>
@@ -321,6 +321,8 @@ export default function CashFlow() {
                     onChange={(v) => upIncome(i, { real_growth: v, growth_mode: "nominal" })} /></td>
                   <td className="cpicell"><PercentInput value={inc.vol} step={1}
                     onChange={(v) => upIncome(i, { vol: v })} /></td>
+                  <td style={{ textAlign: "center" }}><input type="checkbox" checked={inc.ss_covered ?? false}
+                    onChange={(e) => upIncome(i, { ss_covered: e.target.checked })} /></td>
                   <td><button className="ghost" onClick={() =>
                     up({ income_streams: (s.income_streams ?? []).filter((_, j) => j !== i) })}>✕</button></td>
                 </tr>
@@ -557,20 +559,55 @@ export default function CashFlow() {
       </HeroRow>
 
       <Section title="Social Security" info={A.ss}>
+        {(() => {
+          const ss = s.social_security;
+          const estimated = ss.benefit_mode === "estimated";
+          const estMonthly = result?.ss_estimated_monthly_at_fra ?? 0;
+          const baseMonthly = estimated ? estMonthly : ss.monthly_at_fra;
+          return (
         <div className="ss-body">
           <div className="ss-controls">
+            <div className="ss-mode">
+              <button className={estimated ? "" : "active"}
+                onClick={() => up({ social_security: { ...ss, benefit_mode: "manual" } })}>
+                From ssa.gov Statement
+              </button>
+              <button className={estimated ? "active" : ""}
+                onClick={() => up({ social_security: { ...ss, benefit_mode: "estimated" } })}>
+                Estimate From My Income
+              </button>
+            </div>
             <div className="fields">
-              <Field label="Monthly Benefit At FRA (Today's $)">
-                <NumberInput value={s.social_security.monthly_at_fra} step={100}
-                  onChange={(v) => up({ social_security: { ...s.social_security, monthly_at_fra: v } })} />
-              </Field>
+              {estimated ? (
+                <>
+                  <Field label="Estimated Monthly At FRA (Today's $)"
+                    info="Derived from your plan: your 35 highest earning years (covered wages, capped at the Social Security max each year), including the $0 years after you retire.">
+                    <div className="readout">{result ? fmtMoney(estMonthly) : "…"}</div>
+                  </Field>
+                  <Field label="Started Working At Age"
+                    info="First year you had Social-Security-covered wages. Years between here and your plan's start age are filled with the average below (unless a snapshot recorded that year).">
+                    <NumberInput value={ss.work_start_age ?? 22} step={1} min={14} max={startAge}
+                      onChange={(v) => up({ social_security: { ...ss, work_start_age: v } })} />
+                  </Field>
+                  <Field label="Avg Earnings Before Plan (Today's $)"
+                    info="Your typical covered wages in those pre-plan years, in today's dollars. Recorded snapshot earnings override this for any year you've logged.">
+                    <NumberInput value={ss.prior_avg_earnings ?? 0} step={5000} min={0}
+                      onChange={(v) => up({ social_security: { ...ss, prior_avg_earnings: v } })} />
+                  </Field>
+                </>
+              ) : (
+                <Field label="Monthly Benefit At FRA (Today's $)">
+                  <NumberInput value={ss.monthly_at_fra} step={100}
+                    onChange={(v) => up({ social_security: { ...ss, monthly_at_fra: v } })} />
+                </Field>
+              )}
               <Field label="Claiming Age (62–70)">
-                <NumberInput value={s.social_security.claiming_age} step={1} min={62} max={70}
-                  onChange={(v) => up({ social_security: { ...s.social_security, claiming_age: v } })} />
+                <NumberInput value={ss.claiming_age} step={1} min={62} max={70}
+                  onChange={(v) => up({ social_security: { ...ss, claiming_age: v } })} />
               </Field>
               <Field label="Haircut (Trust-Fund Scenario)">
-                <select value={String(s.social_security.haircut)}
-                  onChange={(e) => up({ social_security: { ...s.social_security, haircut: parseFloat(e.target.value) } })}>
+                <select value={String(ss.haircut)}
+                  onChange={(e) => up({ social_security: { ...ss, haircut: parseFloat(e.target.value) } })}>
                   <option value="1">100% Of Projected</option>
                   <option value="0.75">75%</option>
                   <option value="0.5">50%</option>
@@ -580,7 +617,9 @@ export default function CashFlow() {
               </Field>
             </div>
             <p className="hint">
-              Find your estimate at full retirement age on your ssa.gov statement.
+              {estimated
+                ? "Your benefit averages your 35 highest earning years — including the $0 years after you retire, which an ssa.gov projection (it assumes you work until FRA) leaves out. That's why this runs lower."
+                : "Find your estimate at full retirement age on your ssa.gov statement."}
             </p>
           </div>
           <table className="table fit ss-mini">
@@ -589,7 +628,7 @@ export default function CashFlow() {
             </thead>
             <tbody>
               {SS_KEY_CLAIM_AGES.map(({ age, factor, note }) => {
-                const monthly = s.social_security.monthly_at_fra * factor;
+                const monthly = baseMonthly * factor;
                 const years = Math.max(0, s.profile.horizon_age - age);
                 return (
                   <tr key={age}>
@@ -605,6 +644,8 @@ export default function CashFlow() {
             </tbody>
           </table>
         </div>
+          );
+        })()}
       </Section>
 
       <Section title="Spending Strategy" info={A.spendingStrategy}>

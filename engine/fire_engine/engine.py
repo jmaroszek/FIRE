@@ -32,6 +32,7 @@ from .accounts import (
     plan_withdrawals,
 )
 from .sampling import MarketPaths, sample_paths
+from .social_security import estimate_pia
 from .scenario import (
     AccountType,
     Allocation,
@@ -148,6 +149,9 @@ class SimResult:
     gross_income: np.ndarray | None = None  # (P, T) nominal gross income (effective-rate denominator)
     wages: np.ndarray | None = None  # (P, T) nominal active work income (salary + secondary streams)
     legacy_met: np.ndarray | None = None  # (P,) bool: ended with >= the legacy floor (real)
+    # PIA (monthly benefit at FRA, today's $) estimated from the plan's covered
+    # earnings — what the UI shows for the "estimate from my income" mode.
+    ss_estimated_monthly_at_fra: float = 0.0
 
     @property
     def success_rate(self) -> float:
@@ -454,7 +458,13 @@ def run(
 
     ss = scenario.social_security
     ss_factor = SS_CLAIMING_FACTORS.get(ss.claiming_age, 1.0)
-    ss_annual_real = ss.monthly_at_fra * 12 * ss_factor * ss.haircut
+    # Estimate the PIA from the plan's covered-earnings history (counts the
+    # post-retirement $0 years an ssa.gov projection omits). Computed always so
+    # the UI can show it alongside the manual figure; only *used* in estimated
+    # mode. `regimes` already carries the real salary path with any overrides.
+    ss_estimated_monthly = estimate_pia(scenario, [r.salary_real for r in regimes])
+    ss_monthly = ss_estimated_monthly if ss.benefit_mode == "estimated" else ss.monthly_at_fra
+    ss_annual_real = ss_monthly * 12 * ss_factor * ss.haircut
 
     policy = scenario.withdrawal_policy
     div_yield = scenario.market.dividend_yield
@@ -862,6 +872,7 @@ def run(
         gross_income=gross_income_out,
         wages=wages_out,
         legacy_met=legacy_met,
+        ss_estimated_monthly_at_fra=ss_estimated_monthly,
     )
 
 
