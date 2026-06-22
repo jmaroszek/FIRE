@@ -1385,6 +1385,54 @@ export function SpendingDepthChart(props: {
   );
 }
 
+/** Compact in-tile preview for the Spending Strategy picker: the dollar lifestyle
+ * the chosen strategy actually funds over time — median realized spending (today's $)
+ * with a downside band (the 1-in-4 bad case, p25, up to the median). The p25 is the
+ * planning-relevant downside — the bad-but-not-tail year you should expect to weather
+ * — rather than the rarer 10th-percentile shock. Before retirement everyone spends to
+ * plan, so the band only opens up once the strategy starts flexing, which is exactly
+ * the contrast between strategies you want to see. The full percentile deep-dive
+ * (framed as % of plan) lives in the Freedom tab's Realized Spending chart; this is
+ * the at-a-glance companion to the dropdown. */
+export function SpendingPreviewChart(props: {
+  result: SimulateResult; axisMode: "age" | "year";
+  retirementAge: number; birthYear?: number; height?: number;
+}) {
+  const fan = props.result.expenses_fan_real;
+  if (!fan || !fan.p50) return null;
+  const x = props.axisMode === "age" ? [...props.result.ages] : [...props.result.years];
+  const markers = lifeStageMarkers(props.axisMode, props.birthYear,
+    [{ age: props.retirementAge, label: "Retire", color: "#d29922" }]);
+  const data: Data[] = [
+    // faint shading of the downside zone (1-in-4 bad case, p25, up to the median)
+    { x, y: fan.p25, type: "scatter", mode: "lines", line: { width: 0 },
+      hoverinfo: "skip", showlegend: false },
+    { x, y: fan.p50, type: "scatter", mode: "lines", fill: "tonexty",
+      fillcolor: ACCENT + "12", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
+    { x, y: fan.p25, type: "scatter", mode: "lines", name: "Worst 25%",
+      line: { color: "#ff7b72", width: 1.5, dash: "dash" },
+      hovertemplate: "Worst 25%: %{y:$,.0f}<extra></extra>" },
+    { x, y: fan.p50, type: "scatter", mode: "lines", name: "Median",
+      line: { color: ACCENT, width: 2 },
+      hovertemplate: "Median: %{y:$,.0f}<extra></extra>" },
+  ];
+  return (
+    <Plot
+      data={data}
+      layout={{
+        ...baseLayout, height: props.height ?? 200, hovermode: "x unified",
+        showlegend: false, margin: { l: 58, r: 16, t: 18, b: 36 },
+        shapes: markers.shapes, annotations: markers.annotations as Layout["annotations"],
+        yaxis: { ...baseLayout.yaxis, tickformat: "$.2~s", rangemode: "tozero" },
+        xaxis: { ...baseLayout.xaxis,
+          title: { text: props.axisMode === "age" ? "Age" : "Year" } },
+      }}
+      config={config}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
 // ---- Phase 2C composites (merge several scattered charts into one) --------
 
 /** Net healthcare cost over life: ACA premium after subsidy (pre-65) plus the

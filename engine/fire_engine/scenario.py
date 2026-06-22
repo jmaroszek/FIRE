@@ -13,7 +13,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-SCHEMA_VERSION = 4  # v4: recurring_flow events (lumpy periodic costs)
+SCHEMA_VERSION = 5  # v5: spending strategy consolidated to constant_dollar + percent_portfolio
 
 
 class AccountType(str, Enum):
@@ -206,24 +206,52 @@ class SpendingStrategy(BaseModel):
     """How much to spend each retirement year — distinct from the Withdrawal
     Policy (which only chooses *which account* to tap).
 
+    Two anchors:
     - `constant_dollar` (default): fund the plan's expense streams, optionally
-      flexed by the Guyton-Klinger guardrails. Preserves the original behavior.
-    - `constant_pct`: discretionary spending = `rate` × current portfolio, so it
-      self-corrects with the market and never depletes to zero (at the cost of
-      income variability).
-    - `vpw`: like constant_pct but the rate rises with age via an annuity payout
-      factor (assumes `vpw_real_return`), deliberately drawing the balance down.
-    - `floor_ceiling`: constant_pct bounded to [floor_mult, ceiling_mult] × the
-      plan's discretionary amount, trading some self-correction for a stable floor.
+      flexed by the Guyton-Klinger guardrails. Anchored to your dollar plan.
+    - `percent_portfolio`: discretionary spending = `rate` × your penalty-free
+      accessible wealth, essentials first. Anchored to your balance, so it
+      self-corrects with the market and never depletes to zero. Toggles:
+        * `rate_mode="fixed"` holds `rate` flat; `"vpw"` lets it rise with age
+          via an annuity payout factor (assumes `vpw_real_return`), deliberately
+          drawing the balance toward zero by the horizon.
+        * `bounded` clips discretionary to [floor_mult, ceiling_mult] × the plan's
+          discretionary amount — a stable floor and an upside cap.
+        * `smoothing` (0..1) blends this year's portfolio-driven target with last
+          year's realized spend (endowment/Yale rule), damping year-to-year swings.
 
-    In every portfolio-% mode, essentials (medical + loan payments) are funded
-    first; a path still fails if the portfolio can't cover them.
+    The percentage is taken on *accessible* (penalty-free) wealth, not total net
+    worth, so before 59.5 it won't propose spending the trad/Roth-growth balances
+    locked behind the early-withdrawal penalty. Essentials are funded first; a
+    path still fails if accessible wealth can't cover them.
+
+    Legacy `constant_pct` / `vpw` / `floor_ceiling` scenarios migrate to
+    `percent_portfolio` (see `_migrate`).
     """
-    kind: Literal["constant_dollar", "constant_pct", "vpw", "floor_ceiling"] = "constant_dollar"
-    rate: float = 0.04             # constant_pct / floor_ceiling: share of current portfolio
+    kind: Literal["constant_dollar", "percent_portfolio"] = "constant_dollar"
+    rate_mode: Literal["fixed", "vpw"] = "fixed"
+    rate: float = 0.04             # fixed: share of accessible wealth spent each year
     vpw_real_return: float = 0.03  # vpw: assumed real return in the annuity payout factor
-    floor_mult: float = 0.75       # floor_ceiling: min fraction of plan discretionary
-    ceiling_mult: float = 1.25     # floor_ceiling: max fraction of plan discretionary
+    bounded: bool = True           # clip discretionary to [floor_mult, ceiling_mult] × plan
+    floor_mult: float = 0.75       # min fraction of plan discretionary (when bounded)
+    ceiling_mult: float = 1.25     # max fraction of plan discretionary (when bounded)
+    smoothing: float = 0.0         # 0..1 weight on last year's spend (endowment smoothing)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate(cls, data):
+        """Fold the old four-kind enum into the two-kind model. constant_pct and
+        vpw were unbounded; floor_ceiling carried the bounds — preserved here so
+        existing scenarios reproduce their prior behavior."""
+        if not isinstance(data, dict):
+            return data
+        legacy = data.get("kind")
+        if legacy in ("constant_pct", "vpw", "floor_ceiling"):
+            data = dict(data)
+            data["kind"] = "percent_portfolio"
+            data["rate_mode"] = "vpw" if legacy == "vpw" else "fixed"
+            data["bounded"] = legacy == "floor_ceiling"
+        return data
 
 
 class WaterfallStep(BaseModel):

@@ -566,6 +566,30 @@ def spending_mult_fan(result: SimResult,
             for p in percentiles}
 
 
+def funded_expenses_real(result: SimResult) -> np.ndarray:
+    """Realized spending each path actually FUNDS, in real (today's) dollars. Equal
+    to the budgeted expense less any unfunded shortfall (the spending a path couldn't
+    withdraw enough to cover), so on paths that run dry the line drops instead of
+    promising a budget that can't be paid. Liquidity-honest: the percent-of-portfolio
+    strategies budget off accessible wealth, so pre-59.5 this won't overstate what
+    the locked balances could fund."""
+    budget = result.expenses
+    if result.shortfall is not None:
+        budget = np.maximum(budget - result.shortfall, 0.0)
+    return budget / _flow_deflator(result)
+
+
+def expenses_fan_real(result: SimResult,
+                      percentiles=(10, 25, 50)) -> dict[str, list[float]]:
+    """Percentile fan of realized funded spending in real (today's) dollars over
+    time. Unlike spending_mult_fan (which is the discretionary multiplier vs plan),
+    this is the actual dollar lifestyle each path funds — essentials are already
+    baked in, so the low percentiles show how far spending can dip. Powers the
+    in-tile Spending Strategy preview (median line + downside band)."""
+    real = funded_expenses_real(result)
+    return {f"p{p}": np.percentile(real, p, axis=0).tolist() for p in percentiles}
+
+
 def lifetime_tax(result: SimResult) -> dict:
     """Median lifetime real tax for the current plan, as a share of lifetime
     delivered spending, and as an effective rate on lifetime income — the headline
@@ -961,9 +985,10 @@ def summarize(result: SimResult) -> dict:
         "taxes_median_real": np.median(
             result.taxes_paid / _flow_deflator(result), axis=0).tolist(),
         "expenses_median_real": np.median(
-            result.expenses / _flow_deflator(result), axis=0).tolist(),
+            funded_expenses_real(result), axis=0).tolist(),
         "spending_mult_median": np.median(result.spending_mult, axis=0).tolist(),
         "spending_mult_fan": spending_mult_fan(result),
+        "expenses_fan_real": expenses_fan_real(result),
         "ss_income_median_real": ss_income_median_real(result),
         "wages_median_real": wages_median_real(result),
         "marginal_rate_median": marginal_rate_median(result),

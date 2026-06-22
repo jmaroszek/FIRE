@@ -262,9 +262,9 @@ export default function Freedom() {
             <Section title="Realized Spending" info={A.spendingDepth}>
               <SpendingDepthChart result={result} axisMode={axisMode} retirementAge={s.retirement_age}
                 enabled={s.spending_strategy.kind !== "constant_dollar" || s.guardrails.enabled}
-                floor={s.spending_strategy.kind === "floor_ceiling" ? s.spending_strategy.floor_mult
+                floor={s.spending_strategy.kind === "percent_portfolio" && s.spending_strategy.bounded ? s.spending_strategy.floor_mult
                   : s.spending_strategy.kind === "constant_dollar" ? s.guardrails.floor_mult : 0}
-                cap={s.spending_strategy.kind === "floor_ceiling" ? s.spending_strategy.ceiling_mult
+                cap={s.spending_strategy.kind === "percent_portfolio" && s.spending_strategy.bounded ? s.spending_strategy.ceiling_mult
                   : s.spending_strategy.kind === "constant_dollar" ? s.guardrails.cap_mult : 0}
                 birthYear={s.profile.birth_year} />
             </Section>

@@ -133,11 +133,11 @@ def _pct_strategy_scenario(balance: float, annual: float, essential: bool,
     )
 
 
-def test_constant_pct_spends_fixed_fraction_and_never_depletes():
+def test_percent_portfolio_spends_fixed_fraction_and_never_depletes():
     s = _pct_strategy_scenario(1_000_000, 50000, False,
-                               SpendingStrategy(kind="constant_pct", rate=0.04))
+                               SpendingStrategy(kind="percent_portfolio", rate=0.04, bounded=False))
     r = run(s)
-    assert r.expenses[0, 0] == pytest.approx(40000, rel=1e-3)     # 4% of 1M
+    assert r.expenses[0, 0] == pytest.approx(40000, rel=1e-3)     # 4% of 1M (all taxable -> accessible)
     assert r.spending_mult[0, 0] == pytest.approx(0.8, rel=1e-3)  # 40k / 50k plan
     assert not r.fail.any()                                       # flexes, never runs short
     assert r.expenses[0, -1] > 0                                  # still spending at the horizon
@@ -146,26 +146,72 @@ def test_constant_pct_spends_fixed_fraction_and_never_depletes():
 def test_vpw_rate_matches_annuity_factor():
     n, rr = 70 - 46, 0.03
     rate = rr / (1 - (1 + rr) ** (-n))  # annuity payout factor at the retirement year
-    s = _pct_strategy_scenario(1_000_000, 50000, False,
-                               SpendingStrategy(kind="vpw", vpw_real_return=0.03))
+    s = _pct_strategy_scenario(1_000_000, 50000, False, SpendingStrategy(
+        kind="percent_portfolio", rate_mode="vpw", vpw_real_return=0.03, bounded=False))
     r = run(s)
     assert r.expenses[0, 0] == pytest.approx(rate * 1_000_000, rel=1e-3)
 
 
-def test_floor_ceiling_clamps_to_plan_fraction():
+def test_bounded_percent_clamps_to_plan_fraction():
     s = _pct_strategy_scenario(500_000, 50000, False, SpendingStrategy(
-        kind="floor_ceiling", rate=0.04, floor_mult=0.75, ceiling_mult=1.25))
+        kind="percent_portfolio", rate=0.04, bounded=True, floor_mult=0.75, ceiling_mult=1.25))
     r = run(s)
     # 4% of 500k = 20k is below the floor (0.75 × 50k = 37.5k) -> clamped up
     assert r.spending_mult[0, 0] == pytest.approx(0.75, rel=1e-3)
     assert r.expenses[0, 0] == pytest.approx(37500, rel=1e-3)
 
 
-def test_constant_pct_still_fails_when_essentials_unfundable():
+def test_percent_portfolio_still_fails_when_essentials_unfundable():
     s = _pct_strategy_scenario(100_000, 50000, True,
-                               SpendingStrategy(kind="constant_pct", rate=0.04))
+                               SpendingStrategy(kind="percent_portfolio", rate=0.04, bounded=False))
     r = run(s)
     assert r.fail.any()  # essentials are funded first; 100k can't cover 50k/yr of them
+
+
+def test_legacy_spending_strategy_migration():
+    """The old four-kind enum folds into the two-kind model, preserving behavior."""
+    cp = SpendingStrategy(kind="constant_pct")
+    assert (cp.kind, cp.rate_mode, cp.bounded) == ("percent_portfolio", "fixed", False)
+    vpw = SpendingStrategy(kind="vpw")
+    assert (vpw.kind, vpw.rate_mode, vpw.bounded) == ("percent_portfolio", "vpw", False)
+    fc = SpendingStrategy(kind="floor_ceiling")
+    assert (fc.kind, fc.rate_mode, fc.bounded) == ("percent_portfolio", "fixed", True)
+    assert SpendingStrategy(kind="constant_dollar").kind == "constant_dollar"
+
+
+def test_percent_portfolio_budgets_off_accessible_not_total():
+    """Before 59.5, the percentage is taken on penalty-free accessible wealth, so a
+    locked traditional balance does NOT inflate the spend (which would force the
+    bridge to break)."""
+    s = Scenario(
+        profile=Profile(birth_year=1980, horizon_age=70, state_tax_rate=0.0),
+        accounts=[Account(type=AccountType.taxable, balance=100_000, cost_basis=100_000),
+                  Account(type=AccountType.trad_401k, balance=1_000_000)],
+        allocation=Allocation(stocks=1.0, bonds=0.0, cash=0.0),
+        income=Income(gross_salary=0),
+        retirement_age=46,  # pre-59.5: trad is locked behind the penalty
+        expense_streams=[ExpenseStream(name="living", annual=50000, essential=False)],
+        spending_strategy=SpendingStrategy(kind="percent_portfolio", rate=0.04, bounded=False),
+        sim=SimSettings(n_paths=2, start_year=2026),
+        **_frozen_market(stock=0.0, bond=0.0),
+    )
+    r = run(s)
+    # 4% of accessible (taxable 100k) = 4k, NOT 4% of total 1.1M = 44k
+    assert r.expenses[0, 0] == pytest.approx(4000, rel=1e-3)
+
+
+def test_endowment_smoothing_blends_with_last_year():
+    """smoothing α blends this year's portfolio-driven target with last year's
+    realized spend. Year 0 has no prior (raw); year 1 is the half-and-half blend."""
+    raw = SpendingStrategy(kind="percent_portfolio", rate=0.04, bounded=False)
+    blend = SpendingStrategy(kind="percent_portfolio", rate=0.04, bounded=False, smoothing=0.5)
+    r0 = run(_pct_strategy_scenario(1_000_000, 50000, False, raw))
+    r1 = run(_pct_strategy_scenario(1_000_000, 50000, False, blend))
+    # year 0: identical (no prior year to smooth against) -> 4% of 1M
+    assert r1.expenses[0, 0] == pytest.approx(r0.expenses[0, 0], rel=1e-3) == pytest.approx(40000, rel=1e-3)
+    # year 1: portfolio is 960k (spent 40k, 0% return) -> raw 38.4k; blend = 0.5*40k + 0.5*38.4k
+    assert r0.expenses[0, 1] == pytest.approx(38400, rel=1e-3)
+    assert r1.expenses[0, 1] == pytest.approx(39200, rel=1e-3)
 
 
 def test_sequence_scatter_shape_and_values():

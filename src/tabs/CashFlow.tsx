@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { A } from "../assumptions";
 import {
-  AccountFlowsChart, HealthcareCostChart, SpendingActualsChart,
+  AccountFlowsChart, HealthcareCostChart, SpendingActualsChart, SpendingPreviewChart,
 } from "../components/charts";
 import TimelineEditor from "../components/TimelineEditor";
 import {
@@ -663,86 +663,120 @@ export default function CashFlow() {
       </Section>
 
       <Section title="Spending Strategy" info={A.spendingStrategy}>
-        <div className="fields">
-          <Field label="Strategy"
-            info="How much to spend each retirement year — separate from the Withdrawal Policy (on Accounts), which only chooses which account to tap.">
-            <select value={ss.kind}
-              onChange={(e) => up({ spending_strategy: { ...ss, kind: e.target.value as any } })}>
-              <option value="constant_dollar">Constant Dollar (Plan + Guardrails)</option>
-              <option value="constant_pct">Constant % Of Portfolio</option>
-              <option value="vpw">Variable % (VPW — Rises With Age)</option>
-              <option value="floor_ceiling">Floor &amp; Ceiling (Bounded %)</option>
-            </select>
-          </Field>
-          {(ss.kind === "constant_pct" || ss.kind === "floor_ceiling") && (
-            <Field label="Withdrawal Rate (% Of Portfolio)">
-              <PercentInput value={ss.rate} step={0.25}
-                onChange={(v) => up({ spending_strategy: { ...ss, rate: v } })} />
-            </Field>
-          )}
-          {ss.kind === "vpw" && (
-            <Field label="VPW Assumed Real Return">
-              <PercentInput value={ss.vpw_real_return} step={0.25}
-                onChange={(v) => up({ spending_strategy: { ...ss, vpw_real_return: v } })} />
-            </Field>
-          )}
-          {ss.kind === "floor_ceiling" && (
-            <>
-              <Field label="Floor (% Of Plan Discretionary)">
-                <PercentInput value={ss.floor_mult} step={5}
-                  onChange={(v) => up({ spending_strategy: { ...ss, floor_mult: v } })} />
+        <div className="card-split">
+          <div className="card-split-main strategy-controls">
+            <div className="fields">
+              <Field label="Strategy"
+                info="How much to spend each retirement year — separate from the Withdrawal Policy (on Accounts), which only chooses which account to tap.">
+                <select value={ss.kind}
+                  onChange={(e) => up({ spending_strategy: { ...ss, kind: e.target.value as any } })}>
+                  <option value="constant_dollar">Steady Paycheck</option>
+                  <option value="percent_portfolio">Percent Of Portfolio</option>
+                </select>
               </Field>
-              <Field label="Ceiling (% Of Plan Discretionary)">
-                <PercentInput value={ss.ceiling_mult} step={5}
-                  onChange={(v) => up({ spending_strategy: { ...ss, ceiling_mult: v } })} />
-              </Field>
-            </>
-          )}
-        </div>
-        <p className="hint">{{
-          constant_dollar: "Spends your planned expense streams every year. With guardrails on (below), discretionary spending is trimmed when your withdrawal rate runs hot and restored when markets recover — bounded by the floor and ceiling.",
-          constant_pct: "Each year, discretionary spending = your rate × current portfolio, after essentials are covered. It self-corrects with the market and can never deplete to zero, but income swings year to year. If the rate is low relative to your essentials, discretionary can fall to near zero — which is why spending can look thin on the other tabs.",
-          vpw: "Like Constant %, but the rate rises with age via an annuity payout factor, deliberately drawing the balance toward zero by your horizon. A higher assumed real return pulls more spending into your earlier years.",
-          floor_ceiling: "Constant % bounded between a floor and ceiling of your planned discretionary spend — keeps the market self-correction but guarantees a minimum lifestyle (and caps the upside).",
-        }[ss.kind]}</p>
-        {result && retIdx >= 0 && (
-          <p className="hint">
-            At retirement (age {s.retirement_age}), this funds ≈ <strong>{fmtMoney(modeledRetSpend)}/yr</strong>{" "}
-            of living + medical on the median path{plannedAtRet > 0 ? ` (planned ${fmtMoney(plannedAtRet)}/yr)` : ""}.
-            {modeledRetSpend > 0 && plannedAtRet > 0 && modeledRetSpend < plannedAtRet * 0.85 &&
-              " It's funding noticeably less than planned — raise the rate, or switch to Constant Dollar if that wasn't intended."}
-          </p>
-        )}
-        {ss.kind === "constant_dollar" ? (
-          <div className="fields">
-            <Field label="Guardrails Enabled" info={A.guardrails}>
-              <input type="checkbox" checked={s.guardrails.enabled}
-                onChange={(e) => up({ guardrails: { ...s.guardrails, enabled: e.target.checked } })} />
-            </Field>
-            <Field label="Guard Band (± Around Initial Rate)">
-              <PercentInput value={s.guardrails.band} step={5}
-                onChange={(v) => up({ guardrails: { ...s.guardrails, band: v } })} />
-            </Field>
-            <Field label="Cut Step">
-              <PercentInput value={s.guardrails.cut} step={2.5}
-                onChange={(v) => up({ guardrails: { ...s.guardrails, cut: v } })} />
-            </Field>
-            <Field label="Restore Step">
-              <PercentInput value={s.guardrails.boost} step={2.5}
-                onChange={(v) => up({ guardrails: { ...s.guardrails, boost: v } })} />
-            </Field>
-            <Field label="Floor (Min % Of Planned Discretionary)">
-              <PercentInput value={s.guardrails.floor_mult} step={5}
-                onChange={(v) => up({ guardrails: { ...s.guardrails, floor_mult: v } })} />
-            </Field>
-            <Field label="Ceiling (Max % Of Planned Discretionary)">
-              <PercentInput value={s.guardrails.cap_mult} step={5}
-                onChange={(v) => up({ guardrails: { ...s.guardrails, cap_mult: v } })} />
-            </Field>
+              {ss.kind === "percent_portfolio" && (
+                <Field label="Rate Basis"
+                  info="Fixed holds the same withdrawal rate every year. VPW raises it with age via an annuity factor, deliberately drawing the balance toward zero by your horizon.">
+                  <select value={ss.rate_mode}
+                    onChange={(e) => up({ spending_strategy: { ...ss, rate_mode: e.target.value as any } })}>
+                    <option value="fixed">Fixed %</option>
+                    <option value="vpw">Rises With Age (VPW)</option>
+                  </select>
+                </Field>
+              )}
+              {ss.kind === "percent_portfolio" && ss.rate_mode === "fixed" && (
+                <Field label="Withdrawal Rate"
+                  info="Share of your penalty-free accessible wealth spent each year. Before 59½ that excludes balances locked behind the early-withdrawal penalty.">
+                  <PercentInput value={ss.rate} step={0.25}
+                    onChange={(v) => up({ spending_strategy: { ...ss, rate: v } })} />
+                </Field>
+              )}
+              {ss.kind === "percent_portfolio" && ss.rate_mode === "vpw" && (
+                <Field label="VPW Assumed Real Return"
+                  info="The annuity payout factor's assumed real return. Higher pulls more spending into your early years.">
+                  <PercentInput value={ss.vpw_real_return} step={0.25}
+                    onChange={(v) => up({ spending_strategy: { ...ss, vpw_real_return: v } })} />
+                </Field>
+              )}
+            </div>
+            {ss.kind === "percent_portfolio" && (
+              <div className="control-grid">
+                <Field label="Floor &amp; Ceiling Bounds"
+                  info="Clip discretionary spending between a floor and ceiling of your planned amount — guarantees a minimum lifestyle and caps the upside. Off = spend the raw percentage, however it swings.">
+                  <input type="checkbox" checked={ss.bounded}
+                    onChange={(e) => up({ spending_strategy: { ...ss, bounded: e.target.checked } })} />
+                </Field>
+                <Field label="Smoothing"
+                  info="Endowment rule: blend this year's portfolio-driven target with last year's spend. 0% reacts fully to the market; higher damps the year-to-year swings.">
+                  <PercentInput value={ss.smoothing} step={5}
+                    onChange={(v) => up({ spending_strategy: { ...ss, smoothing: v } })} />
+                </Field>
+                {ss.bounded && (
+                  <>
+                    <Field label="Floor" info="Minimum spending as a % of planned discretionary.">
+                      <PercentInput value={ss.floor_mult} step={5}
+                        onChange={(v) => up({ spending_strategy: { ...ss, floor_mult: v } })} />
+                    </Field>
+                    <Field label="Ceiling" info="Maximum spending as a % of planned discretionary.">
+                      <PercentInput value={ss.ceiling_mult} step={5}
+                        onChange={(v) => up({ spending_strategy: { ...ss, ceiling_mult: v } })} />
+                    </Field>
+                  </>
+                )}
+              </div>
+            )}
+            {ss.kind === "constant_dollar" && (
+              <div className="control-grid">
+                <Field label="Guardrails Enabled" info={A.guardrails}>
+                  <input type="checkbox" checked={s.guardrails.enabled}
+                    onChange={(e) => up({ guardrails: { ...s.guardrails, enabled: e.target.checked } })} />
+                </Field>
+                <Field label="Guard Band" info="± around your initial withdrawal rate. Spending only flexes once the rate drifts outside this band.">
+                  <PercentInput value={s.guardrails.band} step={5}
+                    onChange={(v) => up({ guardrails: { ...s.guardrails, band: v } })} />
+                </Field>
+                <Field label="Cut Step" info="How much discretionary spending drops each time the rate runs hot.">
+                  <PercentInput value={s.guardrails.cut} step={2.5}
+                    onChange={(v) => up({ guardrails: { ...s.guardrails, cut: v } })} />
+                </Field>
+                <Field label="Restore Step" info="How much discretionary spending recovers each time markets give you room.">
+                  <PercentInput value={s.guardrails.boost} step={2.5}
+                    onChange={(v) => up({ guardrails: { ...s.guardrails, boost: v } })} />
+                </Field>
+                <Field label="Floor" info="Minimum spending as a % of planned discretionary — guardrails never cut below this.">
+                  <PercentInput value={s.guardrails.floor_mult} step={5}
+                    onChange={(v) => up({ guardrails: { ...s.guardrails, floor_mult: v } })} />
+                </Field>
+                <Field label="Ceiling" info="Maximum spending as a % of planned discretionary — guardrails never boost above this.">
+                  <PercentInput value={s.guardrails.cap_mult} step={5}
+                    onChange={(v) => up({ guardrails: { ...s.guardrails, cap_mult: v } })} />
+                </Field>
+              </div>
+            )}
           </div>
-        ) : (
-          <p className="hint">This portfolio-percentage strategy replaces the guardrails: discretionary spending tracks your balance each year (essentials always funded first).</p>
-        )}
+          <div className="strategy-explain">
+            <p className="hint">{ss.kind === "constant_dollar"
+              ? "Spends your full plan every year. With guardrails on, discretionary spending trims when your withdrawal rate runs hot and restores when markets recover — bounded by the floor and ceiling."
+              : `Spends ${ss.rate_mode === "vpw" ? "a percentage of your accessible wealth that rises with age" : "a fixed percentage of your accessible wealth"}, essentials first. It draws only on penalty-free money, so before 59½ it won't propose spending balances locked behind the early-withdrawal penalty.${ss.bounded ? " Bounds hold it between your floor and ceiling of plan." : " Unbounded, so the dollar amount can swing widely year to year."}${ss.rate_mode === "vpw" ? " The rising rate deliberately draws the balance toward zero by your horizon." : ""}${ss.smoothing > 0 ? " Smoothing damps the year-to-year swings." : ""}`}</p>
+            {result && retIdx >= 0 && (() => {
+              const pct = plannedAtRet > 0 ? Math.round((modeledRetSpend / plannedAtRet - 1) * 100) : null;
+              const under = plannedAtRet > 0 && modeledRetSpend < plannedAtRet * 0.85;
+              return (
+                <p className="hint">
+                  First retirement year (age {s.retirement_age}): <strong>{fmtMoney(modeledRetSpend)}/yr</strong> on the median path
+                  {pct !== null && `, ${pct >= 0 ? "+" : ""}${pct}% vs your ${fmtMoney(plannedAtRet)} plan`}.
+                  {under && " Raise the rate or switch to Steady Paycheck to fund the full plan."}
+                </p>
+              );
+            })()}
+            {result && (
+              <div className="strategy-plot">
+                <SpendingPreviewChart result={result} axisMode={axisMode}
+                  retirementAge={s.retirement_age} birthYear={s.profile.birth_year} />
+              </div>
+            )}
+          </div>
+        </div>
       </Section>
 
       {/* ───────────── HEALTHCARE ───────────── */}

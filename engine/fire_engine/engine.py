@@ -514,6 +514,7 @@ def run(
     t_retire = max(retirement_age - start_age, 0)
     spend_mult = np.ones(P)
     w0: np.ndarray | None = None
+    prev_disc_real: np.ndarray | None = None  # last year's realized discretionary (real $), for smoothing
 
     for t in range(T):
         age = start_age + t
@@ -565,24 +566,38 @@ def run(
             disc_nom = disc_med + (disc_nom - disc_med) * spending_scale
         ess_nom = ess_nom + liab_payments[t]  # loan payments: essential, non-inflating
 
-        if t >= t_retire and strat.kind != "constant_dollar":
+        if t >= t_retire and strat.kind == "percent_portfolio":
             # Portfolio-percentage family: discretionary spending is set from the
             # CURRENT balance each year, so it self-corrects with the market and
             # never depletes to zero. Essentials (medical + loan payments, already
             # folded into ess_nom) are funded first; whatever the rule leaves above
             # them becomes the discretionary budget. spend_mult is recomputed fresh
             # each year (no ratchet), unlike the guardrail path.
-            if strat.kind == "vpw":
+            #
+            # The base is ACCESSIBLE (penalty-free) wealth, not total net worth:
+            # before 59.5 the trad and Roth-growth balances are locked behind the
+            # 10% penalty, so spending a % of them would propose withdrawals you
+            # can't actually take (forcing the bridge to break). accessible() unlocks
+            # trad/Roth-growth at 59.5 and seasoned ladder conversions before that,
+            # so post-59.5 this equals total net worth.
+            pct_base = sum(state.accessible(age).values())
+            if strat.rate_mode == "vpw":
                 # annuity payout factor: rate rises with age as the horizon nears
                 n = max(scenario.profile.horizon_age - age, 1)
                 r = strat.vpw_real_return
                 rate = (r / (1.0 - (1.0 + r) ** (-n))) if r > 0 else 1.0 / n
             else:
                 rate = strat.rate
-            disc_target = np.maximum(rate * portfolio_start - ess_nom, 0.0)
-            if strat.kind == "floor_ceiling":
+            disc_target = np.maximum(rate * pct_base - ess_nom, 0.0)
+            # endowment (Yale) smoothing: blend the portfolio-driven target with
+            # last year's realized discretionary, carried in real terms and reflated.
+            if strat.smoothing > 0.0 and prev_disc_real is not None:
+                disc_target = (strat.smoothing * (prev_disc_real * infl)
+                               + (1.0 - strat.smoothing) * disc_target)
+            if strat.bounded:
                 disc_target = np.clip(disc_target, strat.floor_mult * disc_nom,
                                       strat.ceiling_mult * disc_nom)
+            prev_disc_real = disc_target / np.maximum(infl, 1e-9)
             spend_mult = np.where(disc_nom > 1.0, disc_target / np.maximum(disc_nom, 1.0),
                                   np.ones_like(disc_target))
         elif guard.enabled and t >= t_retire:

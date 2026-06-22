@@ -210,7 +210,9 @@ export default function Assumptions() {
               <Row label="Retirement Age" value={String(s.retirement_age)} />
               <Row label="Assets / Debt" value={`${fmtMoney(assets)} / ${fmtMoney(debt)}`} />
               <Row label="Planned Expenses" value={`${fmtMoney(planAnnual)}/yr`} />
-              <Row label="Spending Strategy" value={s.spending_strategy.kind} />
+              <Row label="Spending Strategy" value={s.spending_strategy.kind === "constant_dollar"
+                ? "Steady Paycheck"
+                : `Percent Of Portfolio (${s.spending_strategy.rate_mode === "vpw" ? "VPW" : "Fixed"}${s.spending_strategy.bounded ? ", Bounded" : ""})`} />
             </tbody>
           </table>
 

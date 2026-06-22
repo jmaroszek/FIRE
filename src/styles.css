@@ -376,6 +376,22 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .mixpanel-foot { margin-top: 3px; padding-top: 8px; border-top: 1px solid var(--border);
   color: var(--muted); font-size: 12px; }
 
+/* Spending Strategy tile: a fixed control column (dropdown + strategy inputs, plus
+   the guardrails grid wrapping to multiple rows for Constant Dollar) on the left,
+   with the strategy description and the in-tile spending preview filling the right.
+   The same skeleton holds for every strategy — only the knobs and the plot change. */
+.strategy-controls { flex: 0 0 320px; max-width: 320px; }
+.strategy-explain { flex: 1 1 360px; min-width: 300px;
+  display: flex; flex-direction: column; gap: 8px; }
+.strategy-explain .hint { margin: 0; max-width: 640px; }
+.strategy-plot { margin-top: 4px; }
+/* Spending-strategy knobs: a deterministic two-up grid so paired inputs always
+   line up (guardrails as Enabled + Guard Band / Cut + Restore / Floor + Ceiling;
+   percent-of-portfolio as Bounds + Smoothing / Floor + Ceiling) rather than
+   wrapping unpredictably with the flex .fields layout. */
+.control-grid { display: grid; grid-template-columns: 1fr 1fr;
+  gap: 12px 18px; align-items: start; margin-top: 14px; }
+
 /* Inline "Spending Mix" column in the Expenses table: the bar shares the row with
    its input (continuous left-to-right), and this column absorbs the table's slack
    (width:100%) so it fills the gutter while the input columns stay content-sized. */

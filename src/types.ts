@@ -1,4 +1,4 @@
-// TypeScript mirror of engine/fire_engine/scenario.py (SCHEMA_VERSION 4)
+// TypeScript mirror of engine/fire_engine/scenario.py (SCHEMA_VERSION 5)
 
 export type AccountType =
   | "taxable" | "trad_401k" | "trad_ira" | "roth_ira" | "roth_401k" | "hsa" | "cash";
@@ -88,11 +88,14 @@ export interface GuardrailRule {
 }
 
 export interface SpendingStrategy {
-  kind: "constant_dollar" | "constant_pct" | "vpw" | "floor_ceiling";
+  kind: "constant_dollar" | "percent_portfolio";
+  rate_mode: "fixed" | "vpw";
   rate: number;
   vpw_real_return: number;
+  bounded: boolean;
   floor_mult: number;
   ceiling_mult: number;
+  smoothing: number;
 }
 
 export interface WaterfallStep {
@@ -290,6 +293,9 @@ export interface SimulateResult {
   expenses_median_real: number[];
   spending_mult_median: number[];
   spending_mult_fan: FanSeries;
+  /** Realized total spending in real $ over time, percentile fan (p10/p25/p50).
+   * Drives the in-tile Spending Strategy preview: median line + downside band. */
+  expenses_fan_real: FanSeries;
   investing_real: Record<string, number[]>;
   liability_balance: number[];
   // outcome-distribution & robustness views
