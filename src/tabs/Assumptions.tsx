@@ -152,8 +152,8 @@ export default function Assumptions() {
             <PercentInput value={s.market.expense_ratio} step={0.01}
               onChange={(v) => up({ market: { ...s.market, expense_ratio: v } })} />
           </Field>
-          <Field label={nominalMode ? "Cash / HYSA (APY)" : "Cash / HYSA (Real)"} info={A.cash}>
-            <span className="cagr-cell">
+          <Field label="Cash APY" info={A.cash}>
+            <span className="cagr-cell-inline">
               <PercentInput value={shownCagr(s.market.cash.real_cagr)} step={0.25}
                 onChange={(v) => upAsset("cash", { real_cagr: storeCagr(v) })} />
               <span className="cagr-alt">{altCagr(s.market.cash.real_cagr)}</span>
@@ -161,13 +161,6 @@ export default function Assumptions() {
           </Field>
         </div>
 
-        <p className="hint">
-          {isBootstrap
-            ? "In Historical Bootstrap, stock & bond returns are drawn from history (≈6.9% / 2.5% real) — the CAGRs above only take effect with Mean Shift on. Cash isn't in the historical data, so it always uses the rate you set."
-            : "In Parametric mode, all three returns and their volatilities are used directly to draw lognormal returns."}
-          {" "}Returns are stored in real terms; changing your inflation assumption re-expresses the nominal figure without changing your real return or wealth projection.
-        </p>
-        <p className="hint">Your portfolio allocation (and any age-based glide) lives on the Accounts tab — it's a choice you make, not a market assumption.</p>
       </Section>
 
       <Section title="Inflation" info={A.inflation}>

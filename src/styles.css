@@ -327,11 +327,12 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .seg button.seg-on { background: var(--accent); color: #fff; }
 .asset-matrix { display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
 .asset-matrix-row {
-  display: grid; grid-template-columns: 64px 1fr 1fr; gap: 10px; align-items: end;
+  display: grid; grid-template-columns: 64px 1fr 1fr; gap: 10px; align-items: start;
 }
 .asset-matrix-head span { color: var(--muted); font-size: 12px; }
-.asset-name { color: var(--fg); font-size: 13px; padding-bottom: 5px; }
+.asset-name { color: var(--fg); font-size: 13px; padding-top: 8px; }
 .cagr-cell { display: inline-flex; flex-direction: column; gap: 2px; }
+.cagr-cell-inline { display: inline-flex; align-items: center; gap: 8px; }
 .cagr-alt { color: var(--muted); font-size: 11px; white-space: nowrap; }
 
 .policy-row { display: flex; flex-wrap: wrap; gap: 12px 40px; align-items: flex-start; }
