@@ -580,12 +580,8 @@ export default function CashFlow() {
             <div className="fields">
               {estimated ? (
                 <>
-                  <Field label="Estimated Monthly At FRA (Today's $)"
-                    info="Derived from your plan: your 35 highest earning years (covered wages, capped at the Social Security max each year), including the $0 years after you retire.">
-                    <div className="readout">{result ? fmtMoney(estMonthly) : "…"}</div>
-                  </Field>
                   <Field label="Started Working At Age"
-                    info="First year you had Social-Security-covered wages. Years between here and your plan's start age are filled with the average below (unless a snapshot recorded that year).">
+                    info="First year you had Social-Security-covered wages. Years between here and your plan's start age are filled with the average beside it (unless a snapshot recorded that year).">
                     <NumberInput value={ss.work_start_age ?? 22} step={1} min={14} max={startAge}
                       onChange={(v) => up({ social_security: { ...ss, work_start_age: v } })} />
                   </Field>
@@ -616,11 +612,23 @@ export default function CashFlow() {
                 </select>
               </Field>
             </div>
-            <p className="hint">
-              {estimated
-                ? "Your benefit averages your 35 highest earning years — including the $0 years after you retire, which an ssa.gov projection (it assumes you work until FRA) leaves out. That's why this runs lower."
-                : "Find your estimate at full retirement age on your ssa.gov statement."}
-            </p>
+            {estimated ? (
+              <div className="ss-estimate-row">
+                <Field label="Estimated Monthly At FRA (Today's $)"
+                  info="Derived from your plan: your 35 highest earning years (covered wages, capped at the Social Security max each year), including the $0 years after you retire.">
+                  <div className="readout">{result ? fmtMoney(estMonthly) : "…"}</div>
+                </Field>
+                <p className="hint">
+                  Your benefit averages your 35 highest earning years — including the $0
+                  years after you retire, which an ssa.gov projection (it assumes you work
+                  until FRA) leaves out. That's why this runs lower.
+                </p>
+              </div>
+            ) : (
+              <p className="hint">
+                Find your estimate at full retirement age on your ssa.gov statement.
+              </p>
+            )}
           </div>
           <table className="table fit ss-mini">
             <thead>

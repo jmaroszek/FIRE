@@ -438,14 +438,18 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .ss-mini td, .ss-mini th { padding: 3px 16px 3px 0; }
 .ss-mini .ss-note { color: var(--muted); }
 .ss-mini .ss-delta { color: var(--muted); }
-/* manual vs estimated benefit, a two-option segmented control */
-.ss-mode { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+/* manual vs estimated benefit, a two-option segmented control — sized to its
+   labels, not stretched across the controls column */
+.ss-mode { display: inline-flex; align-self: flex-start; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .ss-mode button { background: transparent; border: none; color: var(--muted); font-size: 12px;
   padding: 5px 12px; cursor: pointer; }
 .ss-mode button + button { border-left: 1px solid var(--border); }
 .ss-mode button.active { background: #1f6feb33; color: var(--fg); }
 /* read-only stand-in for a NumberInput when the value is engine-derived */
 .ss-controls .readout { font-size: 18px; font-weight: 600; padding: 2px 0; }
+/* estimated mode: the monthly estimate with its explainer sitting to its right */
+.ss-estimate-row { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+.ss-estimate-row .hint { margin: 0; }
 .shock-cell { display: flex; flex-direction: column; gap: 2px; }
 .shock-arrow { font-size: 24px; color: var(--muted); line-height: 1; }
 
