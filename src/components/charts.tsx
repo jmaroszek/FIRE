@@ -1342,6 +1342,13 @@ export function SpendingDepthChart(props: {
       showarrow: false, text: r.label, font: { color: r.color, size: 10 } });
   }
   const fan = props.result.spending_mult_fan;
+  // Matching-percentile funded spending in today's $, so the tooltip can show the
+  // dollar lifestyle beside the "% of plan" at each percentile.
+  const dollars = props.result.expenses_fan_real;
+  const tip = (label: string, key: "p10" | "p25" | "p50") =>
+    dollars?.[key]
+      ? `${label}: %{y:.0%} · %{customdata:$,.0f}<extra></extra>`
+      : `${label}: %{y:.0%}<extra></extra>`;
   // Realized spending is bounded above by the plan/cap, so the only story is the
   // DOWNSIDE — how far the bad paths cut. Show the median and the percentiles at or
   // below it (not a symmetric fan), which is what "how low can it go" actually asks.
@@ -1354,13 +1361,13 @@ export function SpendingDepthChart(props: {
         fillcolor: ACCENT + "10", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
       { x, y: fan.p10, type: "scatter", mode: "lines", name: "10th percentile (worst)",
         line: { color: "#ff7b72", width: 1.5, dash: "dashdot" },
-        hovertemplate: "10th pct: %{y:.0%}<extra></extra>" },
+        customdata: dollars?.p10, hovertemplate: tip("10th pct", "p10") },
       { x, y: fan.p25, type: "scatter", mode: "lines", name: "25th percentile",
         line: { color: "#f0883e", width: 1.5, dash: "dash" },
-        hovertemplate: "25th pct: %{y:.0%}<extra></extra>" },
+        customdata: dollars?.p25, hovertemplate: tip("25th pct", "p25") },
       { x, y: fan.p50, type: "scatter", mode: "lines", name: "Median (50th)",
         line: { color: ACCENT, width: 2 },
-        hovertemplate: "Median: %{y:.0%}<extra></extra>" },
+        customdata: dollars?.p50, hovertemplate: tip("Median", "p50") },
     ];
     return (
       <Plot
