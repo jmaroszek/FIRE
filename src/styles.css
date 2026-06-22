@@ -439,8 +439,11 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 
 /* Social Security: inputs (with their caption) on the left, a compact
    claim-age benefit table beside them. */
-.ss-body { display: flex; align-items: flex-start; gap: 40px; flex-wrap: wrap; }
-.ss-controls { display: flex; flex-direction: column; gap: 10px; }
+.ss-body { display: flex; flex-direction: column; gap: 14px; }
+/* toggle sits on its own top row; controls + table align beneath it, so the
+   table starts level with the inputs rather than the toggle */
+.ss-cols { display: flex; align-items: flex-start; gap: 40px; flex-wrap: wrap; }
+.ss-controls { display: flex; flex-direction: column; gap: 12px; }
 .ss-mini { font-size: 12px; }
 .ss-mini td, .ss-mini th { padding: 3px 16px 3px 0; }
 .ss-mini .ss-note { color: var(--muted); }

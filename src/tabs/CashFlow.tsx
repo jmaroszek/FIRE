@@ -566,17 +566,18 @@ export default function CashFlow() {
           const baseMonthly = estimated ? estMonthly : ss.monthly_at_fra;
           return (
         <div className="ss-body">
+          <div className="ss-mode">
+            <button className={estimated ? "" : "active"}
+              onClick={() => up({ social_security: { ...ss, benefit_mode: "manual" } })}>
+              From ssa.gov Statement
+            </button>
+            <button className={estimated ? "active" : ""}
+              onClick={() => up({ social_security: { ...ss, benefit_mode: "estimated" } })}>
+              Estimate From My Income
+            </button>
+          </div>
+          <div className="ss-cols">
           <div className="ss-controls">
-            <div className="ss-mode">
-              <button className={estimated ? "" : "active"}
-                onClick={() => up({ social_security: { ...ss, benefit_mode: "manual" } })}>
-                From ssa.gov Statement
-              </button>
-              <button className={estimated ? "active" : ""}
-                onClick={() => up({ social_security: { ...ss, benefit_mode: "estimated" } })}>
-                Estimate From My Income
-              </button>
-            </div>
             <div className="fields">
               {estimated ? (
                 <>
@@ -615,18 +616,20 @@ export default function CashFlow() {
             {estimated ? (
               <div className="ss-estimate-row">
                 <Field label="Estimated Monthly At FRA (Today's $)"
-                  info="Derived from your plan: your 35 highest earning years (covered wages, capped at the Social Security max each year), including the $0 years after you retire.">
+                  info="Your gross scheduled benefit at full retirement age (67), before claiming-age adjustment or haircut. Derived from your 35 highest earning years (covered wages, capped at the Social Security max each year), including the $0 years after you retire.">
                   <div className="readout">{result ? fmtMoney(estMonthly) : "…"}</div>
                 </Field>
                 <p className="hint">
                   Your benefit averages your 35 highest earning years — including the $0
                   years after you retire, which an ssa.gov projection (it assumes you work
-                  until FRA) leaves out. That's why this runs lower.
+                  until FRA) leaves out. That's why this runs lower. The table applies each
+                  claiming-age factor and your selected haircut to this figure.
                 </p>
               </div>
             ) : (
               <p className="hint">
-                Find your estimate at full retirement age on your ssa.gov statement.
+                Find your estimate at full retirement age on your ssa.gov statement. The
+                table applies each claiming-age factor and your selected haircut to it.
               </p>
             )}
           </div>
@@ -636,7 +639,9 @@ export default function CashFlow() {
             </thead>
             <tbody>
               {SS_KEY_CLAIM_AGES.map(({ age, factor, note }) => {
-                const monthly = baseMonthly * factor;
+                // what you'd actually receive: FRA benefit × claiming factor × the
+                // trust-fund haircut — matching the engine's ss_annual_real.
+                const monthly = baseMonthly * factor * (ss.haircut ?? 1);
                 const years = Math.max(0, s.profile.horizon_age - age);
                 return (
                   <tr key={age}>
@@ -651,6 +656,7 @@ export default function CashFlow() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
           );
         })()}
