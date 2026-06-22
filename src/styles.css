@@ -430,6 +430,13 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .shock-inputs { flex-direction: column; align-items: flex-start; gap: 12px; }
 .shock-compare { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
 
+/* Headroom & Resilience tiles compute on load: shrink the loading placeholder's
+   reserved height to match the finished content (the global 220px is meant for
+   taller on-demand analyses) so the tile size stays consistent through compute.
+   In the stress tile the always-present input column sets the height; the max
+   spend tile is loading-only, so it needs the reserve to match its stat row. */
+.group-grid.headroom .tile-loading { min-height: 85px; }
+
 /* Social Security: inputs (with their caption) on the left, a compact
    claim-age benefit table beside them. */
 .ss-body { display: flex; align-items: flex-start; gap: 40px; flex-wrap: wrap; }

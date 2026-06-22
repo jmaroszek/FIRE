@@ -483,7 +483,7 @@ export default function CashFlow() {
 
       {/* ───────────── HEADROOM & RESILIENCE ───────────── */}
       <Head id="cf-headroom">Headroom &amp; Resilience</Head>
-      <div className="group-grid stretch">
+      <div className="group-grid stretch headroom">
       <Section title="Income Shock Stress Test" info={A.stressTest} className="span1"
         actions={
           <button className="ghost" onClick={() => runStress(shockAge, shockDur)} disabled={stressLoading}>
