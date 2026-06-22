@@ -23,6 +23,14 @@ function Head({ id, children }: { id: string; children: React.ReactNode }) {
 const ageRangeTip =
   "Both ends inclusive — 30–40 runs from the year you turn 30 through the year you turn 40 (11 years).";
 
+/** PIA adjustment by claiming age, FRA=67 — mirrors SS_CLAIMING_FACTORS in the
+ * engine (scenario.py). Only the three signpost ages are shown in the tile table. */
+const SS_KEY_CLAIM_AGES: { age: number; factor: number; note?: string }[] = [
+  { age: 62, factor: 0.70, note: "Earliest" },
+  { age: 67, factor: 1.00, note: "FRA" },
+  { age: 70, factor: 1.24, note: "Latest" },
+];
+
 /** One editable row in the Life Events list. The crash/allocation branches stay
  * editable for existing events, but both are dropped from the add menu (better
  * stress tools live on Freedom; allocation glides live on Accounts). */
@@ -449,7 +457,7 @@ export default function CashFlow() {
 
       {/* ───────────── CASH FLOW OVER TIME ───────────── */}
       <Head id="cf-flow">Cash Flow Over Time</Head>
-      <Section title="Money Into &amp; Out Of Accounts" info={A.accountFlows}>
+      <Section title="Account Cash Flow" info={A.accountFlows}>
         {result ? <AccountFlowsChart result={result} axisMode={axisMode}
           retirementAge={s.retirement_age} birthYear={s.profile.birth_year} />
           : <p className="hint">Simulation pending…</p>}
@@ -474,30 +482,43 @@ export default function CashFlow() {
       {/* ───────────── HEADROOM & RESILIENCE ───────────── */}
       <Head id="cf-headroom">Headroom &amp; Resilience</Head>
       <div className="group-grid stretch">
-      <Section title="Income Shock Stress Test" info={A.stressTest} className="span1">
-        <div className="fields">
-          <Field label="Shock Starts At Age"
-            info="The age your wages drop to zero. Most meaningful before your retirement age.">
-            <NumberInput value={shockAge} step={1} min={startAge} max={s.retirement_age} onChange={setShockAge} />
-          </Field>
-          <Field label="Duration (Years)"
-            info="How long wages stay at zero. Fractional is allowed — 0.5 ≈ six months — approximated at the engine's annual grain by earning only the remaining fraction of the final partial year.">
-            <NumberInput value={shockDur} step={0.25} min={0.25} max={20} onChange={setShockDur} />
-          </Field>
+      <Section title="Income Shock Stress Test" info={A.stressTest} className="span1"
+        actions={
           <button className="ghost" onClick={() => runStress(shockAge, shockDur)} disabled={stressLoading}>
-            {stressLoading ? "Computing…" : "Re-run"}
+            {stressLoading ? "Computing…" : "Recompute"}
           </button>
-        </div>
-        {stress ? (
-          <div className="stat-row" style={{ marginTop: 10 }}>
-            <Stat label="Baseline Success" value={fmtPct(stress.base_success)} />
-            <Stat label={`After A ${stress.duration}-Year Shock At Age ${stress.shock_age}`}
-              value={fmtPct(stress.stressed_success)}
-              sub={`${stress.delta >= 0 ? "+" : ""}${fmtPct(stress.delta)} vs baseline`} />
+        }>
+        <div className="shock-body">
+          <div className="fields shock-inputs">
+            <Field label="Shock Starts At Age"
+              info="The age your wages drop to zero. Most meaningful before your retirement age.">
+              <NumberInput value={shockAge} step={1} min={startAge} max={s.retirement_age} onChange={setShockAge} />
+            </Field>
+            <Field label="Duration (Years)"
+              info="How long wages stay at zero. Fractional is allowed — 0.5 ≈ six months — approximated at the engine's annual grain by earning only the remaining fraction of the final partial year.">
+              <NumberInput value={shockDur} step={0.25} min={0.25} max={20} onChange={setShockDur} />
+            </Field>
           </div>
-        ) : (
-          <div className="tile-loading"><span className="spinner" />Computing…</div>
-        )}
+          {stress ? (
+            <div className="shock-compare">
+              <div className="shock-cell">
+                <span className="stat-label">Baseline Success</span>
+                <span className="stat-value">{fmtPct(stress.base_success)}</span>
+                <span className="stat-sub">Retire At {s.retirement_age}</span>
+              </div>
+              <span className="shock-arrow" aria-hidden="true">→</span>
+              <div className="shock-cell">
+                <span className="stat-label">After Income Shock</span>
+                <span className="stat-value">{fmtPct(stress.stressed_success)}</span>
+                <span className="stat-sub">
+                  {stress.delta >= 0 ? "+" : ""}{fmtPct(stress.delta)} vs baseline
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="tile-loading"><span className="spinner" />Computing…</div>
+          )}
+        </div>
       </Section>
 
       <Section title="Max Sustainable Spending" info={A.maxSpendRetire} className="span1"
@@ -536,30 +557,54 @@ export default function CashFlow() {
       </HeroRow>
 
       <Section title="Social Security" info={A.ss}>
-        <div className="fields">
-          <Field label="Monthly Benefit At FRA (Today's $)">
-            <NumberInput value={s.social_security.monthly_at_fra} step={100}
-              onChange={(v) => up({ social_security: { ...s.social_security, monthly_at_fra: v } })} />
-          </Field>
-          <Field label="Claiming Age (62–70)">
-            <NumberInput value={s.social_security.claiming_age} step={1} min={62} max={70}
-              onChange={(v) => up({ social_security: { ...s.social_security, claiming_age: v } })} />
-          </Field>
-          <Field label="Haircut (Trust-Fund Scenario)">
-            <select value={String(s.social_security.haircut)}
-              onChange={(e) => up({ social_security: { ...s.social_security, haircut: parseFloat(e.target.value) } })}>
-              <option value="1">100% Of Projected</option>
-              <option value="0.75">75%</option>
-              <option value="0.5">50%</option>
-              <option value="0.25">25%</option>
-              <option value="0">0% (None)</option>
-            </select>
-          </Field>
+        <div className="ss-body">
+          <div className="ss-controls">
+            <div className="fields">
+              <Field label="Monthly Benefit At FRA (Today's $)">
+                <NumberInput value={s.social_security.monthly_at_fra} step={100}
+                  onChange={(v) => up({ social_security: { ...s.social_security, monthly_at_fra: v } })} />
+              </Field>
+              <Field label="Claiming Age (62–70)">
+                <NumberInput value={s.social_security.claiming_age} step={1} min={62} max={70}
+                  onChange={(v) => up({ social_security: { ...s.social_security, claiming_age: v } })} />
+              </Field>
+              <Field label="Haircut (Trust-Fund Scenario)">
+                <select value={String(s.social_security.haircut)}
+                  onChange={(e) => up({ social_security: { ...s.social_security, haircut: parseFloat(e.target.value) } })}>
+                  <option value="1">100% Of Projected</option>
+                  <option value="0.75">75%</option>
+                  <option value="0.5">50%</option>
+                  <option value="0.25">25%</option>
+                  <option value="0">0% (None)</option>
+                </select>
+              </Field>
+            </div>
+            <p className="hint">
+              Find your estimate at full retirement age on your ssa.gov statement.
+            </p>
+          </div>
+          <table className="table fit ss-mini">
+            <thead>
+              <tr><th>Milestone</th><th>Claim At</th><th>Monthly</th><th>Annual</th><th>Vs FRA</th><th>Lifetime To {s.profile.horizon_age}</th></tr>
+            </thead>
+            <tbody>
+              {SS_KEY_CLAIM_AGES.map(({ age, factor, note }) => {
+                const monthly = s.social_security.monthly_at_fra * factor;
+                const years = Math.max(0, s.profile.horizon_age - age);
+                return (
+                  <tr key={age}>
+                    <td className="ss-note">{note}</td>
+                    <td>{age}</td>
+                    <td>{fmtMoney(monthly)}</td>
+                    <td>{fmtMoney(monthly * 12)}</td>
+                    <td className="ss-delta">{factor === 1 ? "—" : `${factor > 1 ? "+" : ""}${Math.round((factor - 1) * 100)}%`}</td>
+                    <td>{fmtMoney(monthly * 12 * years)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-        <p className="hint">
-          Benefit is income; how it's taxed (the provisional-income "torpedo") is on the Taxes tab.
-          Find your estimate at full retirement age on your ssa.gov statement.
-        </p>
       </Section>
 
       <Section title="Spending Strategy" info={A.spendingStrategy}>

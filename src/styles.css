@@ -425,6 +425,22 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .stat-value { font-size: 26px; font-weight: 600; }
 .stat-sub { color: var(--muted); font-size: 12px; }
 
+/* Income shock: before/after numbers lead, inputs sit in a column to the right. */
+.shock-body { display: flex; align-items: flex-start; gap: 40px; flex-wrap: wrap; }
+.shock-inputs { flex-direction: column; align-items: flex-start; gap: 12px; }
+.shock-compare { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+
+/* Social Security: inputs (with their caption) on the left, a compact
+   claim-age benefit table beside them. */
+.ss-body { display: flex; align-items: flex-start; gap: 40px; flex-wrap: wrap; }
+.ss-controls { display: flex; flex-direction: column; gap: 10px; }
+.ss-mini { font-size: 12px; }
+.ss-mini td, .ss-mini th { padding: 3px 16px 3px 0; }
+.ss-mini .ss-note { color: var(--muted); }
+.ss-mini .ss-delta { color: var(--muted); }
+.shock-cell { display: flex; flex-direction: column; gap: 2px; }
+.shock-arrow { font-size: 24px; color: var(--muted); line-height: 1; }
+
 .progress {
   position: relative;
   height: 20px;

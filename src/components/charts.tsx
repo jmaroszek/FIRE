@@ -606,25 +606,28 @@ export function AccountFlowsChart(props: {
   cIn.forEach((k, i) => data.push({
     x, y: inv[k], type: "bar", name: CONTRIB_LABELS[k] ?? k,
     legendgroup: "in",
-    ...(i === 0 ? { legendgrouptitle: { text: "Into Accounts (Contributions)" } } : {}),
+    ...(i === 0 ? { legendgrouptitle: { text: "Contributions" } } : {}),
     marker: { color: (CONTRIB_COLORS[k] ?? "#8b949e") + "cc" },
     hovertemplate: "Contribute %{y:$,.0f}<extra></extra>",
   } as Data));
   cOut.forEach((k, i) => data.push({
     x, y: w[k].map((v) => -v), type: "bar", name: SOURCE_LABELS[k] ?? k,
     legendgroup: "out",
-    ...(i === 0 ? { legendgrouptitle: { text: "Out Of Accounts (Withdrawals)" } } : {}),
+    ...(i === 0 ? { legendgrouptitle: { text: "Withdrawals" } } : {}),
     marker: { color: (SOURCE_COLORS[k] ?? "#8b949e") + "cc" },
     customdata: w[k], hovertemplate: "Withdraw %{customdata:$,.0f}<extra></extra>",
   } as Data));
   if (hasWork) data.push({
     x, y: wages, type: "scatter", mode: "lines", name: "Active Income (Work)",
-    legendgroup: "income", line: { color: FLOW_COLORS.wages, width: 2 },
+    legendgroup: "income", legendgrouptitle: { text: "Income" },
+    line: { color: FLOW_COLORS.wages, width: 2 },
     hovertemplate: "Work income %{y:$,.0f}<extra></extra>",
   });
   if (hasSS) data.push({
     x, y: ssInc, type: "scatter", mode: "lines", name: "Social Security",
-    legendgroup: "income", line: { color: FLOW_COLORS.ss, width: 2, dash: "dot" },
+    legendgroup: "income",
+    ...(hasWork ? {} : { legendgrouptitle: { text: "Income" } }),
+    line: { color: FLOW_COLORS.ss, width: 2, dash: "dot" },
     hovertemplate: "Social Security %{y:$,.0f}<extra></extra>",
   });
 
@@ -645,9 +648,8 @@ export function AccountFlowsChart(props: {
         ],
         annotations: lsm.annotations as Layout["annotations"],
         yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s",
-          title: { text: "Into ↑   ·   Out ↓  (Today's $)" } },
+          title: { text: "Real Dollars" } },
         xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
-        title: { text: "Money Into & Out Of Accounts — Median Path, Today's $", font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}
