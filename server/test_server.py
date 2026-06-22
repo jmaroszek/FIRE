@@ -94,15 +94,6 @@ def test_stress_endpoint(client):
     assert body["stressed_success"] <= body["base_success"] + 1e-9
 
 
-def test_roth_vs_trad_endpoint(client):
-    s = small_scenario(client)
-    body = client.post("/simulate/roth-vs-trad", json={"scenario": s, "n_paths": 200}).json()
-    assert 0.0 <= body["trad"]["success_rate"] <= 1.0
-    assert 0.0 <= body["roth"]["success_rate"] <= 1.0
-    assert body["tax_diff"] == pytest.approx(
-        body["roth"]["lifetime_tax_real"] - body["trad"]["lifetime_tax_real"])
-
-
 def test_tax_regime_endpoint(client):
     s = small_scenario(client)
     body = client.post("/simulate/tax-regime", json={

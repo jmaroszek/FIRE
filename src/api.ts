@@ -48,7 +48,7 @@ export const api = {
     req<SensitivityResult>("/simulate/sensitivity", {
       method: "POST", body: JSON.stringify({ scenario, n_paths: nPaths }),
     }),
-  stress: (scenario: Scenario, shockAge: number, duration = 3, nPaths = 2000) =>
+  stress: (scenario: Scenario, shockAge: number, duration = 1, nPaths = 2000) =>
     req<StressResult>("/simulate/stress", {
       method: "POST",
       body: JSON.stringify({ scenario, shock_age: shockAge, duration, n_paths: nPaths }),
@@ -74,6 +74,20 @@ export const api = {
   getWorkspace: () => req<Scenario>("/workspace"),
   saveWorkspace: (scenario: Scenario) =>
     req<{ saved: boolean }>("/workspace", { method: "PUT", body: JSON.stringify(scenario) }),
+  // Best-effort save that survives a page teardown (tab close, dev hot-reload).
+  // `keepalive` lets the PUT outlive the document; fire-and-forget, no await.
+  saveWorkspaceSync: (scenario: Scenario) => {
+    try {
+      void fetch(`${BASE}/workspace`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(scenario),
+        keepalive: true,
+      });
+    } catch {
+      /* nothing else we can do during teardown */
+    }
+  },
   listScenarios: () => req<{ name: string }[]>("/scenarios"),
   loadScenario: (name: string) => req<Scenario>(`/scenarios/${encodeURIComponent(name)}`),
   saveScenario: (name: string, scenario: Scenario) =>

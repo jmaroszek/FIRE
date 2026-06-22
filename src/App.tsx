@@ -107,6 +107,25 @@ export default function App() {
 
   useEffect(() => { void init(); }, []);
 
+  // Drain any pending workspace edit before the document tears down — a tab
+  // close, an app quit, or a dev hot-reload. Without this, the trailing edit
+  // inside the autosave debounce window is silently lost. visibilitychange
+  // (fires reliably when the page is hidden) uses a normal request; the
+  // beforeunload backstop uses a keepalive request that outlives the page.
+  useEffect(() => {
+    const flush = useStore.getState().flushWorkspace;
+    const onHide = () => { if (document.visibilityState === "hidden") flush(false); };
+    const onUnload = () => flush(true);
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("beforeunload", onUnload);
+    window.addEventListener("pagehide", onUnload);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("beforeunload", onUnload);
+      window.removeEventListener("pagehide", onUnload);
+    };
+  }, []);
+
   if (engineUp === false) {
     return (
       <div className="offline">

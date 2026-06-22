@@ -789,20 +789,37 @@ def sensitivity_tornado(scenario: Scenario, n_paths: int = 2000,
     return {"base_success": base, "entries": out, "delta": delta}
 
 
-def income_stress(scenario: Scenario, shock_age: int, duration: int,
+def income_stress(scenario: Scenario, shock_age: int, duration: float,
                   n_paths: int = 2000) -> dict:
     """Success if wages drop to zero for a window of years (job loss / the
     'AI replaces my role' scenario), re-run on the SAME market paths so the
-    delta is pure income effect, not sampling noise."""
+    delta is pure income effect, not sampling noise.
+
+    `duration` may be fractional (e.g. 1.5 years, or 0.5 ≈ six months). The
+    engine runs on an annual grain, so a fractional tail is approximated by
+    earning only the non-shocked fraction of salary in the final partial year
+    rather than a literal sub-year shock."""
     base_paths = sample_paths(scenario, n_paths=n_paths)
     base = run(scenario, paths=base_paths).success_rate
     s = scenario.model_copy(deep=True)
+    full_salary = scenario.income.gross_salary
+    horizon = scenario.profile.horizon_age
     s.events.append(Event(kind=EventKind.regime_change, age=shock_age,
                           name="Income Shock", overrides=RegimeOverrides(gross_salary=0.0)))
-    if shock_age + duration <= scenario.profile.horizon_age:
-        s.events.append(Event(kind=EventKind.regime_change, age=shock_age + duration,
+    full_years = int(duration)
+    frac = duration - full_years
+    if frac > 1e-9 and shock_age + full_years <= horizon:
+        # final partial year: only the non-shocked share of the year is earned
+        s.events.append(Event(kind=EventKind.regime_change, age=shock_age + full_years,
+                              name="Partial Income",
+                              overrides=RegimeOverrides(gross_salary=(1.0 - frac) * full_salary)))
+        restore_age = shock_age + full_years + 1
+    else:
+        restore_age = shock_age + full_years
+    if restore_age <= horizon:
+        s.events.append(Event(kind=EventKind.regime_change, age=restore_age,
                               name="Income Restored",
-                              overrides=RegimeOverrides(gross_salary=scenario.income.gross_salary)))
+                              overrides=RegimeOverrides(gross_salary=full_salary)))
     stressed = run(s, paths=base_paths).success_rate
     return {"base_success": base, "stressed_success": stressed,
             "delta": stressed - base, "shock_age": shock_age, "duration": duration}

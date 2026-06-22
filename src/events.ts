@@ -5,10 +5,11 @@
 import type { FireEvent, Scenario } from "./types";
 
 export type DisplayKind =
-  | "expense" | "income" | "salary" | "allocation" | "crash";
+  | "expense" | "recurring" | "income" | "salary" | "allocation" | "crash";
 
 export const KIND_META: Record<DisplayKind, { label: string; color: string }> = {
   expense: { label: "One-Time Expense", color: "#f0883e" },
+  recurring: { label: "Recurring Expense", color: "#db6d28" },
   income: { label: "One-Time Income", color: "#3fb950" },
   salary: { label: "New Salary", color: "#58a6ff" },
   allocation: { label: "Change Allocation", color: "#bc8cff" },
@@ -16,11 +17,12 @@ export const KIND_META: Record<DisplayKind, { label: string; color: string }> = 
 };
 
 export const KIND_ORDER: DisplayKind[] = [
-  "expense", "income", "salary", "allocation", "crash",
+  "expense", "recurring", "income", "salary", "allocation", "crash",
 ];
 
 export function displayKindOf(ev: FireEvent): DisplayKind {
   if (ev.kind === "crash") return "crash";
+  if (ev.kind === "recurring_flow") return "recurring";
   if (ev.kind === "one_time_flow") return ev.amount < 0 ? "income" : "expense";
   // regime_change: allocation-only overrides count as an allocation event
   const ov = ev.overrides ?? {};
@@ -34,6 +36,11 @@ export function newEventOf(kind: DisplayKind, age: number, scenario: Scenario): 
   switch (kind) {
     case "expense":
       return { kind: "one_time_flow", name: "Expense", age, amount: 20000 };
+    case "recurring":
+      return {
+        kind: "recurring_flow", name: "Recurring Expense", age, amount: 2000,
+        interval_years: 3, end_age: scenario.profile.horizon_age,
+      };
     case "income":
       return { kind: "one_time_flow", name: "Windfall", age, amount: -20000 };
     case "crash":

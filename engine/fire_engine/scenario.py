@@ -13,7 +13,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-SCHEMA_VERSION = 3  # v3: allocation_schedule (age-based allocation glidepath)
+SCHEMA_VERSION = 4  # v4: recurring_flow events (lumpy periodic costs)
 
 
 class AccountType(str, Enum):
@@ -64,7 +64,10 @@ class MarketModel(BaseModel):
     mode: Literal["bootstrap", "parametric"] = "bootstrap"
     stocks: AssetParams = AssetParams(real_cagr=0.050, vol=0.17)
     bonds: AssetParams = AssetParams(real_cagr=0.018, vol=0.07)
-    cash: AssetParams = AssetParams(real_cagr=0.000, vol=0.01)
+    # Cash / HYSA: historically savings has roughly kept pace with inflation,
+    # ~0.5% real (so ≈ 3% APY at 2.5% inflation). Earns the cash return and is
+    # taxed as ordinary interest; uninvested surplus also pools here.
+    cash: AssetParams = AssetParams(real_cagr=0.005, vol=0.01)
     # Stationary bootstrap: expected block length in years.
     bootstrap_mean_block: float = 5.0
     # If true, shift historical real returns so their geometric means match the
@@ -389,6 +392,7 @@ class IRMAAConfig(BaseModel):
 
 class EventKind(str, Enum):
     one_time_flow = "one_time_flow"
+    recurring_flow = "recurring_flow"
     regime_change = "regime_change"
     crash = "crash"
 
@@ -405,11 +409,18 @@ class Event(BaseModel):
     name: str = ""
     year: Optional[int] = None  # specify year or age (age wins if both)
     age: Optional[int] = None
-    # one_time_flow: positive = outflow/expense, negative = windfall/inflow.
+    # one_time_flow / recurring_flow: positive = outflow/expense, negative = windfall/inflow.
     amount: float = 0.0
     # one_time_flow: pull from this account specifically; None = withdrawal policy.
     # For windfalls, the destination account (default taxable).
     account: Optional[AccountType] = None
+    # recurring_flow: repeat the flow every `interval_years` starting at age/year,
+    # through `end_age` (inclusive; None = the plan horizon). Each occurrence behaves
+    # exactly like a one_time_flow of `amount` from/to `account`. Models lumpy,
+    # periodic costs — a new GPU every 3 years, a car every 8 — without listing
+    # each one. interval_years <= 0 is treated as 1.
+    interval_years: int = 1
+    end_age: Optional[int] = None
     # crash: returns applied INSTEAD of the sampled returns that year.
     stock_return: Optional[float] = None
     bond_return: Optional[float] = None

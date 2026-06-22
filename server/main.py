@@ -164,7 +164,7 @@ def sensitivity(req: SensitivityRequest) -> dict:
 class StressRequest(BaseModel):
     scenario: Scenario
     shock_age: int
-    duration: int = 3
+    duration: float = 1.0  # years; fractional allowed (e.g. 0.5 ≈ six months)
     n_paths: int = 2000
 
 

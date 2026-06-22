@@ -1,8 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
 import { A } from "../assumptions";
-import { Field, NumberInput, PercentInput, Section, fmtMoney, fmtPct } from "../components/ui";
+import { Field, InfoTip, NumberInput, PercentInput, Section, fmtMoney, fmtPct } from "../components/ui";
 import { useStore } from "../store";
-import type { Scenario } from "../types";
+import type { AssetParams, Scenario } from "../types";
 
 /** One labelled row in the read-only Assumptions Summary. */
 function Row({ label, value }: { label: string; value: string }) {
@@ -17,9 +17,25 @@ function Row({ label, value }: { label: string; value: string }) {
 export default function Assumptions() {
   const { scenario } = useStore();
   const setScenario = useStore((s) => s.setScenario);
+  // How the asset-return fields are entered. Real is always what's stored; this
+  // only controls the entry/display denomination (converted at mean inflation).
+  const [returnMode, setReturnMode] = useState<"nominal" | "real">("nominal");
   if (!scenario) return null;
   const s = scenario;
   const up = (patch: Partial<Scenario>) => setScenario({ ...s, ...patch });
+
+  const meanInfl = s.inflation.mean;
+  const nominalMode = returnMode === "nominal";
+  const toReal = (nom: number) => (1 + nom) / (1 + meanInfl) - 1;
+  const toNominal = (real: number) => (1 + real) * (1 + meanInfl) - 1;
+  // Inputs render the chosen denomination; storage is always real_cagr.
+  const shownCagr = (real: number) => (nominalMode ? toNominal(real) : real);
+  const storeCagr = (shown: number) => (nominalMode ? toReal(shown) : shown);
+  const altCagr = (real: number) =>
+    nominalMode ? `≈ ${fmtPct(real)} real` : `≈ ${fmtPct(toNominal(real))} nominal`;
+  const isBootstrap = s.market.mode === "bootstrap";
+  const upAsset = (key: "stocks" | "bonds" | "cash", patch: Partial<AssetParams>) =>
+    up({ market: { ...s.market, [key]: { ...s.market[key], ...patch } } });
 
   const assets = s.accounts.reduce((a, x) => a + x.balance, 0);
   const debt = (s.liabilities ?? []).reduce((a, l) => a + l.balance, 0);
@@ -89,32 +105,68 @@ export default function Assumptions() {
               <option value="parametric">Parametric (Lognormal)</option>
             </select>
           </Field>
-          <Field label="Stocks (CAGR / Vol)" info={A.vol}>
-            <span className="pair">
-              <PercentInput value={s.market.stocks.real_cagr} step={0.25}
-                onChange={(v) => up({ market: { ...s.market, stocks: { ...s.market.stocks, real_cagr: v } } })} />
-              <PercentInput value={s.market.stocks.vol} step={1}
-                onChange={(v) => up({ market: { ...s.market, stocks: { ...s.market.stocks, vol: v } } })} />
-            </span>
-          </Field>
-          <Field label="Bonds (CAGR / Vol)" info={A.vol}>
-            <span className="pair">
-              <PercentInput value={s.market.bonds.real_cagr} step={0.25}
-                onChange={(v) => up({ market: { ...s.market, bonds: { ...s.market.bonds, real_cagr: v } } })} />
-              <PercentInput value={s.market.bonds.vol} step={1}
-                onChange={(v) => up({ market: { ...s.market, bonds: { ...s.market.bonds, vol: v } } })} />
-            </span>
-          </Field>
+          {/* Mean Shift only affects bootstrap mode — in parametric the CAGRs are
+              used directly, so it's hidden there to avoid a dead control. */}
+          {isBootstrap && (
+            <Field label="Mean Shift"
+              info="Shifts historical returns so their long-run average matches your entered CAGRs, keeping history's volatility and correlations. Without it, returns come straight from history and your stock/bond CAGRs are ignored.">
+              <input type="checkbox" checked={s.market.bootstrap_mean_shift}
+                onChange={(e) => up({ market: { ...s.market, bootstrap_mean_shift: e.target.checked } })} />
+            </Field>
+          )}
+        </div>
+
+        <div className="returns-head">
+          <span className="field-label">
+            Asset Returns<InfoTip text={A.vol} />
+          </span>
+          <span className="seg">
+            <button type="button" className={nominalMode ? "seg-on" : ""}
+              onClick={() => setReturnMode("nominal")}>Nominal</button>
+            <button type="button" className={!nominalMode ? "seg-on" : ""}
+              onClick={() => setReturnMode("real")}>Real</button>
+          </span>
+        </div>
+        <div className="asset-matrix">
+          <div className="asset-matrix-row asset-matrix-head">
+            <span />
+            <span>{nominalMode ? "Nominal CAGR" : "Real CAGR"}</span>
+            <span>Volatility</span>
+          </div>
+          {(["stocks", "bonds"] as const).map((key) => (
+            <div className="asset-matrix-row" key={key}>
+              <span className="asset-name">{key === "stocks" ? "Stocks" : "Bonds"}</span>
+              <span className="cagr-cell">
+                <PercentInput value={shownCagr(s.market[key].real_cagr)} step={0.25}
+                  onChange={(v) => upAsset(key, { real_cagr: storeCagr(v) })} />
+                <span className="cagr-alt">{altCagr(s.market[key].real_cagr)}</span>
+              </span>
+              <PercentInput value={s.market[key].vol} step={1}
+                onChange={(v) => upAsset(key, { vol: v })} />
+            </div>
+          ))}
+        </div>
+
+        <div className="fields" style={{ marginTop: 14 }}>
           <Field label="Expense Ratio" info={A.expenseRatio}>
             <PercentInput value={s.market.expense_ratio} step={0.01}
               onChange={(v) => up({ market: { ...s.market, expense_ratio: v } })} />
           </Field>
-          <Field label="Mean Shift"
-            info="Bootstrap mode only: shifts historical returns so their long-run average matches your entered CAGRs, keeping history's volatility and correlations.">
-            <input type="checkbox" checked={s.market.bootstrap_mean_shift}
-              onChange={(e) => up({ market: { ...s.market, bootstrap_mean_shift: e.target.checked } })} />
+          <Field label={nominalMode ? "Cash / HYSA (APY)" : "Cash / HYSA (Real)"} info={A.cash}>
+            <span className="cagr-cell">
+              <PercentInput value={shownCagr(s.market.cash.real_cagr)} step={0.25}
+                onChange={(v) => upAsset("cash", { real_cagr: storeCagr(v) })} />
+              <span className="cagr-alt">{altCagr(s.market.cash.real_cagr)}</span>
+            </span>
           </Field>
         </div>
+
+        <p className="hint">
+          {isBootstrap
+            ? "In Historical Bootstrap, stock & bond returns are drawn from history (≈6.9% / 2.5% real) — the CAGRs above only take effect with Mean Shift on. Cash isn't in the historical data, so it always uses the rate you set."
+            : "In Parametric mode, all three returns and their volatilities are used directly to draw lognormal returns."}
+          {" "}Returns are stored in real terms; changing your inflation assumption re-expresses the nominal figure without changing your real return or wealth projection.
+        </p>
         <p className="hint">Your portfolio allocation (and any age-based glide) lives on the Accounts tab — it's a choice you make, not a market assumption.</p>
       </Section>
 
@@ -146,8 +198,9 @@ export default function Assumptions() {
               <Row label="Born / Plan To" value={`${s.profile.birth_year} → age ${s.profile.horizon_age}`} />
               <Row label="State Tax" value={fmtPct(s.profile.state_tax_rate, 1)} />
               <Row label="Market Mode" value={s.market.mode === "bootstrap" ? "Bootstrap" : "Parametric"} />
-              <Row label="Stocks / Bonds CAGR"
+              <Row label="Stocks / Bonds (Real CAGR)"
                 value={`${fmtPct(s.market.stocks.real_cagr)} / ${fmtPct(s.market.bonds.real_cagr)}`} />
+              <Row label="Cash / HYSA (Real)" value={fmtPct(s.market.cash.real_cagr)} />
               <Row label="Allocation (S/B/C)"
                 value={`${fmtPct(s.allocation.stocks, 0)} / ${fmtPct(s.allocation.bonds, 0)} / ${fmtPct(s.allocation.cash, 0)}`} />
               <Row label="Allocation Glide"

@@ -1,8 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { A } from "../assumptions";
 import {
-  ContributionsChart, FundingSourceChart, HealthcareCostChart,
-  SpendingActualsChart,
+  AccountFlowsChart, HealthcareCostChart, SpendingActualsChart,
 } from "../components/charts";
 import TimelineEditor from "../components/TimelineEditor";
 import {
@@ -32,6 +31,7 @@ function EventRow({ ev, index }: { ev: FireEvent; index: number }) {
   const setScenario = useStore((s) => s.setScenario);
   const kind = displayKindOf(ev);
   const meta = KIND_META[kind];
+  const evAge = ev.age ?? ((ev.year ?? scenario.sim.start_year) - scenario.profile.birth_year);
 
   const up = (patch: Partial<FireEvent>) => {
     const events = scenario.events.map((e, j) => (j === index ? { ...e, ...patch } : e));
@@ -55,21 +55,41 @@ function EventRow({ ev, index }: { ev: FireEvent; index: number }) {
         <NumberInput value={ev.age ?? (ev.year ?? scenario.sim.start_year) - scenario.profile.birth_year}
           step={1} onChange={(v) => up({ age: v, year: null })} />
       </Field>
-      {(kind === "expense" || kind === "income") && (
+      {(kind === "expense" || kind === "income" || kind === "recurring") && (
         <>
           <Field label="Amount">
-            <NumberInput value={Math.abs(ev.amount)} step={5000} min={0}
+            <NumberInput value={Math.abs(ev.amount)} step={kind === "recurring" ? 1000 : 5000} min={0}
               onChange={(v) => up({ amount: kind === "income" ? -Math.abs(v) : Math.abs(v) })} />
           </Field>
+          {kind === "recurring" && (
+            <>
+              <Field label="Every (Years)">
+                <NumberInput value={ev.interval_years ?? 3} step={1} min={1}
+                  onChange={(v) => up({ interval_years: Math.max(1, Math.round(v)) })} />
+              </Field>
+              <Field label="Until Age">
+                <NumberInput value={ev.end_age ?? scenario.profile.horizon_age} step={1}
+                  onChange={(v) => up({ end_age: v })} />
+              </Field>
+            </>
+          )}
           <Field label={kind === "income" ? "Deposit Into" : "Pay From"}>
             <select value={ev.account ?? ""} onChange={(e) =>
               up({ account: (e.target.value || null) as AccountType | null })}>
               <option value="">{kind === "income" ? "Brokerage (Default)" : "Withdrawal Policy"}</option>
               <option value="cash">Cash</option>
               <option value="taxable">Brokerage</option>
-              {kind === "expense" && <option value="trad_401k">Traditional</option>}
-              {kind === "expense" && <option value="roth_ira">Roth</option>}
-              {kind === "expense" && <option value="hsa">HSA</option>}
+              {kind === "income" && <option value="roth_ira">Roth IRA</option>}
+              {/* Traditional/HSA before their penalty-free ages cause a 10% penalty
+                  (which the engine counts as a path failure), so they're only
+                  offered once the event is old enough — but a value already set is
+                  never hidden out from under the user. (Recurring keys off its
+                  first occurrence age, the conservative gate.) */}
+              {(kind === "expense" || kind === "recurring") && (evAge >= 60 || ev.account === "trad_401k") &&
+                <option value="trad_401k">Traditional{evAge < 60 ? " (early — penalty)" : ""}</option>}
+              {(kind === "expense" || kind === "recurring") && <option value="roth_ira">Roth</option>}
+              {(kind === "expense" || kind === "recurring") && (evAge >= 65 || ev.account === "hsa") &&
+                <option value="hsa">HSA{evAge < 65 ? " (pre-65 — penalty)" : ""}</option>}
             </select>
           </Field>
         </>
@@ -125,7 +145,17 @@ export default function CashFlow() {
   const startAge = s.sim.start_year - s.profile.birth_year;
   const midCareer = Math.round((startAge + s.retirement_age) / 2);
   const [shockAge, setShockAge] = useState(midCareer);
-  const [shockDur, setShockDur] = useState(3);
+  const [shockDur, setShockDur] = useState(1);
+
+  // Headroom & Resilience tiles compute automatically (like the Freedom tab),
+  // showing a spinner instead of waiting on a manual button. Both results are
+  // nulled on every edit by the store, so this re-runs them stale-while-revalidate.
+  useEffect(() => {
+    if (scenario && !maxspend && !maxspendLoading) void runMaxSpend();
+  }, [scenario, maxspend]);
+  useEffect(() => {
+    if (scenario && !stress && !stressLoading) void runStress(shockAge, shockDur);
+  }, [scenario, stress]);
 
   const upStream = (i: number, patch: Partial<ExpenseStream>) =>
     up({ expense_streams: s.expense_streams.map((e, j) => (j === i ? { ...e, ...patch } : e)) });
@@ -186,6 +216,17 @@ export default function CashFlow() {
   const subHc = result?.healthcare?.subsidy_real ?? [];
   const annualRetSpend = result && retIdx >= 0
     ? (result.expenses_median_real[retIdx] ?? 0) + (netHc[retIdx] ?? 0) : 0;
+  // What the chosen spending strategy actually funds in the first retirement year
+  // (living + medical, median path) vs the plan's intended amount — the readout
+  // that makes a portfolio-% strategy starving discretionary spending visible.
+  const modeledRetSpend = result && retIdx >= 0 ? (result.expenses_median_real[retIdx] ?? 0) : 0;
+  const activeAt = (age: number, start?: number | null, end?: number | null) =>
+    (start ?? startAge) <= age && age <= (end ?? 999);
+  const plannedAtRet =
+    s.expense_streams.filter((e) => activeAt(s.retirement_age, e.start_age, e.end_age))
+      .reduce((a, e) => a + e.annual, 0)
+    + (s.medical_streams ?? []).filter((e) => activeAt(s.retirement_age, e.start_age, e.end_age))
+      .reduce((a, e) => a + e.annual, 0);
   const lifetimeRetSpend = result && retIdx >= 0
     ? result.expenses_median_real.slice(retIdx).reduce((a, b) => a + b, 0) : 0;
   const goGoShare = (() => {
@@ -408,13 +449,9 @@ export default function CashFlow() {
 
       {/* ───────────── CASH FLOW OVER TIME ───────────── */}
       <Head id="cf-flow">Cash Flow Over Time</Head>
-      <Section title="Funding Sources — Work vs Accounts" info={A.withdrawalSource}>
-        {result ? <FundingSourceChart result={result} axisMode={axisMode} />
-          : <p className="hint">Simulation pending…</p>}
-      </Section>
-
-      <Section title="Annual Contributions" info={A.investing}>
-        {result ? <ContributionsChart result={result} axisMode={axisMode} />
+      <Section title="Money Into &amp; Out Of Accounts" info={A.accountFlows}>
+        {result ? <AccountFlowsChart result={result} axisMode={axisMode}
+          retirementAge={s.retirement_age} birthYear={s.profile.birth_year} />
           : <p className="hint">Simulation pending…</p>}
       </Section>
 
@@ -436,38 +473,41 @@ export default function CashFlow() {
 
       {/* ───────────── HEADROOM & RESILIENCE ───────────── */}
       <Head id="cf-headroom">Headroom &amp; Resilience</Head>
-      <div className="group-grid">
-      <Section title="Income Shock Stress Test" info={A.stressTest}>
+      <div className="group-grid stretch">
+      <Section title="Income Shock Stress Test" info={A.stressTest} className="span1">
         <div className="fields">
           <Field label="Shock Starts At Age"
             info="The age your wages drop to zero. Most meaningful before your retirement age.">
             <NumberInput value={shockAge} step={1} min={startAge} max={s.retirement_age} onChange={setShockAge} />
           </Field>
-          <Field label="Duration (Years)">
-            <NumberInput value={shockDur} step={1} min={1} max={20} onChange={setShockDur} />
+          <Field label="Duration (Years)"
+            info="How long wages stay at zero. Fractional is allowed — 0.5 ≈ six months — approximated at the engine's annual grain by earning only the remaining fraction of the final partial year.">
+            <NumberInput value={shockDur} step={0.25} min={0.25} max={20} onChange={setShockDur} />
           </Field>
-          <button onClick={() => runStress(shockAge, shockDur)} disabled={stressLoading}>
-            {stressLoading ? "Computing…" : "Run Stress Test"}
+          <button className="ghost" onClick={() => runStress(shockAge, shockDur)} disabled={stressLoading}>
+            {stressLoading ? "Computing…" : "Re-run"}
           </button>
         </div>
-        {stress && (
-          <div className="stat-grid" style={{ marginTop: 10 }}>
+        {stress ? (
+          <div className="stat-row" style={{ marginTop: 10 }}>
             <Stat label="Baseline Success" value={fmtPct(stress.base_success)} />
             <Stat label={`After A ${stress.duration}-Year Shock At Age ${stress.shock_age}`}
               value={fmtPct(stress.stressed_success)}
               sub={`${stress.delta >= 0 ? "+" : ""}${fmtPct(stress.delta)} vs baseline`} />
           </div>
+        ) : (
+          <div className="tile-loading"><span className="spinner" />Computing…</div>
         )}
       </Section>
 
-      <Section title="Max Sustainable Spending" info={A.maxSpendRetire}
+      <Section title="Max Sustainable Spending" info={A.maxSpendRetire} className="span1"
         actions={maxspend && (
           <button className="ghost" onClick={runMaxSpend} disabled={maxspendLoading}>
             {maxspendLoading ? "Computing…" : "Recompute"}
           </button>
         )}>
         {maxspend ? (
-          <div className="stat-grid">
+          <div className="stat-row">
             <Stat label="Max Spend Now (While Working)"
               value={`${fmtMoney(maxspend.max_living_annual)}/yr`}
               sub={`${maxspend.max_scale.toFixed(2)}× planned ${fmtMoney(maxspend.base_living_annual)}/yr${maxspend.capped ? " (capped 8×)" : ""}`}
@@ -478,9 +518,7 @@ export default function CashFlow() {
               info={A.maxSpendRetire} />
           </div>
         ) : (
-          <button onClick={runMaxSpend} disabled={maxspendLoading}>
-            {maxspendLoading ? "Computing…" : "Compute"}
-          </button>
+          <div className="tile-loading"><span className="spinner" />Computing…</div>
         )}
       </Section>
       </div>
@@ -490,9 +528,9 @@ export default function CashFlow() {
       <HeroRow>
         <HeroStat label="Annual Retirement Spend" value={`${fmtMoney(annualRetSpend)}/yr`}
           sub={`living + net healthcare at age ${s.retirement_age}`} />
-        <HeroStat tone="green" label="Spent In Go-Go Years" value={fmtPct(goGoShare, 0)}
+        <HeroStat tone="green" label="Spent In Active Years" value={fmtPct(goGoShare, 0)}
           sub="share of lifetime spending through age 75"
-          info="Bill-Perkins lens: how much of your modeled lifetime spending lands in the high-energy years (through 75) vs later." />
+          info="Bill-Perkins lens: how much of your modeled lifetime spending lands in the high-energy (active) years through 75 vs later." />
         <HeroStat tone="amber" label="Lifetime Retirement Spending" value={fmtMoney(lifetimeRetSpend)}
           sub={`age ${s.retirement_age}–${s.profile.horizon_age}, today's $`} />
       </HeroRow>
@@ -519,8 +557,8 @@ export default function CashFlow() {
           </Field>
         </div>
         <p className="hint">
-          Benefit is income; how it's taxed (the provisional-income "torpedo") is on the Taxes tab.{" "}
-          <a className="ext" href="https://www.ssa.gov/myaccount/" target="_blank" rel="noreferrer">Estimate your benefit at ssa.gov ↗</a>
+          Benefit is income; how it's taxed (the provisional-income "torpedo") is on the Taxes tab.
+          Find your estimate at full retirement age on your ssa.gov statement.
         </p>
       </Section>
 
@@ -561,6 +599,20 @@ export default function CashFlow() {
             </>
           )}
         </div>
+        <p className="hint">{{
+          constant_dollar: "Spends your planned expense streams every year. With guardrails on (below), discretionary spending is trimmed when your withdrawal rate runs hot and restored when markets recover — bounded by the floor and ceiling.",
+          constant_pct: "Each year, discretionary spending = your rate × current portfolio, after essentials are covered. It self-corrects with the market and can never deplete to zero, but income swings year to year. If the rate is low relative to your essentials, discretionary can fall to near zero — which is why spending can look thin on the other tabs.",
+          vpw: "Like Constant %, but the rate rises with age via an annuity payout factor, deliberately drawing the balance toward zero by your horizon. A higher assumed real return pulls more spending into your earlier years.",
+          floor_ceiling: "Constant % bounded between a floor and ceiling of your planned discretionary spend — keeps the market self-correction but guarantees a minimum lifestyle (and caps the upside).",
+        }[ss.kind]}</p>
+        {result && retIdx >= 0 && (
+          <p className="hint">
+            At retirement (age {s.retirement_age}), this funds ≈ <strong>{fmtMoney(modeledRetSpend)}/yr</strong>{" "}
+            of living + medical on the median path{plannedAtRet > 0 ? ` (planned ${fmtMoney(plannedAtRet)}/yr)` : ""}.
+            {modeledRetSpend > 0 && plannedAtRet > 0 && modeledRetSpend < plannedAtRet * 0.85 &&
+              " It's funding noticeably less than planned — raise the rate, or switch to Constant Dollar if that wasn't intended."}
+          </p>
+        )}
         {ss.kind === "constant_dollar" ? (
           <div className="fields">
             <Field label="Guardrails Enabled" info={A.guardrails}>
@@ -605,10 +657,10 @@ export default function CashFlow() {
           sub="lifetime, today's $" />
       </HeroRow>
 
-      <div className="group-grid">
+      <div className="group-grid stretch">
       <Section
         title="Medical Spending (HSA-Eligible)"
-        className="span2"
+        className="span1"
         info="Out-of-pocket medical spending, kept separate from general expenses. Always essential; the HSA pays its share (set utilization under HSA on the Accounts tab). Don't list insurance premiums here — those are modeled under ACA / IRMAA, which add on top."
         actions={
           <button className="ghost" onClick={() =>
@@ -669,7 +721,14 @@ export default function CashFlow() {
               onChange={(v) => up({ aca: { ...s.aca, coverage_end_age: v } })} />
           </Field>
         </div>
-        <p className="hint">Models the post-2021 subsidy (caps at 8.5% of MAGI, no income cliff). Roth conversions raise MAGI and shrink the subsidy — the collision the Accounts tab's subsidy-vs-conversion view surfaces. Don't also list this premium as an expense stream.</p>
+        <p className="hint">
+          <strong>What the subsidy is:</strong> if you retire before 65 you buy insurance on the ACA marketplace,
+          and the government caps what you're expected to pay for a benchmark plan at a sliding share of income
+          (up to 8.5% of MAGI, no cliff). The subsidy is benchmark premium minus that expected share, which lowers
+          your premium. Off by default because the two premium numbers depend on your age and area —
+          look them up with HealthCare.gov's window-shopping tool, then enable.
+        </p>
+        <p className="hint">Roth conversions and capital gains raise MAGI and shrink the subsidy — the collision the Accounts tab's subsidy-vs-conversion view surfaces. Don't also list this premium as an expense stream.</p>
       </Section>
       </div>
 

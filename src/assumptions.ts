@@ -20,7 +20,9 @@ export const A = {
   realDollars:
     "All inputs are in today's dollars. The engine simulates in nominal dollars (taxes and limits are nominal) and converts back for 'real' views.",
   cagr:
-    "Enter geometric (CAGR) real returns, not arithmetic means. Historical US: stocks ≈ 6.9% real CAGR, 10yr bonds ≈ 2.5% (Shiller 1871–2022). Defaults are deliberately more conservative.",
+    "Long-run average annual growth (geometric CAGR, not an arithmetic mean). Enter returns as Nominal (the headline number, e.g. ~9% stocks) or Real (over inflation) — the toggle converts at your inflation assumption and stores the real figure either way, so changing inflation later re-expresses the nominal number without moving your real return or wealth. Historical US real: stocks ≈ 6.9% CAGR, 10yr bonds ≈ 2.5% (Shiller 1871–2022). Defaults are deliberately more conservative.",
+  cash:
+    "Your cash / high-yield savings (HYSA) return. Modeled as inflation plus a real spread, so it tracks inflation the way savings rates actually do — in Nominal mode just enter today's APY (e.g. ~3% APY ≈ 0.5% real). Applies to your Cash account and any uninvested surplus, and it's taxed as ordinary interest. Historically cash has roughly kept pace with inflation (~0.5% real).",
   bootstrap:
     "Bootstrap resamples ~5-year blocks of joint (stock, bond, inflation) history from Shiller 1871–2022, preserving correlations and real crash sequences. Parametric draws independent lognormal returns instead.",
   inflation:
@@ -57,8 +59,6 @@ export const A = {
     "Record your actual balances over time.",
   liabilities:
     "Loans with fixed nominal payments: mortgage, car, business loans. The payment is an essential, non-inflating expense until the amortization (balance × rate − payment) hits zero; the outstanding balance is subtracted from net worth. Loans never inflate — that's the upside of fixed-rate debt.",
-  investing:
-    "How much the plan saves each year, by destination — the median path in today's dollars. Anything left after taxes and expenses is assumed saved: first down your contribution waterfall, then any unallocated surplus pools in Cash. If the Cash band looks large, your waterfall isn't capturing your full surplus.",
   sweep:
     "Success probability if you retire at each age, holding everything else constant (one shared set of market paths, so the curve is noise-free). Note: this can disagree with the FIRE number — by a later age your money is mostly in retirement accounts, so the same total is less accessible before 59½ than today's mix would be. New Salary events pinned after a candidate retirement age count as returning to work.",
   actualsVsProjection:
@@ -123,8 +123,8 @@ export const A = {
     "Among only the paths that run short, how bad the shortfall is: the median total unmet spending (today's dollars) and how many years it lasts. A binary success rate treats a $500 miss at 89 and a decade-long collapse identically — this separates the survivable trims from the catastrophes.",
   bridgeDrawRate:
     "The share of your penalty-free ACCESSIBLE money you draw each year during the bridge — retirement to 59½, before the locked retirement accounts open — averaged across those years (each year capped at 100%). The bridge is the riskiest stretch: it's funded entirely from the slice of wealth you can actually reach, with no wages and no Social Security yet. A high rate means the liquid runway is working hard and a bad sequence could exhaust it before the accounts unlock; a low rate is comfortable headroom. We cap each year at 100% so the final year — when the bridge fund is intentionally drained toward zero right before the accounts unlock — can't blow up the average. Reads the median path.",
-  withdrawalSource:
-    "Where each year's money comes from on the median path — active work income and Social Security at the base, then the amount actually drawn from each account on top. It makes the hand-off explicit: paychecks fund life early, the portfolio funds it later. Unlike the Liquidity chart (what's *available* penalty-free), this shows what actually *flowed*, so you can also confirm the Withdrawal Policy taps accounts in the order you intend.",
+  accountFlows:
+    "One signed view of money moving through your accounts on the median path, today's dollars. Bars above zero are contributions (where each surplus dollar is saved); bars below zero are withdrawals (what's drawn from each account, in your Withdrawal-Policy order). Work income and Social Security ride as context lines. It replaces the separate contributions and funding-sources charts so the picture stays meaningful after retirement, when saving stops and drawing begins. The bars are per-year medians by destination/source — they're deliberately NOT differenced into a 'net' or 'deficit', because medians aren't additive (median spending ≠ the sum of median draws); the honest per-path shortfall story lives on the Freedom tab.",
   oneMoreYear:
     "The classic early-retiree question, quantified: how much does working one more year raise your success probability? Read straight off the retirement-age success curve — the gain from retiring at your planned age + 1 instead of your planned age. Diminishing returns up high are the signal you've hit 'enough'; a steep jump means you're retiring into a fragile zone.",
   spendingStrategy:

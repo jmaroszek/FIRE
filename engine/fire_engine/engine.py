@@ -430,13 +430,23 @@ def run(
     # contribution waterfall per year (age-keyed overrides; empty schedule is a no-op)
     waterfall_by_year = _waterfall_for_years(scenario, T)
 
-    # group one-time flow events by sim year
+    # group one-time flow events by sim year; recurring_flow events fan out into
+    # one bucket per occurrence (every interval_years through end_age), each
+    # behaving like a one_time_flow of the same amount/account.
     onetime: dict[int, list] = {}
     for ev in scenario.events:
         if ev.kind is EventKind.one_time_flow:
             t = scenario.event_year_index(ev)
             if 0 <= t < T:
                 onetime.setdefault(t, []).append(ev)
+        elif ev.kind is EventKind.recurring_flow:
+            interval = max(int(ev.interval_years or 1), 1)
+            last_age = ev.end_age if ev.end_age is not None else scenario.profile.horizon_age
+            t = scenario.event_year_index(ev)
+            while t < T and start_age + t <= last_age:
+                if t >= 0:
+                    onetime.setdefault(t, []).append(ev)
+                t += interval
 
     conv_rule = scenario.conversion_rule
     conv_start = conv_rule.start_age if conv_rule.start_age is not None else retirement_age

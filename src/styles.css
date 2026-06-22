@@ -140,6 +140,10 @@ main { padding: 18px; max-width: 1500px; width: 100%; margin: 0 auto; }
 .stack { display: flex; flex-direction: column; gap: 16px; }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 16px; align-items: start; }
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: stretch; }
+/* horizontal pair of stats that stays side-by-side even in a narrow tile
+   (used in Headroom & Resilience, where vertical stacking wasted the width) */
+.stat-row { display: flex; gap: 16px; flex-wrap: wrap; }
+.stat-row > .stat { flex: 1 1 0; min-width: 130px; }
 
 /* In-tile "actively computing" indicator for the on-demand analyses. */
 .tile-loading { display: flex; align-items: center; gap: 10px; color: var(--muted);
@@ -305,6 +309,30 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 /* size inputs to their content type: percents are short, money is medium */
 .fields input[type="number"] { width: 110px; }
 .fields .numwrap:has(.suffix) input[type="number"] { width: 72px; }
+
+/* Market-model asset returns: a compact stocks/bonds matrix so both assets sit
+   on one row, with a per-cell "≈ X% real/nominal" conversion readout. */
+.returns-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin: 14px 0 6px;
+}
+.seg {
+  display: inline-flex; border: 1px solid var(--border); border-radius: 6px;
+  overflow: hidden;
+}
+.seg button {
+  background: none; border: none; color: var(--muted);
+  padding: 3px 12px; font-size: 12px; cursor: pointer;
+}
+.seg button.seg-on { background: var(--accent); color: #fff; }
+.asset-matrix { display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
+.asset-matrix-row {
+  display: grid; grid-template-columns: 64px 1fr 1fr; gap: 10px; align-items: end;
+}
+.asset-matrix-head span { color: var(--muted); font-size: 12px; }
+.asset-name { color: var(--fg); font-size: 13px; padding-bottom: 5px; }
+.cagr-cell { display: inline-flex; flex-direction: column; gap: 2px; }
+.cagr-alt { color: var(--muted); font-size: 11px; white-space: nowrap; }
 
 .policy-row { display: flex; flex-wrap: wrap; gap: 12px 40px; align-items: flex-start; }
 .policy-row .fields { flex-direction: column; align-items: flex-start; gap: 12px; }

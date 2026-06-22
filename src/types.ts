@@ -1,4 +1,4 @@
-// TypeScript mirror of engine/fire_engine/scenario.py (SCHEMA_VERSION 3)
+// TypeScript mirror of engine/fire_engine/scenario.py (SCHEMA_VERSION 4)
 
 export type AccountType =
   | "taxable" | "trad_401k" | "trad_ira" | "roth_ira" | "roth_401k" | "hsa" | "cash";
@@ -152,7 +152,7 @@ export interface IRMAAConfig {
   brackets: IRMAABracket[];
 }
 
-export type EventKind = "one_time_flow" | "regime_change" | "crash";
+export type EventKind = "one_time_flow" | "recurring_flow" | "regime_change" | "crash";
 
 export interface RegimeOverrides {
   gross_salary?: number | null;
@@ -168,6 +168,9 @@ export interface FireEvent {
   age?: number | null;
   amount: number;
   account?: AccountType | null;
+  /** recurring_flow: repeat every N years from age/year through end_age. */
+  interval_years?: number;
+  end_age?: number | null;
   stock_return?: number | null;
   bond_return?: number | null;
   overrides?: RegimeOverrides | null;

@@ -574,62 +574,80 @@ export function AccessibilityFanChart(props: {
  * later — so you can see exactly when you stop supplying income and start leaning
  * on the portfolio. (Cash Flow tab; the accessibility chart shows what's merely
  * available, this shows what actually flowed.) */
-export function FundingSourceChart(props: {
-  result: SimulateResult; axisMode: "age" | "year"; height?: number;
+/** One signed flow chart: contributions as positive bars (money INTO accounts)
+ * and withdrawals as negative bars (money OUT), with work income and Social
+ * Security as context lines. Merges the old Funding-Sources and Annual-
+ * Contributions charts — two halves of the same in/out story — so the picture
+ * stays meaningful after retirement instead of going blank once contributions
+ * stop. Bars are per-year medians by destination/source; we deliberately do NOT
+ * difference them into a "net" or "deficit" line, since medians aren't additive
+ * (median(expenses) ≠ Σ median(source)) — the per-path shortfall story lives on
+ * Freedom (failure magnitude / survival). */
+export function AccountFlowsChart(props: {
+  result: SimulateResult; axisMode: "age" | "year";
+  retirementAge?: number; birthYear?: number; height?: number;
 }) {
-  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
-  const order = ["cash", "taxable", "roth_basis", "roth_matured_conversions",
-                 "trad", "hsa", "roth_earnings"];
+  const x = props.axisMode === "age" ? [...props.result.ages] : [...props.result.years];
+  const inv = props.result.investing_real ?? {};
   const w = props.result.withdrawals_real ?? {};
   const wages = props.result.wages_median_real ?? [];
   const ssInc = props.result.ss_income_median_real ?? [];
-  const present = order.filter((src) => w[src]?.some((v) => v > 1));
+  const inOrder = ["match", "trad", "roth", "hsa", "taxable", "cash"];
+  const outOrder = ["cash", "taxable", "roth_basis", "roth_matured_conversions",
+                    "trad", "hsa", "roth_earnings"];
+  const cIn = inOrder.filter((k) => inv[k]?.some((v) => v > 1));
+  const cOut = outOrder.filter((k) => w[k]?.some((v) => v > 1));
   const hasWork = wages.some((v) => v > 1);
   const hasSS = ssInc.some((v) => v > 1);
-  if (!present.length && !hasWork && !hasSS)
-    return <p className="hint">No funding flows on the median path yet.</p>;
+  if (!cIn.length && !cOut.length && !hasWork && !hasSS)
+    return <p className="hint">No account flows on the median path yet.</p>;
+
   const data: Data[] = [];
-  if (hasWork)
-    data.push({
-      x: [...x], y: wages, type: "scatter", mode: "lines", stackgroup: "one",
-      name: "Active Income (Work)", line: { width: 0.5, color: FLOW_COLORS.wages },
-      fillcolor: FLOW_COLORS.wages + "55", hovertemplate: "%{y:$,.0f}",
-    });
-  if (hasSS)
-    data.push({
-      x: [...x], y: ssInc, type: "scatter", mode: "lines", stackgroup: "one",
-      name: "Social Security", line: { width: 0.5, color: FLOW_COLORS.ss },
-      fillcolor: FLOW_COLORS.ss + "55", hovertemplate: "%{y:$,.0f}",
-    });
-  present.forEach((src) =>
-    data.push({
-      x: [...x], y: w[src], type: "scatter", mode: "lines", stackgroup: "one",
-      name: SOURCE_LABELS[src] ?? src, line: { width: 0.5, color: SOURCE_COLORS[src] },
-      fillcolor: (SOURCE_COLORS[src] ?? "#8b949e") + "66", hovertemplate: "%{y:$,.0f}",
-    }));
-  const totals = [...x].map((_, i) =>
-    (hasWork ? wages[i] ?? 0 : 0) + (hasSS ? ssInc[i] ?? 0 : 0)
-    + present.reduce((sum, src) => sum + (w[src][i] ?? 0), 0));
-  // This is a funding-MIX chart: where each year's money comes from, on the median
-  // path. We deliberately do NOT overlay a spending/deficit line here — every series
-  // above is an independent per-year median across paths, and medians aren't additive
-  // (median(expenses) ≠ Σ median(source)), so differencing them invents a "deficit"
-  // no real path has. The honest shortfall story lives on Freedom (failure magnitude
-  // / survival), computed per-path.
-  data.push({
-    x: [...x], y: totals, type: "scatter", mode: "lines", name: "Total",
-    line: { width: 0 }, showlegend: false,
-    hovertemplate: "Total inflow: %{y:$,.0f}<extra></extra>",
+  cIn.forEach((k, i) => data.push({
+    x, y: inv[k], type: "bar", name: CONTRIB_LABELS[k] ?? k,
+    legendgroup: "in",
+    ...(i === 0 ? { legendgrouptitle: { text: "Into Accounts (Contributions)" } } : {}),
+    marker: { color: (CONTRIB_COLORS[k] ?? "#8b949e") + "cc" },
+    hovertemplate: "Contribute %{y:$,.0f}<extra></extra>",
+  } as Data));
+  cOut.forEach((k, i) => data.push({
+    x, y: w[k].map((v) => -v), type: "bar", name: SOURCE_LABELS[k] ?? k,
+    legendgroup: "out",
+    ...(i === 0 ? { legendgrouptitle: { text: "Out Of Accounts (Withdrawals)" } } : {}),
+    marker: { color: (SOURCE_COLORS[k] ?? "#8b949e") + "cc" },
+    customdata: w[k], hovertemplate: "Withdraw %{customdata:$,.0f}<extra></extra>",
+  } as Data));
+  if (hasWork) data.push({
+    x, y: wages, type: "scatter", mode: "lines", name: "Active Income (Work)",
+    legendgroup: "income", line: { color: FLOW_COLORS.wages, width: 2 },
+    hovertemplate: "Work income %{y:$,.0f}<extra></extra>",
   });
+  if (hasSS) data.push({
+    x, y: ssInc, type: "scatter", mode: "lines", name: "Social Security",
+    legendgroup: "income", line: { color: FLOW_COLORS.ss, width: 2, dash: "dot" },
+    hovertemplate: "Social Security %{y:$,.0f}<extra></extra>",
+  });
+
+  const marks: LifeMark[] = [];
+  if (props.retirementAge) marks.push({ age: props.retirementAge, label: "Retire", color: "#d29922" });
+  const lsm = lifeStageMarkers(props.axisMode, props.birthYear, marks);
+
   return (
     <Plot
       data={data}
       layout={{
-        ...baseLayout, height: props.height ?? 360, hovermode: "x unified",
-        legend: { ...baseLayout.legend, traceorder: "reversed" },
-        yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero" },
+        ...baseLayout, height: props.height ?? 380, hovermode: "x unified",
+        barmode: "relative", bargap: 0.15,
+        shapes: [
+          { type: "line", xref: "paper", x0: 0, x1: 1, y0: 0, y1: 0,
+            line: { color: "#6e7681", width: 1 } },
+          ...lsm.shapes,
+        ],
+        annotations: lsm.annotations as Layout["annotations"],
+        yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s",
+          title: { text: "Into ↑   ·   Out ↓  (Today's $)" } },
         xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
-        title: { text: "Funding Sources — Work, Social Security & Account Draws, Today's $", font: { size: 14 } },
+        title: { text: "Money Into & Out Of Accounts — Median Path, Today's $", font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}
@@ -1460,54 +1478,6 @@ const CONTRIB_COLORS: Record<string, string> = {
   match: FLOW_COLORS.match, trad: FLOW_COLORS.trad, roth: FLOW_COLORS.roth,
   hsa: FLOW_COLORS.hsa, taxable: FLOW_COLORS.taxable, cash: FLOW_COLORS.cash,
 };
-
-/** Annual contributions by destination over time (stacked area, today's $) — the
- * "where does each surplus dollar go" flow, split out of the old Wealth & Flows
- * chart so it can live on Cash Flow beside the funding-sources view. */
-export function ContributionsChart(props: {
-  result: SimulateResult; axisMode: "age" | "year"; height?: number;
-}) {
-  const x = props.axisMode === "age" ? props.result.ages : props.result.years;
-  const inv = props.result.investing_real ?? {};
-  const order = ["match", "trad", "roth", "hsa", "taxable", "cash"];
-  const present = order.filter((k) => inv[k]?.some((v) => v > 1));
-  if (!present.length)
-    return (
-      <p className="hint">
-        No contributions on the median path — already retired, or the waterfall isn't
-        capturing your surplus (check the Cash band on the Accounts tab).
-      </p>
-    );
-  const data: Data[] = present.map((k) => ({
-    x: [...x], y: inv[k], type: "bar" as const, name: CONTRIB_LABELS[k] ?? k,
-    // Same hues as the account/pool charts, but softened to ~60% so the solid bars
-    // sit at the muted weight of those translucent area fills instead of glaring.
-    marker: { color: (CONTRIB_COLORS[k] ?? "#8b949e") + "99" },
-    hovertemplate: "%{y:$,.0f}",
-  }));
-  const totals = [...x].map((_, i) =>
-    present.reduce((sum, k) => sum + (inv[k][i] ?? 0), 0));
-  data.push({
-    x: [...x], y: totals, type: "scatter", mode: "lines", name: "Total",
-    line: { width: 0 }, showlegend: false,
-    hovertemplate: "Total saved: %{y:$,.0f}<extra></extra>",
-  });
-  return (
-    <Plot
-      data={data}
-      layout={{
-        ...baseLayout, height: props.height ?? 340, hovermode: "x unified",
-        barmode: "stack", bargap: 0.15,
-        legend: { ...baseLayout.legend, traceorder: "reversed" },
-        yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s", rangemode: "tozero" },
-        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
-        title: { text: "Annual Contributions By Destination — Median Path, Today's $", font: { size: 14 } },
-      }}
-      config={config}
-      style={{ width: "100%" }}
-    />
-  );
-}
 
 /** Taxes over time: annual tax dollars (bars, left) with the marginal and
  * effective rates (lines, right) — merges Annual Taxes and Marginal Rate, and

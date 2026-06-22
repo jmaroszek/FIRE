@@ -72,6 +72,9 @@ interface AppState {
   init: () => Promise<void>;
   setScenario: (s: Scenario) => void;
   patchScenario: (patch: Partial<Scenario>) => void;
+  /** Immediately write any pending workspace edit. Call on tab-hide / app-close.
+   *  `sync` uses a keepalive request that survives a page teardown. */
+  flushWorkspace: (sync?: boolean) => void;
   runSweep: () => Promise<void>;
   runFreedom: () => Promise<void>;
   runMaxSpend: () => Promise<void>;
@@ -96,6 +99,10 @@ interface AppState {
 let simTimer: ReturnType<typeof setTimeout> | null = null;
 let simSeq = 0;
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+// the scenario waiting to be autosaved to the workspace; set on every edit and
+// cleared once written. flushWorkspace() drains it immediately (on tab-hide /
+// app-close) so the trailing edit before a teardown is never lost.
+let pendingWorkspace: Scenario | null = null;
 // set when a scenario edit changes something the success-curve sweep depends on
 // (anything but the single planned retirement age); the next simulate then drops
 // the now-stale sweep. Retirement-age-only edits leave the sweep curve intact.
@@ -214,16 +221,32 @@ export const useStore = create<AppState>((set, get) => {
       if (!prev || sweepKey(prev) !== sweepKey(scenario)) sweepInvalidated = true;
       set({ scenario, dirty: true });
       scheduleSimulate();
+      pendingWorkspace = scenario;
       if (autosaveTimer) clearTimeout(autosaveTimer);
       autosaveTimer = setTimeout(() => {
-        void api.saveWorkspace(scenario).catch(() => {});
-      }, 800);
+        autosaveTimer = null;
+        const s = pendingWorkspace;
+        pendingWorkspace = null;
+        if (s) void api.saveWorkspace(s).catch(() => {});
+      }, 500);
     },
 
     patchScenario: (patch) => {
       const s = get().scenario;
       if (!s) return;
       get().setScenario({ ...s, ...patch });
+    },
+
+    flushWorkspace: (sync = false) => {
+      if (autosaveTimer) {
+        clearTimeout(autosaveTimer);
+        autosaveTimer = null;
+      }
+      const s = pendingWorkspace;
+      pendingWorkspace = null;
+      if (!s) return;
+      if (sync) api.saveWorkspaceSync(s);
+      else void api.saveWorkspace(s).catch(() => {});
     },
 
     runSweep: async () => {
@@ -350,6 +373,10 @@ export const useStore = create<AppState>((set, get) => {
       if (!scenario) return;
       const named = { ...scenario, name };
       await api.saveScenario(name, named);
+      // keep the autosaved workspace in lock-step with the named save, so a
+      // reopen restores exactly what was just saved (not a pre-save autosave).
+      pendingWorkspace = null;
+      void api.saveWorkspace(named).catch(() => {});
       const names = (await api.listScenarios()).map((x) => x.name);
       set({ scenario: named, savedAs: name, dirty: false, savedScenarios: names });
     },
