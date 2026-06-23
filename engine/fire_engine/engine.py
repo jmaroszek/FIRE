@@ -80,6 +80,7 @@ class YearRegime:
     salary_real: float
     match_pct: float
     weights: tuple[float, float, float]  # stocks, bonds, cash
+    bonus_real: float = 0.0  # annual bonus (today's $), zeroed once retired
 
 
 def _liability_schedule(scenario: Scenario, T: int) -> tuple[np.ndarray, np.ndarray]:
@@ -184,6 +185,7 @@ def _precompute_regimes(scenario: Scenario, retirement_age: int) -> list[YearReg
         return g
 
     salary = scenario.income.gross_salary
+    bonus = scenario.income.bonus
     growth = scenario.income.effective_real_growth(mean_infl)
     match = scenario.income.employer_match_pct
     alloc = scenario.allocation
@@ -202,8 +204,10 @@ def _precompute_regimes(scenario: Scenario, retirement_age: int) -> list[YearReg
             alloc = alloc_segs[seg_idx].allocation
             seg_idx += 1
         if t in regime_events:
-            # salary compounds up to the event, then the overrides take effect
+            # salary compounds up to the event, then the overrides take effect.
+            # the bonus rides the same raise, compounding up to the event too.
             salary = salary * (1 + growth) ** (t - segment_start)
+            bonus = bonus * (1 + growth) ** (t - segment_start)
             segment_start = t
             for ov in regime_events[t]:
                 if ov.gross_salary is not None:
@@ -216,12 +220,17 @@ def _precompute_regimes(scenario: Scenario, retirement_age: int) -> list[YearReg
                 if ov.allocation is not None:
                     alloc = ov.allocation
         salary_t = salary * (1 + growth) ** (t - segment_start)
+        bonus_t = bonus * (1 + growth) ** (t - segment_start)
         retired = age >= retirement_age
         # retirement zeroes the salary unless a regime event at/after the
         # retirement year explicitly set one (e.g. barista FIRE)
         if retired and salary_set_at < retirement_age - start_age:
             salary_t = 0.0
-        out.append(YearRegime(salary_real=salary_t, match_pct=match,
+        # the bonus is working-years compensation: it always stops at retirement
+        # (barista-FIRE income is modeled through the salary override, not here).
+        if retired:
+            bonus_t = 0.0
+        out.append(YearRegime(salary_real=salary_t, bonus_real=bonus_t, match_pct=match,
                               weights=(alloc.stocks, alloc.bonds, alloc.cash)))
     return out
 
@@ -259,6 +268,16 @@ def _expenses_for_year(scenario: Scenario, t: int, age: int,
             continue
         amount = s.annual * (1 + s.extra_inflation) ** t
         nominal = amount * cum_infl if s.inflates else np.full_like(cum_infl, amount)
+        ess = ess + nominal
+        ess_med = ess_med + nominal
+    # Long-term / end-of-life care: an essential, HSA-eligible medical expense
+    # over [onset_age, onset_age + duration - 1], healthcare-inflating like the
+    # medical streams above.
+    ltc = scenario.ltc
+    if (ltc.enabled and ltc.annual_cost > 0 and ltc.duration_years > 0
+            and ltc.onset_age <= age <= ltc.onset_age + ltc.duration_years - 1):
+        amount = ltc.annual_cost * (1 + ltc.extra_inflation) ** t
+        nominal = amount * cum_infl
         ess = ess + nominal
         ess_med = ess_med + nominal
     return ess, disc, ess_med, disc_med
@@ -462,7 +481,8 @@ def run(
     # post-retirement $0 years an ssa.gov projection omits). Computed always so
     # the UI can show it alongside the manual figure; only *used* in estimated
     # mode. `regimes` already carries the real salary path with any overrides.
-    ss_estimated_monthly = estimate_pia(scenario, [r.salary_real for r in regimes])
+    ss_estimated_monthly = estimate_pia(
+        scenario, [r.salary_real + r.bonus_real for r in regimes])
     ss_monthly = ss_estimated_monthly if ss.benefit_mode == "estimated" else ss.monthly_at_fra
     ss_annual_real = ss_monthly * 12 * ss_factor * ss.haircut
 
@@ -528,6 +548,18 @@ def run(
         portfolio_start = state.total_net_worth()
 
         primary_wages = regime.salary_real * infl
+        # annual bonus on the primary salary line: nominal value with optional
+        # per-path lognormal noise (mean-1, expected bonus unchanged). Counts as
+        # wages (FICA/SS/contribution headroom) but is kept out of the match base.
+        if regime.bonus_real > 0.0:
+            bvol = scenario.income.bonus_vol
+            if bvol > 0.0 and income_z is not None:
+                bmult = np.exp(income_z[:, t] * bvol - 0.5 * bvol * bvol)
+            else:
+                bmult = 1.0
+            bonus_wages = regime.bonus_real * infl * bmult
+        else:
+            bonus_wages = zeros
         # secondary streams: nominal value with optional per-path lognormal noise
         # (mean-1, so the expected income is unchanged); primary stays predictable.
         secondary_wages = zeros
@@ -537,7 +569,7 @@ def run(
             else:
                 mult = 1.0
             secondary_wages = secondary_wages + real_val * infl * mult
-        wages = primary_wages + secondary_wages
+        wages = primary_wages + bonus_wages + secondary_wages
         ss_nom = ss_annual_real * infl if age >= ss.claiming_age else zeros
 
         # RMD comes out of traditional accounts before anything else

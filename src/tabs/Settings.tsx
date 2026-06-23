@@ -1,53 +1,13 @@
 import React from "react";
-import { Field, InfoTip, NumberInput, PercentInput, Section } from "../components/ui";
+import { InfoTip, Section } from "../components/ui";
 import { useStore } from "../store";
 
 export default function Settings() {
   const { scenario, categories, setCategories } = useStore();
-  const setScenario = useStore((s) => s.setScenario);
   if (!scenario) return null;
-  const s = scenario;
 
   return (
     <div className="stack">
-      <div className="stat-grid">
-      <Section title="Profile">
-        <div className="fields">
-          <Field label="Birth Year">
-            <NumberInput value={s.profile.birth_year} step={1}
-              onChange={(v) => setScenario({ ...s, profile: { ...s.profile, birth_year: v } })} />
-          </Field>
-          <Field label="Plan To Age" info="Fixed planning horizon — no mortality table.">
-            <NumberInput value={s.profile.horizon_age} step={1} min={50} max={105}
-              onChange={(v) => setScenario({ ...s, profile: { ...s.profile, horizon_age: v } })} />
-          </Field>
-        </div>
-      </Section>
-
-      <Section title="Simulation">
-        <div className="fields">
-          <Field label="Monte Carlo Paths"
-            info="More paths = smoother percentiles, slower recompute. 2,000 runs in ~200 ms.">
-            <NumberInput value={s.sim.n_paths} step={500} min={100} max={20000}
-              onChange={(v) => setScenario({ ...s, sim: { ...s.sim, n_paths: v } })} />
-          </Field>
-          <Field label="Random Seed">
-            <NumberInput value={s.sim.seed} step={1}
-              onChange={(v) => setScenario({ ...s, sim: { ...s.sim, seed: v } })} />
-          </Field>
-          <Field label="Success Threshold"
-            info="A retirement age 'works' when at least this share of paths never run out of money.">
-            <PercentInput value={s.sim.success_threshold} step={1}
-              onChange={(v) => setScenario({ ...s, sim: { ...s.sim, success_threshold: v } })} />
-          </Field>
-          <Field label="Coast Target Age">
-            <NumberInput value={s.sim.coast_target_age} step={1}
-              onChange={(v) => setScenario({ ...s, sim: { ...s.sim, coast_target_age: v } })} />
-          </Field>
-        </div>
-      </Section>
-      </div>
-
       <Section
         title="Spending Categories"
         info="Categories for recorded spending snapshots (Dashboard → Record A Snapshot) and the Cash Flow → Lifestyle Creep chart. Add-only by design: names and order are freely editable, but each category keeps a permanent internal id so renames never break your history. Order is purely organizational."
@@ -104,18 +64,6 @@ export default function Settings() {
             ))}
           </tbody>
         </table>
-      </Section>
-
-      <Section title="About The Model">
-        <p className="hint">
-          Every simplifying assumption is documented in <code>docs/ASSUMPTIONS.md</code> —
-          annual timestep, five tax pools, federal brackets + flat state rate, Shiller
-          1871–2022 bootstrap, AR(1) inflation, single filer, fixed horizon. Tax modeling
-          includes the Social Security provisional-income torpedo, a lifetime Roth-conversion
-          ladder, RMDs, and pre-65 ACA premium subsidies + 65+ IRMAA surcharges. The ⓘ markers
-          throughout the app carry the short versions. Refresh the IRS data tables in
-          <code>engine/fire_engine/data/</code> each November.
-        </p>
       </Section>
     </div>
   );

@@ -42,6 +42,11 @@ export interface Income {
   real_growth: number;
   growth_mode: "nominal" | "real";
   employer_match_pct: number;
+  /** Annual bonus on the primary salary line (today's $); compounds at the same
+   *  raise, stops at retirement, counts as own FICA/SS wages. */
+  bonus?: number;
+  /** Per-path lognormal year-to-year variability of the bonus (0 = steady). */
+  bonus_vol?: number;
 }
 
 /** A secondary income source layered on the primary salary (side hustle, rental,
@@ -163,6 +168,16 @@ export interface IRMAAConfig {
   brackets: IRMAABracket[];
 }
 
+/** Long-term / end-of-life care provision: a late-life essential, HSA-eligible
+ *  medical expense over [onset_age, onset_age + duration_years). Off by default. */
+export interface LTCConfig {
+  enabled: boolean;
+  onset_age: number;
+  annual_cost: number;
+  duration_years: number;
+  extra_inflation: number;
+}
+
 export type EventKind = "one_time_flow" | "recurring_flow" | "regime_change" | "crash";
 
 export interface RegimeOverrides {
@@ -231,6 +246,8 @@ export interface Scenario {
   spending_strategy: SpendingStrategy;
   aca: ACAConfig;
   irmaa: IRMAAConfig;
+  /** Long-term / end-of-life care provision; absent = treated as disabled. */
+  ltc?: LTCConfig;
   events: FireEvent[];
   sim: SimSettings;
 }
@@ -262,6 +279,7 @@ export interface BridgeAnalysis {
   // bridge funding plan: liquid pile needed before a retirement-start conversion seasons
   bridge_funding_years?: number;
   bridge_funding_total_real?: number;
+  bridge_funding_tax_real?: number;
   bridge_funding_by_source?: { cash: number; taxable: number; roth_basis: number };
   min_accessible_real?: number[];
   at_retirement?: {

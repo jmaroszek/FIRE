@@ -279,8 +279,15 @@ def bridge_analysis(result: SimResult) -> dict:
     # Total real spending need over that window, and what the sim actually draws
     # from each penalty-free liquid source to meet it — the concrete "how much do
     # I need in cash / taxable / Roth basis" answer the coverage ratio only hints at.
+    # The liquid you must hold also has to cover the income, conversion, and
+    # capital-gains tax those early years trigger (paid from the same accounts),
+    # not just the spending — so fold the realized tax over the window in.
     fund_cols = bridge_cols[:min(5, bridge_cols.size)]
-    funding_total = float(np.median(need_real[:, fund_cols].sum(axis=1)))
+    tax_real = result.taxes_paid / deflate
+    funding_spend = need_real[:, fund_cols].sum(axis=1)
+    funding_tax = tax_real[:, fund_cols].sum(axis=1)
+    funding_total = float(np.median(funding_spend + funding_tax))
+    funding_tax_total = float(np.median(funding_tax))
     funding_by_source = {}
     for src in ("cash", "taxable", "roth_basis"):
         arr = (result.withdrawals or {}).get(src)
@@ -304,6 +311,7 @@ def bridge_analysis(result: SimResult) -> dict:
         "need_p50_real": float(np.median(bridge_need)),
         "bridge_funding_years": int(fund_cols.size),
         "bridge_funding_total_real": funding_total,
+        "bridge_funding_tax_real": funding_tax_total,
         "bridge_funding_by_source": funding_by_source,
         "min_accessible_real": min_accessible.tolist(),
         "at_retirement": {

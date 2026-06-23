@@ -176,16 +176,23 @@ export default function CashFlow() {
   };
   const sortExpensesByAmount = () =>
     up({ expense_streams: [...s.expense_streams].sort((a, b) => b.annual - a.annual) });
+  // Order by when each stream comes online (largest-first within the same start
+  // age), so staggered expenses read top-to-bottom in the order they begin.
+  const sortExpensesByAge = () =>
+    up({ expense_streams: [...s.expense_streams].sort((a, b) =>
+      (a.start_age ?? startAge) - (b.start_age ?? startAge) || b.annual - a.annual) });
   const upMedical = (i: number, patch: Partial<ExpenseStream>) =>
     up({ medical_streams: (s.medical_streams ?? []).map((e, j) => (j === i ? { ...e, ...patch } : e)) });
   const upIncome = (i: number, patch: Partial<IncomeStream>) =>
     up({ income_streams: (s.income_streams ?? []).map((e, j) => (j === i ? { ...e, ...patch } : e)) });
   const ss = s.spending_strategy;
+  const ltc = s.ltc ?? { enabled: false, onset_age: 84, annual_cost: 0, duration_years: 3, extra_inflation: 0.015 };
 
   // ---- section hero metrics (always-on; from scenario + median result) -------
   const activeNow = (start?: number | null, end?: number | null) =>
     (start ?? startAge) <= startAge && startAge <= (end ?? 999);
-  const grossIncomeNow = s.income.gross_salary
+  const bonusNow = s.income.bonus ?? 0;
+  const grossIncomeNow = s.income.gross_salary + bonusNow
     + (s.income_streams ?? []).filter((i) => activeNow(i.start_age, i.end_age))
         .reduce((a, i) => a + i.annual, 0);
   const nStreams = (s.income_streams ?? []).length;
@@ -194,16 +201,22 @@ export default function CashFlow() {
     + (s.medical_streams ?? []).filter((e) => activeNow(e.start_age, e.end_age)).reduce((a, e) => a + e.annual, 0);
   const contribNow = result
     ? Object.values(result.investing_real ?? {}).reduce((sum, arr) => sum + (arr?.[0] ?? 0), 0) : 0;
-  const savingsRate = grossIncomeNow > 0 ? contribNow / grossIncomeNow : 0;
+  // Savings rate is measured against after-tax (take-home) income — gross minus
+  // this year's modeled income + payroll tax (median path) — not gross, so it
+  // reflects the share of spendable money you choose to invest.
+  const taxNow = result?.taxes_median_real?.[0] ?? 0;
+  const afterTaxIncomeNow = Math.max(0, grossIncomeNow - taxNow);
+  const savingsRate = afterTaxIncomeNow > 0 ? contribNow / afterTaxIncomeNow : 0;
 
   // ---- gutter "mix" breakdowns beside the Income / Expenses tables (today's $) ---
   const employerMatchNow = s.income.gross_salary * s.income.employer_match_pct;
   // The income mix is only worth showing once there's more than one source to
   // compare — salary alone (plus a sliver of match) is a pointless two-bar chart.
-  const hasSideIncome = (s.income_streams ?? [])
+  const hasSideIncome = bonusNow > 0 || (s.income_streams ?? [])
     .some((i) => activeNow(i.start_age, i.end_age) && i.annual > 0);
   const incomeMix = [
     { label: "Primary Salary", value: s.income.gross_salary, color: "#58a6ff" },
+    ...(bonusNow > 0 ? [{ label: "Bonus", value: bonusNow, color: "#58a6ff" }] : []),
     ...(s.income_streams ?? [])
       .filter((i) => activeNow(i.start_age, i.end_age))
       .map((i) => ({ label: i.name || "Side Income", value: i.annual, color: "#58a6ff" })),
@@ -264,10 +277,10 @@ export default function CashFlow() {
         <HeroStat label="Gross Income" value={`${fmtMoney(grossIncomeNow)}/yr`}
           sub={nStreams > 0 ? `salary + ${nStreams} other stream${nStreams > 1 ? "s" : ""}` : "primary salary"} />
         <HeroStat tone="amber" label="Planned Spending" value={`${fmtMoney(plannedSpendNow)}/yr`}
-          sub="living + medical, today's $" />
+          sub="all expenses" />
         <HeroStat tone="green" label="Savings Rate" value={fmtPct(savingsRate, 0)}
-          sub={`${fmtMoney(contribNow)}/yr invested`}
-          info="This year's modeled contributions (all destinations) as a share of gross income." />
+          sub={`${fmtMoney(contribNow)}/yr of ${fmtMoney(afterTaxIncomeNow)} take-home`}
+          info="This year's modeled contributions (all destinations) as a share of after-tax (take-home) income — gross minus modeled income and payroll tax." />
       </HeroRow>
 
       <Section title="Income"
@@ -282,6 +295,16 @@ export default function CashFlow() {
             <PercentInput value={s.income.real_growth} step={0.25}
               onChange={(v) => up({ income: { ...s.income, real_growth: v, growth_mode: "nominal" } })} />
           </Field>
+          <Field label="Annual Bonus"
+            info="Typical yearly bonus in today's dollars, on top of base salary. It compounds at the same annual raise, stops at retirement, and counts as your own FICA/Social-Security wages. The employer match is computed on base salary only, so the bonus isn't matched.">
+            <NumberInput value={s.income.bonus ?? 0} step={1000} min={0}
+              onChange={(v) => up({ income: { ...s.income, bonus: v } })} />
+          </Field>
+          <Field label="Bonus Volatility"
+            info="Year-to-year swing in the bonus (a standard deviation). 0 keeps it steady; higher makes some years pay more and some less around the typical amount, the variability base salary doesn't have.">
+            <PercentInput value={s.income.bonus_vol ?? 0} step={5}
+              onChange={(v) => up({ income: { ...s.income, bonus_vol: v } })} />
+          </Field>
           <Field label="Employer Match"
             info="Percent of your salary your employer adds to your 401(k), on top of your own contributions.">
             <PercentInput value={s.income.employer_match_pct} step={0.5}
@@ -289,7 +312,7 @@ export default function CashFlow() {
           </Field>
         </div>
         <div className="card-split">
-          <div className="card-split-main">
+          <div className="card-split-main grow">
         <div className="card-head" style={{ marginTop: 12 }}>
           <h3 style={{ fontSize: 13, margin: 0 }}>
             Other Income Streams
@@ -346,6 +369,9 @@ export default function CashFlow() {
             <button className="ghost" disabled={s.expense_streams.length < 2}
               title="Reorder the streams largest-first (you can still nudge them with ↑ ↓ after)"
               onClick={sortExpensesByAmount}>Sort By Amount</button>
+            <button className="ghost" disabled={s.expense_streams.length < 2}
+              title="Reorder the streams by the age each comes online (you can still nudge them with ↑ ↓ after)"
+              onClick={sortExpensesByAge}>Sort By Age</button>
             <button className="ghost" onClick={() =>
               up({ expense_streams: [...s.expense_streams, {
                 name: "New Stream", annual: 0, inflates: true, extra_inflation: 0,
@@ -537,8 +563,7 @@ export default function CashFlow() {
               info={A.maxSpend} />
             <Stat label="Max Spend In Retirement"
               value={`${fmtMoney(maxspend.retirement_max_living_annual)}/yr`}
-              sub={`${maxspend.retirement_max_scale.toFixed(2)}× planned · from retirement age ${s.retirement_age}${maxspend.retirement_capped ? " (capped 8×)" : ""}`}
-              info={A.maxSpendRetire} />
+              sub={`${maxspend.retirement_max_scale.toFixed(2)}× planned · from retirement age ${s.retirement_age}${maxspend.retirement_capped ? " (capped 8×)" : ""}`} />
           </div>
         ) : (
           <div className="tile-loading"><span className="spinner" />Computing…</div>
@@ -550,7 +575,7 @@ export default function CashFlow() {
       <Head id="cf-retire">Spending In Retirement</Head>
       <HeroRow>
         <HeroStat label="Annual Retirement Spend" value={`${fmtMoney(annualRetSpend)}/yr`}
-          sub={`living + net healthcare at age ${s.retirement_age}`} />
+          sub={`all expenses, starting at age ${s.retirement_age}`} />
         <HeroStat tone="green" label="Spent In Active Years" value={fmtPct(goGoShare, 0)}
           sub="share of lifetime spending through age 75"
           info="Bill-Perkins lens: how much of your modeled lifetime spending lands in the high-energy (active) years through 75 vs later." />
@@ -761,14 +786,22 @@ export default function CashFlow() {
             {result && retIdx >= 0 && (() => {
               const pct = plannedAtRet > 0 ? Math.round((modeledRetSpend / plannedAtRet - 1) * 100) : null;
               const under = plannedAtRet > 0 && modeledRetSpend < plannedAtRet * 0.85;
+              const liquidityBound = ss.kind === "percent_portfolio" && s.retirement_age < 60 && under;
               return (
                 <p className="hint">
                   First retirement year (age {s.retirement_age}): <strong>{fmtMoney(modeledRetSpend)}/yr</strong> on the median path
                   {pct !== null && `, ${pct >= 0 ? "+" : ""}${pct}% vs your ${fmtMoney(plannedAtRet)} plan`}.
-                  {under && " Raise the rate or switch to Steady Paycheck to fund the full plan."}
+                  {under && (liquidityBound
+                    ? " Raising the rate won't lift this — it's capped by how much penalty-free money you can reach before 59½, not by the rate. Hold more in taxable / Roth-basis accounts, retire later, or use Steady Paycheck."
+                    : " Raise the rate or switch to Steady Paycheck to fund the full plan.")}
                 </p>
               );
             })()}
+            {result && ss.kind === "percent_portfolio" && s.retirement_age < 60 && (
+              <p className="hint">
+                The rate applies to your penalty-free <em>accessible</em> wealth, which is limited before 59½ — so during the bridge, spending is often capped by available liquidity rather than the rate. Changing the rate mainly moves spending after 59½, once your locked accounts open.
+              </p>
+            )}
             {result && (
               <div className="strategy-plot">
                 <SpendingPreviewChart result={result} axisMode={axisMode}
@@ -865,6 +898,46 @@ export default function CashFlow() {
         <p className="hint">Roth conversions and capital gains raise MAGI and shrink the subsidy — the collision the Accounts tab's subsidy-vs-conversion view surfaces. Don't also list this premium as an expense stream.</p>
       </Section>
       </div>
+
+      <Section title="Long-Term / End-Of-Life Care" info={A.ltc}>
+        <div className="fields">
+          <Field label="Enabled">
+            <input type="checkbox" checked={ltc.enabled}
+              onChange={(e) => up({ ltc: { ...ltc, enabled: e.target.checked,
+                annual_cost: e.target.checked && ltc.annual_cost <= 0 ? 75000 : ltc.annual_cost } })} />
+          </Field>
+          <Field label="Quick-Fill Cost"
+            info="Typical US median costs (2024). Sets the annual cost; edit it after if your area differs.">
+            <select value="" onChange={(e) => {
+              if (e.target.value) up({ ltc: { ...ltc, annual_cost: parseFloat(e.target.value) } }); }}>
+              <option value="">Choose…</option>
+              <option value="75000">In-Home Aide (~$75k/yr)</option>
+              <option value="70000">Assisted Living (~$70k/yr)</option>
+              <option value="95000">Nursing Home, Semi-Private (~$95k/yr)</option>
+              <option value="120000">Nursing Home, Private (~$120k/yr)</option>
+            </select>
+          </Field>
+          <Field label="Annual Cost (Today's $)">
+            <NumberInput value={ltc.annual_cost} step={5000} min={0}
+              onChange={(v) => up({ ltc: { ...ltc, annual_cost: v } })} />
+          </Field>
+          <Field label="Starts At Age"
+            info="When care begins. Most long-term-care need lands in the mid-80s.">
+            <NumberInput value={ltc.onset_age} step={1} min={s.retirement_age} max={s.profile.horizon_age}
+              onChange={(v) => up({ ltc: { ...ltc, onset_age: v } })} />
+          </Field>
+          <Field label="For How Long (Years)">
+            <NumberInput value={ltc.duration_years} step={1} min={1}
+              onChange={(v) => up({ ltc: { ...ltc, duration_years: Math.max(1, Math.round(v)) } })} />
+          </Field>
+        </div>
+        <p className="hint">
+          Most people need some long-term care late in life — the biggest cost most plans ignore. This adds
+          it as an essential, HSA-eligible expense (so your HSA helps pay) over the window you set. US medians
+          (2024): in-home aide ≈ $75k/yr, assisted living ≈ $70k/yr, nursing home ≈ $95–120k/yr; a typical
+          stay is 2–3 years, longer for women. Off by default — turn it on to stress-test it.
+        </p>
+      </Section>
 
       <Section title="Net Healthcare Cost" info={A.healthcareTrajectory}>
         {result ? (

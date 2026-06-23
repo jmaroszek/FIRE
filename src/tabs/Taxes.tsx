@@ -33,8 +33,7 @@ export default function Taxes() {
           {result ? (
             <Stat label="Median Lifetime Tax (Today's $)"
               value={fmtMoney(result.lifetime_tax.median_real)}
-              sub={`${fmtPct(result.lifetime_tax.as_pct_of_spending)} of lifetime spending`}
-              info={A.lifetimeTax} />
+              sub={`${fmtPct(result.lifetime_tax.as_pct_of_spending)} of lifetime spending`} />
           ) : <p className="hint">Simulation pending…</p>}
         </Section>
 
@@ -42,7 +41,7 @@ export default function Taxes() {
           {result ? (
             <Stat label="Tax ÷ Lifetime Income"
               value={fmtPct(result.lifetime_tax.effective_rate)}
-              sub="federal + state + FICA over all income you earn" info={A.effLifetimeTax} />
+              sub="federal + state + FICA over all income you earn" />
           ) : <p className="hint">Simulation pending…</p>}
         </Section>
 
@@ -50,8 +49,7 @@ export default function Taxes() {
           {laddersavings ? (
             <Stat label="Lifetime Tax Saved vs No Conversions"
               value={fmtMoney(laddersavings.saved_real)}
-              sub={`${fmtMoney(laddersavings.without_ladder_real)} without → ${fmtMoney(laddersavings.with_ladder_real)} with`}
-              info={A.ladderSavings} />
+              sub={`${fmtMoney(laddersavings.without_ladder_real)} without → ${fmtMoney(laddersavings.with_ladder_real)} with`} />
           ) : <p className="hint">{laddersavingsLoading ? "Computing…" : "Simulation pending…"}</p>}
         </Section>
       </div>
@@ -101,7 +99,7 @@ export default function Taxes() {
               return (
                 <div className="stat-grid">
                   <Stat label={`First RMD (Age ${first.age})`} value={fmtMoney(first.amount_real)}
-                    sub={`spending that year ≈ ${fmtMoney(spendThen)}`} info={A.tradOverfunding} />
+                    sub={`spending that year ≈ ${fmtMoney(spendThen)}`} />
                   <Stat label="Forced Beyond Spending" value={fmtMoney(Math.max(overshoot, 0))}
                     sub={overshoot > 0 ? "ordinary income you must realize but don't need"
                       : "the RMD stays within your spending"} />

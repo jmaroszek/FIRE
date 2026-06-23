@@ -500,11 +500,11 @@ export default function Accounts() {
           : <p className="hint">Simulation pending…</p>}
       </Section>
 
-      <Section title="Maximum Drawdown (Real)" info={A.drawdown}>
+      <Section title="Maximum Drawdown" info={A.drawdown}>
         {result ? (
           <>
             <Stat label="Median Maximum Drawdown" value={fmtPct(median(result.max_drawdown))}
-              sub="the deepest real peak-to-trough fall you'd have to sit through — be ready for it" info={A.drawdown} />
+              sub="the deepest real peak-to-trough fall you'd have to sit through — be ready for it" />
             <div style={{ display: "grid", gridTemplateColumns: "2fr minmax(240px, 1fr)", gap: 16, alignItems: "start" }}>
               <HistogramChart values={result.max_drawdown} unit="percent" color="rgba(210,153,34,0.55)"
                 title="" xTitle="Deepest Peak-To-Trough Fall In Real Net Worth" />

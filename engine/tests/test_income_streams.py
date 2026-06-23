@@ -75,6 +75,57 @@ def test_stream_window_gates_income():
             assert contrib[t] == pytest.approx(0.0), f"unexpected income at age {age}"
 
 
+def _with_bonus(bonus, bonus_vol=0.0, *, salary=100000, match=0.04,
+                horizon=50, retire=50, n_paths=2) -> Scenario:
+    return Scenario(
+        profile=Profile(birth_year=1986, horizon_age=horizon, state_tax_rate=0.0),
+        accounts=[Account(type=AccountType.cash, balance=0)],
+        income=Income(gross_salary=salary, real_growth=0.0, growth_mode="real",
+                      employer_match_pct=match, bonus=bonus, bonus_vol=bonus_vol),
+        income_streams=[],
+        retirement_age=retire,
+        expense_streams=[],
+        sim=SimSettings(n_paths=n_paths, start_year=2026),
+        **NO_GROWTH,
+    )
+
+
+def test_bonus_adds_wages_and_savings():
+    base = run(_with_bonus(0))
+    withbonus = run(_with_bonus(20000))
+    # the bonus shows up as extra wages and, after tax with no expenses, savings
+    assert withbonus.wages[0, 0] == pytest.approx(base.wages[0, 0] + 20000)
+    assert withbonus.net_worth[0, -1] > base.net_worth[0, -1]
+
+
+def test_bonus_not_in_match_base():
+    """The employer match keys off base salary; the bonus must not inflate it."""
+    base = run(_with_bonus(0))
+    withbonus = run(_with_bonus(50000))
+    assert np.allclose(base.contrib_pools["match"][0], withbonus.contrib_pools["match"][0])
+    assert base.contrib_pools["match"][0][0] == pytest.approx(0.04 * 100000)
+
+
+def test_bonus_stops_at_retirement():
+    s = _with_bonus(30000, salary=0, match=0.0, horizon=60, retire=45)
+    r = run(s)
+    start_age = s.start_age
+    for t, age in enumerate(range(start_age, start_age + r.wages.shape[1])):
+        if age < 45:
+            assert r.wages[0, t] == pytest.approx(30000), f"expected bonus at age {age}"
+        else:
+            assert r.wages[0, t] == pytest.approx(0.0), f"unexpected bonus at age {age}"
+
+
+def test_bonus_volatility_spreads_outcomes_unbiased():
+    vol = run(_with_bonus(40000, bonus_vol=0.3, salary=0, match=0.0, n_paths=400))
+    steady = run(_with_bonus(40000, bonus_vol=0.0, salary=0, match=0.0, n_paths=400))
+    ending = vol.net_worth[:, -1]
+    assert ending.std() > 0.0  # vol alone (flat market/inflation) spreads outcomes
+    # the mean-1 lognormal multiplier keeps expected savings ~unbiased
+    assert ending.mean() == pytest.approx(steady.net_worth[:, -1].mean(), rel=0.02)
+
+
 def test_income_volatility_is_seeded_and_spreads_outcomes():
     streams = [IncomeStream(name="Variable gig", annual=40000, vol=0.3)]
     a = run(_worker(streams, n_paths=400))

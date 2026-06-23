@@ -100,6 +100,13 @@ class Income(BaseModel):
     # Employer match as a fraction of gross salary (e.g. 0.04 = 4% of salary),
     # contributed to trad_401k whenever the employee contributes anything to a 401k.
     employer_match_pct: float = 0.0
+    # Annual bonus riding the primary salary line (today's $). It compounds at the
+    # same raise as the salary, stops at retirement, and counts as the filer's own
+    # FICA-taxed wages (Social-Security-covered). The employer match keys off base
+    # salary only, so the bonus is excluded from the match base. `bonus_vol` adds
+    # per-path lognormal year-to-year variability (0 = a steady, predictable bonus).
+    bonus: float = 0.0
+    bonus_vol: float = 0.0
 
     def effective_real_growth(self, mean_inflation: float) -> float:
         if self.growth_mode == "nominal":
@@ -433,6 +440,24 @@ class IRMAAConfig(BaseModel):
     brackets: list[IRMAABracket] = Field(default_factory=default_irmaa_brackets)
 
 
+class LTCConfig(BaseModel):
+    """Long-term / end-of-life care: a late-life essential medical expense
+    (in-home aide, assisted living, or nursing home). Off by default.
+
+    When enabled it adds `annual_cost` (today's $, HSA-eligible, healthcare-
+    inflating) as an essential expense from `onset_age` for `duration_years`
+    years. Deterministic — a planning provision you size to the care level and
+    length you want covered, not a probabilistic shock. US medians (2024):
+    in-home aide ~$75k/yr, assisted living ~$70k/yr, nursing home ~$95-120k/yr;
+    the typical stay is ~2-3 years (longer for women)."""
+
+    enabled: bool = False
+    onset_age: int = 84
+    annual_cost: float = 0.0  # today's $
+    duration_years: int = 3
+    extra_inflation: float = 0.015  # healthcare CPI+
+
+
 class EventKind(str, Enum):
     one_time_flow = "one_time_flow"
     recurring_flow = "recurring_flow"
@@ -525,6 +550,9 @@ class Scenario(BaseModel):
     spending_strategy: SpendingStrategy = SpendingStrategy()
     aca: ACAConfig = ACAConfig()
     irmaa: IRMAAConfig = IRMAAConfig()
+    # Long-term / end-of-life care provision (off by default). When enabled it
+    # adds a late-life essential, HSA-eligible medical expense over its window.
+    ltc: LTCConfig = LTCConfig()
     events: list[Event] = Field(default_factory=list)
     sim: SimSettings = SimSettings()
 

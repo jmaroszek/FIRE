@@ -457,7 +457,6 @@ export function AccessibilityChart(props: {
         legend: { ...baseLayout.legend, traceorder: "reversed" },
         yaxis: { ...baseLayout.yaxis, tickformat: "$.3~s" },
         xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
-        title: { text: "Accessible (Penalty-Free) Assets By Source — Median Path, Today's $", font: { size: 14 } },
       }}
       config={config}
       style={{ width: "100%" }}
@@ -602,29 +601,61 @@ export function AccountFlowsChart(props: {
   if (!cIn.length && !cOut.length && !hasWork && !hasSS)
     return <p className="hint">No account flows on the median path yet.</p>;
 
+  // With x-unified hover, plotly lists every trace at the hovered x — including
+  // accounts sitting at $0 that year. Nulling those points (the bar is 0-height
+  // anyway) drops just those rows, so each year's tooltip names only the accounts
+  // with real activity. The account name rides in the hovertemplate body (the
+  // colored swatch alone doesn't say which account it is).
   const data: Data[] = [];
   cIn.forEach((k, i) => data.push({
-    x, y: inv[k], type: "bar", name: CONTRIB_LABELS[k] ?? k,
+    x, y: inv[k].map((v) => (v > 1 ? v : null)), type: "bar", name: CONTRIB_LABELS[k] ?? k,
     legendgroup: "in",
     ...(i === 0 ? { legendgrouptitle: { text: "Contributions" } } : {}),
     marker: { color: (CONTRIB_COLORS[k] ?? "#8b949e") + "cc" },
-    hovertemplate: "Contribute %{y:$,.0f}<extra></extra>",
+    hovertemplate: `${CONTRIB_LABELS[k] ?? k} %{y:$,.0f}<extra></extra>`,
   } as Data));
+  // a transparent marker carrying the year's total contributions — appears as a
+  // "Total" row at the foot of the Contributions group in the unified tooltip.
+  if (cIn.length) {
+    const inTotal = x.map((_, t) => {
+      const sum = cIn.reduce((a, k) => a + (inv[k]?.[t] ?? 0), 0);
+      return sum > 1 ? sum : null;
+    });
+    data.push({
+      x, y: inTotal, type: "scatter", mode: "markers", name: "Total Contributions",
+      legendgroup: "in", showlegend: false, marker: { color: "rgba(0,0,0,0)" },
+      hovertemplate: "<b>Total %{y:$,.0f}</b><extra></extra>",
+    } as Data);
+  }
   cOut.forEach((k, i) => data.push({
-    x, y: w[k].map((v) => -v), type: "bar", name: SOURCE_LABELS[k] ?? k,
+    x, y: w[k].map((v) => (v > 1 ? -v : null)), type: "bar", name: SOURCE_LABELS[k] ?? k,
     legendgroup: "out",
     ...(i === 0 ? { legendgrouptitle: { text: "Withdrawals" } } : {}),
     marker: { color: (SOURCE_COLORS[k] ?? "#8b949e") + "cc" },
-    customdata: w[k], hovertemplate: "Withdraw %{customdata:$,.0f}<extra></extra>",
+    customdata: w[k], hovertemplate: `${SOURCE_LABELS[k] ?? k} %{customdata:$,.0f}<extra></extra>`,
   } as Data));
+  if (cOut.length) {
+    const outTotal = x.map((_, t) => {
+      const sum = cOut.reduce((a, k) => a + (w[k]?.[t] ?? 0), 0);
+      return sum > 1 ? sum : null;
+    });
+    data.push({
+      x, y: outTotal.map((v) => (v == null ? null : -v)), type: "scatter", mode: "markers",
+      name: "Total Withdrawals", legendgroup: "out", showlegend: false,
+      marker: { color: "rgba(0,0,0,0)" }, customdata: outTotal,
+      hovertemplate: "<b>Total %{customdata:$,.0f}</b><extra></extra>",
+    } as Data);
+  }
   if (hasWork) data.push({
-    x, y: wages, type: "scatter", mode: "lines", name: "Active Income (Work)",
+    x, y: wages.map((v) => (v > 1 ? v : null)), type: "scatter", mode: "lines",
+    name: "Active Income (Work)",
     legendgroup: "income", legendgrouptitle: { text: "Income" },
     line: { color: FLOW_COLORS.wages, width: 2 },
     hovertemplate: "Work income %{y:$,.0f}<extra></extra>",
   });
   if (hasSS) data.push({
-    x, y: ssInc, type: "scatter", mode: "lines", name: "Social Security",
+    x, y: ssInc.map((v) => (v > 1 ? v : null)), type: "scatter", mode: "lines",
+    name: "Social Security",
     legendgroup: "income",
     ...(hasWork ? {} : { legendgrouptitle: { text: "Income" } }),
     line: { color: FLOW_COLORS.ss, width: 2, dash: "dot" },
@@ -1330,7 +1361,7 @@ export function SpendingDepthChart(props: {
   const x = props.axisMode === "age" ? [...props.result.ages] : [...props.result.years];
   const refs = [{ value: 1, label: "Plan (100%)", color: "#8b949e" }];
   if (props.floor > 0) refs.push({ value: props.floor, label: "Floor", color: "#8b949e" });
-  if (props.cap > 1) refs.push({ value: props.cap, label: "Cap", color: "#3fb950" });
+  if (props.cap > 1) refs.push({ value: props.cap, label: "Cap", color: "#8b949e" });
   const markers = lifeStageMarkers(props.axisMode, props.birthYear,
     [{ age: props.retirementAge, label: "Retire", color: "#d29922" }]);
   const shapes: Partial<Shape>[] = [...markers.shapes];

@@ -7,7 +7,7 @@ import pytest
 from fire_engine import Scenario, run
 from fire_engine.scenario import (
     Account, AccountType, ExpenseStream, HSARule, Income, InflationModel,
-    MarketModel, Profile, SimSettings,
+    LTCConfig, MarketModel, Profile, SimSettings,
 )
 
 NO_GROWTH = dict(
@@ -57,3 +57,40 @@ def test_medical_stream_drawn_from_hsa_tax_free():
     assert r.pools["cash"][0, 1] == pytest.approx(100000)
     # no taxable ordinary income from an HSA medical draw
     assert np.allclose(r.taxes_paid[:, 0], 0.0)
+
+
+def _ltc_retiree(ltc: LTCConfig) -> Scenario:
+    return Scenario(
+        profile=Profile(birth_year=1986, horizon_age=44, state_tax_rate=0.0),
+        accounts=[Account(type=AccountType.hsa, balance=50000),
+                  Account(type=AccountType.cash, balance=100000)],
+        income=Income(gross_salary=0),
+        retirement_age=40,
+        expense_streams=[],
+        medical_streams=[],
+        hsa=HSARule(utilization=1.0, cash_buffer=0.0),
+        ltc=ltc,
+        sim=SimSettings(n_paths=2, start_year=2026),
+        **NO_GROWTH,
+    )
+
+
+def test_ltc_adds_essential_medical_in_window_only():
+    """Enabled LTC adds an essential, HSA-paid medical expense over its window
+    and nothing outside it."""
+    # start_age = 2026 - 1986 = 40; ages 40..44 -> indices 0..4. LTC at 42, 43.
+    r = run(_ltc_retiree(LTCConfig(enabled=True, onset_age=42, duration_years=2,
+                                   annual_cost=20000, extra_inflation=0.0)))
+    assert r.expenses[0, 0] == pytest.approx(0.0)      # age 40, before window
+    assert r.expenses[0, 2] == pytest.approx(20000.0)  # age 42, in window
+    assert r.expenses[0, 3] == pytest.approx(20000.0)  # age 43, in window
+    assert r.expenses[0, 4] == pytest.approx(0.0)      # age 44, past window
+    # paid tax-free from the HSA: 50k -> 30k (end age 42) -> 10k (end age 43)
+    assert r.pools["hsa"][0, 3] == pytest.approx(30000)
+    assert r.pools["hsa"][0, 4] == pytest.approx(10000)
+
+
+def test_ltc_disabled_is_baseline():
+    """LTC off (even with a cost set) adds no expense."""
+    off = run(_ltc_retiree(LTCConfig(enabled=False, annual_cost=20000)))
+    assert np.allclose(off.expenses, 0.0)

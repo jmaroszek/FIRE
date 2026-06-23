@@ -71,14 +71,9 @@ export default function Freedom() {
   const retIdx = result ? result.ages.findIndex((a) => a >= s.retirement_age) : -1;
   const nwAtRetirement = result && retIdx >= 0 ? (result.fan.real.p50[retIdx + 1] ?? 0) : 0;
   const growthMultiple = nwAtRetirement > 0 ? lastReal / nwAtRetirement : 0;
-  // Retirement-bridge headline data (retire → 59½). The runway is framed against
-  // the wait until your first Roth conversion seasons penalty-free (+5 yr), not the
-  // full retirement→59½ window — that's the span liquid assets must bridge alone.
+  // Retirement-bridge headline data (retire → 59½).
   const bridge = result?.bridge;
   const hasBridge = !!bridge?.has_bridge;
-  const ladderGap = result && result.ladder_schedule.length
-    ? Math.max(0, result.ladder_schedule[0].age + 5 - s.retirement_age)
-    : (bridge?.bridge_years ?? 0);
   // Bridge draw rate (undersaving): the share of penalty-free ACCESSIBLE money
   // drawn each year over the bridge (retirement → 59½, before locked accounts
   // open), averaged across those years and capped at 100%/yr so the year the
@@ -128,7 +123,7 @@ export default function Freedom() {
                 info={A.fireSimple} />
               <ProgressBar fraction={freedom.fire_progress_simple ?? 0} />
               <Stat label={`MC-derived (≥${fmtPct(freedom.success_threshold, 0)} Success, Retire Today)`}
-                value={fmtMoney(freedom.fire_number_mc)} info={A.fireMc} />
+                value={fmtMoney(freedom.fire_number_mc)} />
               <ProgressBar fraction={freedom.fire_progress_mc ?? 0} />
             </>
           ) : freedomLoading
@@ -237,7 +232,7 @@ export default function Freedom() {
                 {bridgeDrawRate != null ? (
                   <Stat label="Draw ÷ Accessible, Avg Over The Bridge"
                     value={fmtPct(bridgeDrawRate, 0)}
-                    sub="penalty-free money, retire→59½; high = strained" info={A.bridgeDrawRate} />
+                    sub="penalty-free money, retire→59½; high = strained" />
                 ) : <p className="hint">No bridge — retiring at/after 59½.</p>}
               </Section>
             </div>
@@ -298,10 +293,10 @@ export default function Freedom() {
             <HeroStat tone="green" label="Bridge Holds" value={fmtPct(1 - (bridge.bridge_break_rate ?? 0), 0)}
               sub="penalty-free money lasts to 59½ (no early-penalty raid)" info={A.bridgeHolds} />
             <HeroStat label="Liquid Needed" value={fmtMoney(bridge.bridge_funding_total_real ?? 0)}
-              sub={`first ${bridge.bridge_funding_years} retirement years · ${fmtMoney(bridge.bridge_funding_by_source?.cash ?? 0)} cash + ${fmtMoney(bridge.bridge_funding_by_source?.taxable ?? 0)} taxable + ${fmtMoney(bridge.bridge_funding_by_source?.roth_basis ?? 0)} Roth basis`}
+              sub={`first ${bridge.bridge_funding_years} retirement years · spending + ${fmtMoney(bridge.bridge_funding_tax_real ?? 0)} tax`}
               info={A.bridgeFunding} />
-            <HeroStat tone="amber" label="Runway" value={`${Math.round(bridge.runway_p50 ?? 0)} yr`}
-              sub={`covers the ${ladderGap}-yr wait until your first conversion seasons · worst 5%: ${Math.round(bridge.runway_p5 ?? 0)} yr`}
+            <HeroStat tone="amber" label="Bridge Coverage" value={`${(bridge.coverage_p50 ?? 0).toFixed(1)}×`}
+              sub={`covers ~${Math.round(bridge.runway_p50 ?? 0)} yr of spending · worst 5%: ${(bridge.coverage_p5 ?? 0).toFixed(1)}×`}
               info={A.bridgeCoverage} />
           </HeroRow>
 
@@ -370,22 +365,21 @@ export default function Freedom() {
               value={fmtMoney(Math.max(0, lastReal - s.sim.legacy_target))}
               sub={s.sim.legacy_target > 0
                 ? `median estate − ${fmtMoney(s.sim.legacy_target)} legacy`
-                : "set a Legacy target on Assumptions"}
-              info={A.estateAboveLegacy} />
+                : "set a Legacy target on Assumptions"} />
           ) : <p className="hint">Simulation pending…</p>}
         </Section>
         <Section title="Years Of Spending Unspent" info={A.estateYears}>
           {result && freedom && freedom.annual_retirement_expenses > 0 ? (
             <Stat label="Median Estate ÷ Annual Spending"
               value={`${Math.round(lastReal / freedom.annual_retirement_expenses)} yr`}
-              sub="years of life converted to an estate" info={A.estateYears} />
+              sub="years of life converted to an estate" />
           ) : <p className="hint">{result ? "—" : "Simulation pending…"}</p>}
         </Section>
         <Section title="Portfolio Growth In Retirement" info={A.growthMultiple}>
           {result && growthMultiple > 0 ? (
             <Stat label="Median Ending ÷ Median At Retirement"
               value={`${growthMultiple.toFixed(1)}×`}
-              sub="you lived on less than it earned" info={A.growthMultiple} />
+              sub="you lived on less than it earned" />
           ) : <p className="hint">{result ? "—" : "Simulation pending…"}</p>}
         </Section>
       </div>
@@ -429,7 +423,7 @@ export default function Freedom() {
                 </Field>
               </div>
               <div className="stat-grid" style={{ marginTop: 12 }}>
-                <Stat label="Spent While Active" value={fmtPct(active, 0)} sub={`through age ${goGoEnd}`} info={A.fulfillment} />
+                <Stat label="Spent While Active" value={fmtPct(active, 0)} sub={`through age ${goGoEnd}`} />
                 <Stat label="Spent While Inactive" value={fmtPct(inactive, 0)} sub={`age ${goGoEnd + 1}+`} />
               </div>
               <FulfillmentChart result={result} axisMode={axisMode}

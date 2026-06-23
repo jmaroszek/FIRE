@@ -363,6 +363,10 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
    wraps the panel below the table on narrow viewports. */
 .card-split { display: flex; flex-wrap: wrap; gap: 16px 36px; align-items: flex-start; }
 .card-split-main { flex: 0 0 auto; }
+/* Grow the left column to fill the row so the side panel stays anchored in the
+   right-hand gutter even when the main column is short (e.g. no income streams,
+   just the header) instead of drifting in beside it. */
+.card-split-main.grow { flex: 1 1 auto; }
 .mixpanel { flex: 1 1 260px; min-width: 220px; max-width: 460px;
   display: flex; flex-direction: column; gap: 9px; }
 .mixpanel-title { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .02em; }
