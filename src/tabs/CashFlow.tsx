@@ -9,9 +9,10 @@ import {
   Section, SectionNav, Stat, fmtMoney, fmtPct,
 } from "../components/ui";
 import { KIND_META, KIND_ORDER, displayKindOf, newEventOf, type DisplayKind } from "../events";
+import { api } from "../api";
 import { useStore } from "../store";
 import type {
-  AccountType, ExpenseStream, FireEvent, IncomeStream, Scenario,
+  AccountType, ExpenseStream, FireEvent, IncomeStream, Scenario, StressEarliestResult,
 } from "../types";
 
 /** Section heading that doubles as a scroll anchor for the in-page sub-nav. */
@@ -154,6 +155,17 @@ export default function CashFlow() {
   const midCareer = Math.round((startAge + s.retirement_age) / 2);
   const [shockAge, setShockAge] = useState(midCareer);
   const [shockDur, setShockDur] = useState(1);
+  // Earliest-retirement-age-under-shock is a full age sweep (~seconds), so it's
+  // on-demand rather than auto-run. Cleared on any scenario or shock-param change
+  // so a stale answer never lingers.
+  const [stressEarliest, setStressEarliest] = useState<StressEarliestResult | null>(null);
+  const [stressEarliestLoading, setStressEarliestLoading] = useState(false);
+  useEffect(() => { setStressEarliest(null); }, [scenario, shockAge, shockDur]);
+  const runStressEarliest = async () => {
+    setStressEarliestLoading(true);
+    try { setStressEarliest(await api.stressEarliest(s, shockAge, shockDur)); }
+    finally { setStressEarliestLoading(false); }
+  };
 
   // Headroom & Resilience tiles compute automatically (like the Freedom tab),
   // showing a spinner instead of waiting on a manual button. Both results are
@@ -291,7 +303,7 @@ export default function CashFlow() {
               onChange={(v) => up({ income: { ...s.income, gross_salary: v } })} />
           </Field>
           <Field label="Annual Raise"
-            info="Nominal — the raise number on your review letter (e.g. 3%). The engine subtracts expected inflation internally to get real growth.">
+            info="Nominal — the raise number on your review letter (e.g. 3%); it's converted to real growth using your inflation assumption.">
             <PercentInput value={s.income.real_growth} step={0.25}
               onChange={(v) => up({ income: { ...s.income, real_growth: v, growth_mode: "nominal" } })} />
           </Field>
@@ -523,7 +535,7 @@ export default function CashFlow() {
               <NumberInput value={shockAge} step={1} min={startAge} max={s.retirement_age} onChange={setShockAge} />
             </Field>
             <Field label="Duration (Years)"
-              info="How long wages stay at zero. Fractional is allowed — 0.5 ≈ six months — approximated at the engine's annual grain by earning only the remaining fraction of the final partial year.">
+              info="How long wages stay at zero. Fractional is allowed — 0.5 ≈ six months, approximated by earning only the remaining fraction of the final partial year.">
               <NumberInput value={shockDur} step={0.25} min={0.25} max={20} onChange={setShockDur} />
             </Field>
           </div>
@@ -545,6 +557,25 @@ export default function CashFlow() {
             </div>
           ) : (
             <div className="tile-loading"><span className="spinner" />Computing…</div>
+          )}
+          {stress && (
+            <div className="shock-earliest">
+              {stressEarliest ? (
+                <div className="shock-cell">
+                  <span className="stat-label">
+                    Earliest Retirement Age At Your {fmtPct(s.sim.success_threshold, 0)} Threshold
+                  </span>
+                  <span className="stat-value">
+                    {stressEarliest.base_earliest_age ?? "—"} → {stressEarliest.stressed_earliest_age ?? "none ≤ 70"}
+                  </span>
+                  <span className="stat-sub">baseline → with this shock</span>
+                </div>
+              ) : (
+                <button className="ghost" onClick={runStressEarliest} disabled={stressEarliestLoading}>
+                  {stressEarliestLoading ? "Finding earliest age…" : "Find Earliest Retirement Age"}
+                </button>
+              )}
+            </div>
           )}
         </div>
       </Section>

@@ -1,6 +1,6 @@
 import type {
   BridgeCrashResult, Category, FreedomResult, LadderSavingsResult, MaxSpendResult,
-  Scenario, SensitivityResult, SimulateResult, Snapshot, StressResult,
+  Scenario, SensitivityResult, SimulateResult, Snapshot, StressEarliestResult, StressResult,
   SurfaceResult, SweepResult, TaxRegimeResult,
 } from "./types";
 
@@ -50,6 +50,11 @@ export const api = {
     }),
   stress: (scenario: Scenario, shockAge: number, duration = 1, nPaths = 2000) =>
     req<StressResult>("/simulate/stress", {
+      method: "POST",
+      body: JSON.stringify({ scenario, shock_age: shockAge, duration, n_paths: nPaths }),
+    }),
+  stressEarliest: (scenario: Scenario, shockAge: number, duration = 1, nPaths = 800) =>
+    req<StressEarliestResult>("/simulate/stress-earliest", {
       method: "POST",
       body: JSON.stringify({ scenario, shock_age: shockAge, duration, n_paths: nPaths }),
     }),

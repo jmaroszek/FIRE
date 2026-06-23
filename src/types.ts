@@ -418,6 +418,17 @@ export interface StressResult {
   duration: number;
 }
 
+/** Earliest retirement age clearing the success threshold, baseline vs under the
+ *  income shock. null = no age through 70 clears it. */
+export interface StressEarliestResult {
+  base_earliest_age: number | null;
+  stressed_earliest_age: number | null;
+  shock_age: number;
+  duration: number;
+  threshold: number;
+  horizon_age: number;
+}
+
 export interface BridgeCrashResult {
   has_bridge: boolean;
   drop: number;

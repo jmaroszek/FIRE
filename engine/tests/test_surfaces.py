@@ -82,6 +82,19 @@ def test_income_stress_drops_success():
     assert res["shock_age"] == 30 and res["duration"] == 3
 
 
+def test_income_stress_earliest_age_never_improves():
+    """A wage shock during accumulation can only push the earliest retirement age
+    that clears the threshold later (or leave it unchanged) — never earlier. The
+    two sweeps share seeded paths, so stressed success <= baseline at every age."""
+    s = example_scenario()
+    res = m.income_stress_earliest(s, shock_age=30, duration=3, n_paths=80)
+    assert res["shock_age"] == 30 and res["duration"] == 3
+    assert res["threshold"] == s.sim.success_threshold
+    base, stressed = res["base_earliest_age"], res["stressed_earliest_age"]
+    if base is not None and stressed is not None:
+        assert stressed >= base
+
+
 def test_ladder_tax_savings_structure_and_determinism():
     s = example_scenario()  # has a fill-bracket ladder
     s.sim.n_paths = 300

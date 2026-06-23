@@ -174,6 +174,19 @@ def stress(req: StressRequest) -> dict:
                            duration=req.duration, n_paths=req.n_paths)
 
 
+class StressEarliestRequest(BaseModel):
+    scenario: Scenario
+    shock_age: int
+    duration: float = 1.0
+    n_paths: int = 800
+
+
+@app.post("/simulate/stress-earliest")
+def stress_earliest(req: StressEarliestRequest) -> dict:
+    return m.income_stress_earliest(req.scenario, shock_age=req.shock_age,
+                                    duration=req.duration, n_paths=req.n_paths)
+
+
 class TaxRegimeRequest(BaseModel):
     scenario: Scenario
     sunset_age: int

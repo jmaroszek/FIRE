@@ -535,7 +535,7 @@ export default function Accounts() {
       {/* ───────────── LIQUIDITY & CONVERSIONS ───────────── */}
       <Head id="acc-liquidity">Liquidity &amp; Conversions</Head>
       <Section title="Liquidity: Penalty-Free Assets By Source"
-        info={A.accessibility + " The balance you could tap penalty-free each year — a stock, not a surplus. The bridge is the gap between Retire and 60. Its confidence, runway and crash test now live on the Freedom tab, under Retirement Bridge."}>
+        info={A.accessibility + " The balance you could tap penalty-free each year — a stock, not a surplus. The bridge is the gap between Retire and 60. Its confidence, coverage, and crash test now live on the Freedom tab, under Retirement Bridge."}>
         {result ? (
           <AccessibilityChart result={result} axisMode={axisMode}
             retirementMarker={retMarker} birthYear={s.profile.birth_year} />
