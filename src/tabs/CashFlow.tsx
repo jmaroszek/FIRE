@@ -554,28 +554,23 @@ export default function CashFlow() {
                   {stress.delta >= 0 ? "+" : ""}{fmtPct(stress.delta)} vs baseline
                 </span>
               </div>
+              <div className="shock-cell shock-newage">
+                <span className="stat-label">New Retirement Age</span>
+                {stressEarliest ? (
+                  <>
+                    <span className="stat-value">{stressEarliest.stressed_earliest_age ?? "none ≤ 70"}</span>
+                    <span className="stat-sub">baseline → shocked</span>
+                  </>
+                ) : (
+                  <button className="ghost" onClick={runStressEarliest} disabled={stressEarliestLoading}
+                    style={{ marginTop: 6, alignSelf: "flex-start" }}>
+                    {stressEarliestLoading ? "Computing…" : "Compute"}
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             <div className="tile-loading"><span className="spinner" />Computing…</div>
-          )}
-          {stress && (
-            <div className="shock-earliest">
-              {stressEarliest ? (
-                <div className="shock-cell">
-                  <span className="stat-label">
-                    Earliest Retirement Age At Your {fmtPct(s.sim.success_threshold, 0)} Threshold
-                  </span>
-                  <span className="stat-value">
-                    {stressEarliest.base_earliest_age ?? "—"} → {stressEarliest.stressed_earliest_age ?? "none ≤ 70"}
-                  </span>
-                  <span className="stat-sub">baseline → with this shock</span>
-                </div>
-              ) : (
-                <button className="ghost" onClick={runStressEarliest} disabled={stressEarliestLoading}>
-                  {stressEarliestLoading ? "Finding earliest age…" : "Find Earliest Retirement Age"}
-                </button>
-              )}
-            </div>
           )}
         </div>
       </Section>

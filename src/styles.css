@@ -449,8 +449,9 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .shock-body { display: flex; align-items: flex-start; gap: 40px; flex-wrap: wrap; }
 .shock-inputs { flex-direction: column; align-items: flex-start; gap: 12px; }
 .shock-compare { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
-/* Earliest-age readout drops to its own full-width line under the comparison. */
-.shock-earliest { flex-basis: 100%; border-top: 1px solid var(--border); padding-top: 12px; }
+/* New-retirement-age cell sits to the right of the success comparison, set off
+   by a divider. */
+.shock-newage { border-left: 1px solid var(--border); padding-left: 24px; }
 
 /* Headroom & Resilience tiles compute on load: shrink the loading placeholder's
    reserved height to match the finished content (the global 220px is meant for

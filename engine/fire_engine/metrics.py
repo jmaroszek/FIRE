@@ -866,21 +866,31 @@ def income_stress_earliest(scenario: Scenario, shock_age: int, duration: float,
                            n_paths: int = 800) -> dict:
     """Earliest retirement age that clears the success threshold (and stays above
     it), baseline vs under the income shock — the When-Can-I-Retire answer recomputed
-    with wages zeroed over the shock window. Both sweeps key off the scenario seed,
-    so they share market paths and are directly comparable. None = no age through 70
-    clears the threshold."""
+    with wages zeroed over the shock window. None = no age through 70 clears it.
+
+    Losing income can only push the earliest age later, never earlier (with shared
+    seeded paths, stressed success <= baseline at every age), so the stressed sweep
+    only needs to consider ages at/above the baseline earliest age. And if the
+    baseline plan never clears the threshold, the shocked one can't either — the
+    stressed sweep is skipped entirely. Both shortcuts cut the work materially."""
     threshold = scenario.sim.success_threshold
     start_age = scenario.start_age
     base_sweep = retirement_sweep(scenario, n_paths=n_paths)
-    stressed_sweep = retirement_sweep(_with_income_shock(scenario, shock_age, duration),
-                                      n_paths=n_paths)
+    base_yf = years_to_fi(base_sweep, threshold, start_age)
+    base_earliest = (start_age + base_yf) if base_yf is not None else None
 
-    def to_age(yf: int | None) -> int | None:
-        return (start_age + yf) if yf is not None else None
+    stressed_earliest = None
+    if base_earliest is not None:
+        # the shocked answer lives in [base_earliest, 70]; sweeping below it is wasted.
+        stressed_sweep = retirement_sweep(
+            _with_income_shock(scenario, shock_age, duration),
+            ages=list(range(base_earliest, 71)), n_paths=n_paths)
+        stressed_yf = years_to_fi(stressed_sweep, threshold, start_age)
+        stressed_earliest = (start_age + stressed_yf) if stressed_yf is not None else None
 
     return {
-        "base_earliest_age": to_age(years_to_fi(base_sweep, threshold, start_age)),
-        "stressed_earliest_age": to_age(years_to_fi(stressed_sweep, threshold, start_age)),
+        "base_earliest_age": base_earliest,
+        "stressed_earliest_age": stressed_earliest,
         "shock_age": shock_age,
         "duration": duration,
         "threshold": threshold,
