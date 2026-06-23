@@ -5,7 +5,7 @@ import {
   SpendingDepthChart, SurfaceHeatmap, SurvivalChart, SweepGainChart, TornadoChart,
 } from "../components/charts";
 import {
-  Field, HeroRow, HeroStat, InfoTip, NumberInput, PercentInput, ProgressBar, Section, Stat,
+  Field, HeroRow, HeroStat, InfoTip, NumberInput, PercentInput, ProgressBar, Section, SectionNav, Stat,
   fmtMoney, fmtPct,
 } from "../components/ui";
 import { useStore } from "../store";
@@ -98,6 +98,13 @@ export default function Freedom() {
 
   return (
     <div className="stack">
+      <SectionNav items={[
+        { id: "freedom-success", label: "Overall Success" },
+        { id: "freedom-under", label: "Undersaving" },
+        { id: "freedom-bridge", label: "Retirement Bridge" },
+        { id: "freedom-over", label: "Oversaving" },
+      ]} />
+
       {/* ───────────── OVERALL SUCCESS ───────────── */}
       <Head id="freedom-success">Overall Success</Head>
       <div className="stat-grid">
