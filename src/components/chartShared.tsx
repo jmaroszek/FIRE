@@ -118,6 +118,17 @@ export const POOL_COLORS: Record<string, string> = {
 };
 export const POOL_ORDER = ["taxable", "trad", "roth", "hsa", "cash"];
 
+// Contribution-flow labels/colors (employer match + the destination pools);
+// shared by the account-flows and annual-tax charts.
+export const CONTRIB_LABELS: Record<string, string> = {
+  match: "Employer Match", trad: "Traditional", roth: "Roth", hsa: "HSA",
+  taxable: "Brokerage", cash: "Cash",
+};
+export const CONTRIB_COLORS: Record<string, string> = {
+  match: FLOW_COLORS.match, trad: FLOW_COLORS.trad, roth: FLOW_COLORS.roth,
+  hsa: FLOW_COLORS.hsa, taxable: FLOW_COLORS.taxable, cash: FLOW_COLORS.cash,
+};
+
 export type YFmt = "money" | "percent" | "multiplier";
 export const yTick = (f: YFmt) => (f === "money" ? "$.3~s" : f === "percent" ? ".0%" : ".2f");
 export const yHover = (f: YFmt) => (f === "money" ? "%{y:$,.0f}" : f === "percent" ? "%{y:.1%}" : "%{y:.2f}×");
