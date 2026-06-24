@@ -164,6 +164,69 @@ def fica_tax(wages: np.ndarray, tables: TaxTables, infl: np.ndarray | float) -> 
     return ss + tables.medicare_rate * wages
 
 
+@dataclass(frozen=True)
+class IncomeTax:
+    """One year's income tax, decomposed. All fields are (P,) nominal arrays."""
+    ordinary_excl_ss: np.ndarray   # ordinary income before the taxable-SS add-back
+    ltcg: np.ndarray               # long-term gains + qualified dividends
+    taxable_ss: np.ndarray         # taxable portion of the SS benefit
+    ordinary: np.ndarray           # ordinary_excl_ss + taxable_ss
+    ordinary_taxable: np.ndarray   # ordinary after the standard deduction
+    ltcg_taxable: np.ndarray       # LTCG stacked above ordinary
+    federal: np.ndarray
+    state: np.ndarray
+    fica: np.ndarray
+    penalty: np.ndarray
+    total: np.ndarray              # federal + state + fica + penalty
+
+
+def income_tax(
+    *,
+    wages: np.ndarray,
+    pretax: np.ndarray,
+    rmd: np.ndarray,
+    conversions: np.ndarray,
+    withdrawal_ordinary: np.ndarray,
+    cash_interest: np.ndarray,
+    dividends: np.ndarray,
+    withdrawal_ltcg: np.ndarray,
+    withdrawal_penalty_base: np.ndarray,
+    ss_benefits: np.ndarray,
+    tables: TaxTables,
+    tables_eff: TaxTables,
+    infl: np.ndarray | float,
+    state_rate: float,
+) -> IncomeTax:
+    """Total income tax for one year, co-resolving the Social Security
+    provisional-income test (the "tax torpedo") and LTCG stacking.
+
+    Ordinary income is wages net of pretax contributions, plus RMDs, Roth
+    conversions, traditional/HSA withdrawals, and cash interest; the taxable
+    portion of Social Security (decided by the provisional-income test on
+    everything else) is then stacked on top — a flat fraction would hide that
+    torpedo from bracket-management decisions. `tables` carries the statutory
+    SS/FICA/penalty params; `tables_eff` carries the (possibly sunset-adjusted)
+    brackets used for the income tax itself. Pure — array inputs are (P,) nominal.
+    """
+    ordinary_excl_ss = (
+        np.maximum(wages - pretax, 0.0)
+        + rmd + conversions + withdrawal_ordinary + cash_interest
+    )
+    ltcg = dividends + withdrawal_ltcg
+    taxable_ss = taxable_social_security(ordinary_excl_ss + ltcg, ss_benefits, tables)
+    ordinary = ordinary_excl_ss + taxable_ss
+    fed, ord_taxable, ltcg_taxable = federal_tax(ordinary, ltcg, tables_eff, infl)
+    state = state_rate * (ord_taxable + ltcg_taxable)
+    fica = fica_tax(wages, tables, infl)
+    penalty = tables.early_penalty * withdrawal_penalty_base
+    total = fed + state + fica + penalty
+    return IncomeTax(
+        ordinary_excl_ss=ordinary_excl_ss, ltcg=ltcg, taxable_ss=taxable_ss,
+        ordinary=ordinary, ordinary_taxable=ord_taxable, ltcg_taxable=ltcg_taxable,
+        federal=fed, state=state, fica=fica, penalty=penalty, total=total,
+    )
+
+
 def ordinary_bracket_top(name: str, tables: TaxTables, infl: np.ndarray | float) -> np.ndarray:
     """Nominal taxable-income level at the top of a named bracket (for
     fill-to-bracket Roth conversions). 'std_deduction' returns 0 taxable income

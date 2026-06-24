@@ -25,11 +25,15 @@ import numpy as np
 
 from . import taxes as taxmod
 from .accounts import (
-    HSA_PENALTY_FREE_AGE,
-    PENALTY_FREE_AGE,
     PortfolioState,
     apply_plan,
     plan_withdrawals,
+)
+from .constants import (
+    HSA_PENALTY_FREE_AGE,
+    LADDER_DEFAULT_END_AGE,
+    PENALTY_FREE_AGE,
+    RMD_START_AGE,
 )
 from .sampling import MarketPaths, sample_paths
 from .social_security import estimate_pia
@@ -65,14 +69,6 @@ def load_rmd_divisors() -> dict[int, float]:
         raw = json.loads((DATA_DIR / "rmd_table.json").read_text())["divisors"]
         _rmd_cache = {int(k): v for k, v in raw.items()}
     return _rmd_cache
-
-
-RMD_START_AGE = 75  # SECURE 2.0, born 1960+
-# Default last age for the Roth conversion ladder. The ladder serves two jobs:
-# bridging to 59.5 AND shrinking the traditional balance before RMDs begin, so
-# the default runs well past 59.5 — stopping a couple of years short of RMDs,
-# where the next converted dollar starts competing with forced RMD income.
-LADDER_DEFAULT_END_AGE = 72
 
 
 @dataclass
@@ -707,22 +703,23 @@ def run(
             w_ltcg = wplan.ltcg_income if wplan is not None else zeros
             w_penalty = wplan.penalty_base if wplan is not None else zeros
 
-            ordinary_excl_ss = (
-                np.maximum(wages - pretax, 0.0)
-                + rmd + conv + w_ordinary + cash_interest
+            # Income tax co-resolves the SS provisional-income test (the "tax
+            # torpedo") and LTCG stacking; see taxes.income_tax. Unpack the few
+            # pieces the cash-flow / MAGI / bracket-fill logic below still needs.
+            tax = taxmod.income_tax(
+                wages=wages, pretax=pretax, rmd=rmd, conversions=conv,
+                withdrawal_ordinary=w_ordinary, cash_interest=cash_interest,
+                dividends=dividends, withdrawal_ltcg=w_ltcg,
+                withdrawal_penalty_base=w_penalty, ss_benefits=ss_nom,
+                tables=tables, tables_eff=tables_eff, infl=infl,
+                state_rate=scenario.profile.state_tax_rate,
             )
-            ltcg = dividends + w_ltcg
-            # Social Security taxation follows the IRS provisional-income test:
-            # other (non-SS) income plus half the benefit decides how much of the
-            # benefit (0/50/85%) is taxed — the source of the "tax torpedo" that a
-            # flat fraction would hide from bracket-management decisions.
-            taxable_ss = taxmod.taxable_social_security(ordinary_excl_ss + ltcg, ss_nom, tables)
-            ordinary = ordinary_excl_ss + taxable_ss
-            fed, ord_taxable, ltcg_taxable = taxmod.federal_tax(ordinary, ltcg, tables_eff, infl)
-            state_tax = scenario.profile.state_tax_rate * (ord_taxable + ltcg_taxable)
-            fica = taxmod.fica_tax(wages, tables, infl)
-            penalty = tables.early_penalty * w_penalty
-            total_tax = fed + state_tax + fica + penalty
+            ordinary_excl_ss = tax.ordinary_excl_ss
+            ltcg = tax.ltcg
+            ordinary = tax.ordinary
+            fed = tax.federal
+            state_tax = tax.state
+            total_tax = tax.total
 
             # Health costs key off MAGI and feed back into cash flow, so they
             # co-converge with taxes/withdrawals inside this fixed point. MAGI is

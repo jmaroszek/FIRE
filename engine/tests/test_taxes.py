@@ -125,3 +125,43 @@ def test_bracket_top_lookup(tables):
     assert taxes.ordinary_bracket_top("std_deduction", tables, infl)[0] == 0.0
     assert taxes.ordinary_bracket_top("12", tables, infl)[0] == pytest.approx(50400.0)
     assert taxes.ordinary_bracket_top("22", tables, infl)[0] == pytest.approx(105700.0)
+
+
+def test_income_tax_ss_torpedo_and_ltcg_stacking(tables):
+    # Retiree: $30k traditional withdrawal (ordinary) + $20k realized LTCG + $20k SS.
+    # High provisional income drags the benefit to the statutory 85% cap (torpedo),
+    # which then stacks into ordinary income beneath the LTCG.
+    r = taxes.income_tax(
+        wages=np.array([0.0]), pretax=np.array([0.0]), rmd=np.array([0.0]),
+        conversions=np.array([0.0]), withdrawal_ordinary=np.array([30000.0]),
+        cash_interest=np.array([0.0]), dividends=np.array([0.0]),
+        withdrawal_ltcg=np.array([20000.0]), withdrawal_penalty_base=np.array([0.0]),
+        ss_benefits=np.array([20000.0]), tables=tables, tables_eff=tables,
+        infl=np.array([1.0]), state_rate=0.05,
+    )
+    assert r.ordinary_excl_ss[0] == pytest.approx(30000.0)
+    assert r.ltcg[0] == pytest.approx(20000.0)
+    assert r.taxable_ss[0] == pytest.approx(0.85 * 20000.0)          # 85% cap
+    assert r.ordinary[0] == pytest.approx(30000.0 + 0.85 * 20000.0)
+    # the decomposed pieces faithfully compose the standalone building blocks
+    fed, ot, lt = taxes.federal_tax(r.ordinary, r.ltcg, tables, np.array([1.0]))
+    assert r.federal[0] == pytest.approx(fed[0])
+    assert r.state[0] == pytest.approx(0.05 * (ot[0] + lt[0]))
+    assert r.total[0] == pytest.approx(r.federal[0] + r.state[0] + r.fica[0] + r.penalty[0])
+
+
+def test_income_tax_fica_and_early_penalty(tables):
+    # Still-working early retiree: wages drive FICA, and an early traditional
+    # draw (penalty_base) takes the 10% penalty; SS below base is untaxed.
+    r = taxes.income_tax(
+        wages=np.array([40000.0]), pretax=np.array([0.0]), rmd=np.array([0.0]),
+        conversions=np.array([0.0]), withdrawal_ordinary=np.array([10000.0]),
+        cash_interest=np.array([0.0]), dividends=np.array([0.0]),
+        withdrawal_ltcg=np.array([0.0]), withdrawal_penalty_base=np.array([10000.0]),
+        ss_benefits=np.array([0.0]), tables=tables, tables_eff=tables,
+        infl=np.array([1.0]), state_rate=0.0,
+    )
+    assert r.fica[0] == pytest.approx(taxes.fica_tax(np.array([40000.0]), tables, 1.0)[0])
+    assert r.penalty[0] == pytest.approx(tables.early_penalty * 10000.0)
+    assert r.taxable_ss[0] == 0.0
+    assert r.state[0] == 0.0

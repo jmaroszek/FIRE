@@ -8,7 +8,7 @@ from dataclasses import replace
 
 import numpy as np
 
-from .accounts import PENALTY_FREE_AGE
+from .constants import FIRE_MULTIPLE, PENALTY_FREE_AGE
 from .engine import SimResult, run
 from .sampling import MarketPaths, sample_paths
 from .scenario import (
@@ -117,7 +117,7 @@ def annual_retirement_expenses(scenario: Scenario, at_age: int) -> float:
 
 def fire_number_simple(scenario: Scenario) -> float:
     """Classic 25x (4% rule) on expenses at the planned retirement age."""
-    return 25.0 * annual_retirement_expenses(scenario, scenario.retirement_age)
+    return FIRE_MULTIPLE * annual_retirement_expenses(scenario, scenario.retirement_age)
 
 
 def fire_number_mc(scenario: Scenario, n_paths: int = 1000,
@@ -157,7 +157,7 @@ def coast_fire(scenario: Scenario) -> dict[str, float]:
     """How much you'd need TODAY to hit the simple FIRE number by the coast
     target age with no further contributions, at the blended real CAGR."""
     target_age = scenario.sim.coast_target_age
-    fire = 25.0 * annual_retirement_expenses(scenario, target_age)
+    fire = FIRE_MULTIPLE * annual_retirement_expenses(scenario, target_age)
     w = scenario.allocation
     r = (w.stocks * scenario.market.stocks.real_cagr
          + w.bonds * scenario.market.bonds.real_cagr

@@ -15,6 +15,11 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from .constants import (
+    CONVERSION_SEASONING_YEARS,
+    HSA_PENALTY_FREE_AGE,
+    PENALTY_FREE_AGE,
+)
 from .scenario import (
     Account,
     AccountType,
@@ -23,10 +28,6 @@ from .scenario import (
     Scenario,
     WithdrawalSource,
 )
-
-PENALTY_FREE_AGE = 60  # annual-grain stand-in for 59.5
-HSA_PENALTY_FREE_AGE = 65
-CONVERSION_SEASONING_YEARS = 5
 
 
 class PortfolioState:
