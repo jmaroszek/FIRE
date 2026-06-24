@@ -413,6 +413,36 @@ export default function Accounts() {
               );
             })}
             <div className="policy-settings">
+              <div className="policy-col-head">Tax Strategy<InfoTip text="How the 59½ & After order draws traditional accounts. Priority Order drains traditional to zero before Roth (the strict list to the left). Fill To Bracket caps each year's traditional spending withdrawal at the chosen bracket — spending above it comes from Roth instead of climbing into the next bracket — and lets the Roth conversion ladder fill whatever room is left below the ceiling. Pre-59½ is unaffected either way." /></div>
+              <div className="fields">
+                <Field label="59½ & After">
+                  <select value={s.withdrawal_policy.mode ?? "priority"}
+                    onChange={(e) => up({ withdrawal_policy: { ...s.withdrawal_policy, mode: e.target.value as any } })}>
+                    <option value="priority">Priority Order</option>
+                    <option value="bracket_filled">Fill To Bracket</option>
+                  </select>
+                </Field>
+                {s.withdrawal_policy.mode === "bracket_filled" && (
+                  <Field label="Bracket Top"
+                    info="Traditional spending withdrawals fill ordinary income up to this bracket; anything above it is funded from Roth. The conversion ladder fills any room left below this same ceiling.">
+                    <select value={s.withdrawal_policy.bracket_top ?? "12"}
+                      onChange={(e) => up({ withdrawal_policy: { ...s.withdrawal_policy, bracket_top: e.target.value as any } })}>
+                      <option value="std_deduction">Std Deduction (0%)</option>
+                      <option value="10">10% Top</option>
+                      <option value="12">12% Top</option>
+                      <option value="22">22% Top</option>
+                      <option value="custom">Income Target</option>
+                    </select>
+                  </Field>
+                )}
+                {s.withdrawal_policy.mode === "bracket_filled" && s.withdrawal_policy.bracket_top === "custom" && (
+                  <Field label="Taxable-Income Target"
+                    info="Fill traditional spending withdrawals up to this taxable-income level (today's $) before spilling to Roth.">
+                    <NumberInput value={s.withdrawal_policy.custom_top ?? 0} step={1000}
+                      onChange={(v) => up({ withdrawal_policy: { ...s.withdrawal_policy, custom_top: v } })} />
+                  </Field>
+                )}
+              </div>
               <div className="policy-col-head">Reserves</div>
               <div className="fields">
                 <Field label="Cash Buffer"

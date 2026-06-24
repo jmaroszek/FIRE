@@ -13,7 +13,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-SCHEMA_VERSION = 5  # v5: spending strategy consolidated to constant_dollar + percent_portfolio
+SCHEMA_VERSION = 6  # v6: tax-aware (bracket_filled) withdrawal policy fields
 
 
 class AccountType(str, Enum):
@@ -341,6 +341,19 @@ class WithdrawalPolicy(BaseModel):
     cash_buffer: float = 10000.0
     # Last resort: tap traditional accounts before 59.5 paying the 10% penalty.
     allow_early_trad_with_penalty: bool = True
+    # Tax-aware decumulation (59.5+ only). "priority": strict order above (the
+    # traditional draw is uncapped). "bracket_filled": the traditional spending
+    # draw is capped so its ordinary income tops out at `bracket_top`; spending
+    # above that ceiling is funded from Roth instead of climbing into the next
+    # bracket, and traditional is only tapped uncapped as a last resort if Roth
+    # is exhausted. The Roth conversion ladder fills whatever bracket room the
+    # spending draw leaves, so the two levers stay consistent. HSA (65+) is
+    # ordinary income too and shares the cap. See docs/ASSUMPTIONS.md.
+    mode: Literal["priority", "bracket_filled"] = "priority"
+    # Ceiling for the capped traditional draw; mirrors ConversionRule. Defaults
+    # to the 12% bracket top, the same default the ladder uses.
+    bracket_top: Literal["std_deduction", "10", "12", "22", "custom"] = "12"
+    custom_top: float = 0.0  # today's $ taxable-income ceiling, bracket_top="custom"
 
     def order_for_age(self, age: int, penalty_free_age: int) -> list[WithdrawalSource]:
         """Pre-59.5 vs 59.5+ ordering. Availability is still age-gated downstream

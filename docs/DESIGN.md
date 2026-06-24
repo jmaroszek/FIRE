@@ -25,7 +25,9 @@ React + TS + Plotly (src/)  ──HTTP──>  FastAPI sidecar (server/)  ──
   1. resolve regime (events) + the active allocation (base, glidepath, or event
      override) → 2. RMD → 3. HSA pays medical →
   4. fixed-point iteration (6×): income → taxes → free cash flow →
-     waterfall (positive) / withdrawal policy (negative) → Roth conversion →
+     waterfall (positive) / withdrawal policy (negative; in `bracket_filled`
+     mode the 59½+ traditional+HSA draw is capped to a target bracket, spilling
+     to Roth) → Roth conversion (fills the room the spending draw leaves) →
      ACA/IRMAA feedback (MAGI → subsidy/surcharge → cash flow) →
   5. apply plan → 6. grow at the allocation-blended return → record
 - `metrics.py` — percentile fans (real+nominal), survival curve, retirement
@@ -42,11 +44,13 @@ check (4%/30yr/75-25 → ~94% success on bootstrap).
 
 ### Schema versioning
 
-`SCHEMA_VERSION` (currently **3**) tags every saved Scenario. New optional
+`SCHEMA_VERSION` (currently **6**) tags every saved Scenario. New optional
 fields default empty, so older scenarios load unchanged — the sidecar only
 rejects a file whose version is *newer* than it understands. History:
 - v2: `income_streams`, `waterfall_schedule`, `medical_streams`, `Liability.start_age`
 - v3: `allocation_schedule` (age-keyed allocation glidepath, mirroring `waterfall_schedule`)
+- v5: spending strategy consolidated to `constant_dollar` + `percent_portfolio`
+- v6: tax-aware withdrawal policy (`mode`, `bracket_top`, `custom_top` on `WithdrawalPolicy`)
 
 The TypeScript types in `src/types.ts` mirror this schema and must be kept in sync.
 

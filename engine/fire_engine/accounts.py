@@ -149,6 +149,7 @@ def plan_withdrawals(
     cash_buffer_nominal: np.ndarray,
     allow_early_trad: bool,
     forced: dict[WithdrawalSource, np.ndarray] | None = None,
+    trad_ordinary_cap: np.ndarray | None = None,
 ) -> WithdrawalPlan:
     """Plan withdrawals to cover `need`, walking the policy order.
 
@@ -156,6 +157,16 @@ def plan_withdrawals(
     one-time events with an explicit source account) are drawn first from
     their source regardless of policy order; any unfillable forced amount
     spills into the general need.
+
+    `trad_ordinary_cap` (nominal $, per path) activates bracket-filled
+    decumulation: the combined traditional + HSA(65+) draw — both ordinary
+    income — is held to this ceiling during the ordered walk, so spending
+    above it spills to the next source (Roth) instead of climbing a bracket.
+    Forced ordinary takes consume the cap first. If `need` still isn't met
+    after the ordered walk, a fallback pass draws traditional then HSA
+    uncapped (accepting the higher bracket) before the cash-buffer last
+    resort — spending never fails just because Roth ran dry. `None` (the
+    default) reproduces the strict-order behavior exactly.
     """
     P = state.n_paths
     early = age < PENALTY_FREE_AGE
@@ -187,18 +198,41 @@ def plan_withdrawals(
     takes = {src: np.zeros(P) for src in avail}
     remaining = need.astype(float).copy()
 
+    # Bracket-filled decumulation: traditional and HSA(65+) are both ordinary
+    # income and share this per-year headroom; once spent, the ordered walk
+    # routes further need to the next (Roth) source rather than overshooting.
+    ORDINARY = (WithdrawalSource.trad, WithdrawalSource.hsa)
+    ord_budget = None if trad_ordinary_cap is None else np.maximum(trad_ordinary_cap, 0.0).copy()
+
     if forced:
         for src, amount in forced.items():
             take = np.minimum(amount, avail[src])
             takes[src] += take
             avail[src] -= take
             remaining += amount - take  # unfillable forced amount -> general need
+            if ord_budget is not None and src in ORDINARY:
+                ord_budget = np.maximum(ord_budget - take, 0.0)  # forced ordinary uses headroom first
 
     for src in order:
-        take = np.minimum(remaining, avail[src])
+        cap = avail[src]
+        if ord_budget is not None and src in ORDINARY:
+            cap = np.minimum(cap, ord_budget)
+        take = np.minimum(remaining, cap)
         takes[src] += take
         avail[src] -= take
         remaining -= take
+        if ord_budget is not None and src in ORDINARY:
+            ord_budget = ord_budget - take
+
+    # Bracket-filled fallback: if Roth couldn't cover the spending above the
+    # ceiling, draw traditional then HSA uncapped (eating the higher bracket)
+    # before touching the cash buffer — a funded year beats a smooth one.
+    if trad_ordinary_cap is not None:
+        for src in ORDINARY:
+            take = np.minimum(remaining, avail[src])
+            takes[src] += take
+            avail[src] -= take
+            remaining -= take
 
     # Last resort: the cash buffer is an emergency reserve, not an untouchable
     # floor. If spending still isn't met after walking the full order, tap

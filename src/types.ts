@@ -1,4 +1,4 @@
-// TypeScript mirror of engine/fire_engine/scenario.py (SCHEMA_VERSION 5)
+// TypeScript mirror of engine/fire_engine/scenario.py (SCHEMA_VERSION 6)
 
 export type AccountType =
   | "taxable" | "trad_401k" | "trad_ira" | "roth_ira" | "roth_401k" | "hsa" | "cash";
@@ -125,6 +125,12 @@ export interface WithdrawalPolicy {
   late_order: WithdrawalSource[]; // 59½ and after
   cash_buffer: number;
   allow_early_trad_with_penalty: boolean;
+  /** Tax-aware decumulation (59½+). "priority" = strict order (trad draw
+   * uncapped). "bracket_filled" = cap the traditional spending draw at
+   * `bracket_top`, spilling the overflow to Roth. */
+  mode?: "priority" | "bracket_filled";
+  bracket_top?: "std_deduction" | "10" | "12" | "22" | "custom";
+  custom_top?: number;
 }
 
 export interface ConversionRule {

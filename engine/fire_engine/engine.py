@@ -677,6 +677,18 @@ def run(
             bracket_top_nom = taxmod.ordinary_bracket_top(conv_rule.bracket_top, tables, infl)
         std_nom = tables_eff.standard_deduction * infl
 
+        # Bracket-filled decumulation ceiling (59.5+ only). The traditional
+        # spending draw is capped so its ordinary income tops out here; the
+        # ladder (above) then fills any room the spending draw leaves. Inert
+        # before 59.5, where traditional is locked behind the penalty anyway.
+        wd_active = policy.mode == "bracket_filled" and age >= PENALTY_FREE_AGE
+        if not wd_active:
+            wd_top_nom = None
+        elif policy.bracket_top == "custom":
+            wd_top_nom = policy.custom_top * infl
+        else:
+            wd_top_nom = taxmod.ordinary_bracket_top(policy.bracket_top, tables, infl)
+
         # ---- fixed-point: taxes <-> contributions <-> withdrawals <-> conversions
         pretax = zeros
         conv = zeros
@@ -740,11 +752,23 @@ def run(
                 match_wages=primary_wages,
             )
 
+            # headroom for the traditional+HSA spending draw before the ceiling:
+            # the ceiling less the involuntary ordinary income (wages, RMD, cash
+            # interest, taxable SS) already filling it. Subtracting this year's
+            # discretionary trad/HSA draw and the conversion keeps it a function
+            # of the converging base; co-converges like `conv` over the iterations.
+            if wd_active:
+                base_ordinary = ordinary - w_ordinary - conv
+                trad_cap = np.maximum(wd_top_nom + std_nom - base_ordinary, 0.0)
+            else:
+                trad_cap = None
+
             wplan = plan_withdrawals(
                 state, need, age, policy.order_for_age(age, PENALTY_FREE_AGE),
                 cash_buffer_nominal=policy.cash_buffer * infl,
                 allow_early_trad=policy.allow_early_trad_with_penalty,
                 forced=forced or None,
+                trad_ordinary_cap=trad_cap,
             )
 
             if conv_active:
