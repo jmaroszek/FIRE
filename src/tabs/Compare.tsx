@@ -1,6 +1,7 @@
 import React from "react";
 import { A } from "../assumptions";
 import { CompareBridgeChart, CompareChart, CompareSweepChart } from "../components/charts";
+import { useShallow } from "zustand/react/shallow";
 import { Section, fmtMoney, fmtPct } from "../components/ui";
 import { useStore, type CompareSlot } from "../store";
 
@@ -18,7 +19,10 @@ function yearsToFi(slot: CompareSlot): string {
 }
 
 export default function Compare() {
-  const { compare, addToCompare, removeFromCompare, result, axisMode } = useStore();
+  const { compare, addToCompare, removeFromCompare, result, axisMode } = useStore(useShallow((s) => ({
+    compare: s.compare, addToCompare: s.addToCompare, removeFromCompare: s.removeFromCompare,
+    result: s.result, axisMode: s.axisMode,
+  })));
   const anySweep = compare.some((c) => c.sweep);
   const anyBridge = compare.some((c) => c.result.bridge?.has_bridge);
 

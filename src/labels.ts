@@ -17,7 +17,13 @@ export const SOURCE_LABELS: Record<WithdrawalSource, string> = {
   taxable: "Brokerage",
   roth_basis: "Roth Contributions",
   roth_matured_conversions: "Matured Conversions",
-  trad: "Traditional",
+  trad: "Traditional (59½+)",
   hsa: "HSA (65+)",
-  roth_earnings: "Roth Earnings",
+  roth_earnings: "Roth Earnings (59½+)",
+};
+
+// The five tax pools accounts merge into. Distinct taxonomy from AccountType
+// (which has per-account granularity) and WithdrawalSource (which splits Roth).
+export const POOL_LABELS: Record<string, string> = {
+  taxable: "Brokerage", trad: "Traditional", roth: "Roth", hsa: "HSA", cash: "Cash",
 };

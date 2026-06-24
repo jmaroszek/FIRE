@@ -8,6 +8,9 @@ import {
   Field, HeroRow, HeroStat, InfoTip, NumberInput, PercentInput, ProgressBar, Section, SectionNav, Stat,
   fmtMoney, fmtPct,
 } from "../components/ui";
+import { useShallow } from "zustand/react/shallow";
+import { niceStep, percentile } from "../math";
+import { PENALTY_FREE_AGE } from "../constants";
 import { useStore } from "../store";
 import type { Scenario } from "../types";
 
@@ -16,30 +19,20 @@ function Head({ id, children }: { id: string; children: React.ReactNode }) {
   return <h2 className="group-title" id={id} style={{ scrollMarginTop: 96 }}>{children}</h2>;
 }
 
-function percentile(xs: number[], p: number): number {
-  if (!xs.length) return 0;
-  const s = [...xs].sort((a, b) => a - b);
-  const idx = Math.min(s.length - 1, Math.max(0, Math.round((p / 100) * (s.length - 1))));
-  return s[idx];
-}
-
-/** Round a raw step up to a "nice" 1 / 2 / 2.5 / 5 × 10ⁿ value, so histogram bin
- * edges land on natural round numbers (… 250k, 500k, 1M …) instead of 437k. */
-function niceStep(raw: number): number {
-  if (raw <= 0) return 1;
-  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
-  const f = raw / pow;
-  const nice = f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10;
-  return nice * pow;
-}
-
 export default function Freedom() {
   const { scenario, result, axisMode,
           freedom, freedomLoading, runFreedom,
           sweep, sweeping, runSweep,
           surface, surfaceLoading, runSurface,
           sensitivity, sensitivityLoading, runSensitivity,
-          bridgecrash, bridgecrashLoading, runBridgeCrash } = useStore();
+          bridgecrash, bridgecrashLoading, runBridgeCrash } = useStore(useShallow((s) => ({
+    scenario: s.scenario, result: s.result, axisMode: s.axisMode,
+    freedom: s.freedom, freedomLoading: s.freedomLoading, runFreedom: s.runFreedom,
+    sweep: s.sweep, sweeping: s.sweeping, runSweep: s.runSweep,
+    surface: s.surface, surfaceLoading: s.surfaceLoading, runSurface: s.runSurface,
+    sensitivity: s.sensitivity, sensitivityLoading: s.sensitivityLoading, runSensitivity: s.runSensitivity,
+    bridgecrash: s.bridgecrash, bridgecrashLoading: s.bridgecrashLoading, runBridgeCrash: s.runBridgeCrash,
+  })));
   const setScenario = useStore((s) => s.setScenario);
   const [goGoEnd, setGoGoEnd] = useState(75);
   const [enjoyFloor, setEnjoyFloor] = useState(0.3);
@@ -88,7 +81,7 @@ export default function Freedom() {
     let sum = 0, n = 0;
     for (let k = 0; k < result.ages.length; k++) {
       const age = result.ages[k];
-      if (age < s.retirement_age || age >= 60) continue;
+      if (age < s.retirement_age || age >= PENALTY_FREE_AGE) continue;
       const draw = Object.values(w).reduce((a, arr) => a + (arr?.[k] ?? 0), 0);
       const bal = acc[k > 0 ? k - 1 : 0] ?? 0;
       if (bal > 0) { sum += Math.min(draw / bal, 1); n++; }

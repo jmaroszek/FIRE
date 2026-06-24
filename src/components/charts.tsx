@@ -6,6 +6,10 @@ import type { CompareSlot } from "../store";
 import type {
   Category, FanSeries, SensitivityResult, SimulateResult, Snapshot, SurfaceResult, SweepResult,
 } from "../types";
+import { POOL_LABELS, SOURCE_LABELS } from "../labels";
+import { fmtTipMoney } from "../format";
+import { median, percentileAt } from "../math";
+import { PENALTY_FREE_AGE } from "../constants";
 
 const RawPlot = createPlotlyComponent(Plotly);
 
@@ -72,27 +76,6 @@ function xValues(result: SimulateResult, axisMode: "age" | "year", extraPoint = 
   const base = axisMode === "age" ? result.ages : result.years;
   // fan series have T+1 points ([0] = today); ages/years have T
   return extraPoint ? [base[0] - 1, ...base] : [...base];
-}
-
-const fmtTipMoney = (v: number) =>
-  v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-
-/** Estimate which percentile of outcomes a dollar value sits at, by linear
- * interpolation between the fan's percentile curves at one time step. */
-export function percentileAt(fan: Record<string, number[]>, i: number, y: number): string | null {
-  const levels: [number, number][] = [5, 25, 50, 75, 95].map(
-    (p) => [p, fan[`p${p}`][i]] as [number, number]);
-  if (y < levels[0][1]) return "below 5th percentile";
-  if (y > levels[levels.length - 1][1]) return "above 95th percentile";
-  for (let k = 0; k < levels.length - 1; k++) {
-    const [pLo, vLo] = levels[k];
-    const [pHi, vHi] = levels[k + 1];
-    if (y >= vLo && y <= vHi) {
-      const frac = vHi > vLo ? (y - vLo) / (vHi - vLo) : 0;
-      return `≈ ${Math.round(pLo + frac * (pHi - pLo))}th percentile`;
-    }
-  }
-  return null;
 }
 
 export function FanChart(props: {
@@ -344,15 +327,6 @@ export function FrontierChart(props: {
   );
 }
 
-const SOURCE_LABELS: Record<string, string> = {
-  cash: "Cash",
-  taxable: "Taxable",
-  roth_basis: "Roth contributions",
-  roth_matured_conversions: "Matured conversions",
-  trad: "Traditional (59½+)",
-  hsa: "HSA (65+)",
-  roth_earnings: "Roth earnings (59½+)",
-};
 /** App-wide semantic palette — the single source of truth for flow/account colors.
  * One hue family per tax bucket, so a given concept keeps the SAME color on every
  * chart, and semantically-related flows share a family but stay distinguishable by
@@ -404,7 +378,7 @@ export function AccessibilityChart(props: {
     type: "scatter" as const,
     mode: "lines" as const,
     stackgroup: "one",
-    name: SOURCE_LABELS[src] ?? src,
+    name: SOURCE_LABELS[src as keyof typeof SOURCE_LABELS] ?? src,
     line: { width: 0.5, color: SOURCE_COLORS[src] },
     fillcolor: SOURCE_COLORS[src] + "66",
     hovertemplate: "%{y:$,.0f}",
@@ -481,7 +455,7 @@ export function AccessibilityFanChart(props: {
   // unlocks at 60 the lines shoot up, and even with the x-axis capped Plotly
   // would draw the 59→60 segment rising into view as a spike at the right edge.
   // Dropping the age-60+ points removes that segment entirely.
-  const cut = ages.findIndex((a) => a >= 60);
+  const cut = ages.findIndex((a) => a >= PENALTY_FREE_AGE);
   const end = cut === -1 ? ages.length : cut;
   const x = xRaw.slice(0, end);
   const fan: Record<string, number[]> = {};
@@ -628,11 +602,11 @@ export function AccountFlowsChart(props: {
     } as Data);
   }
   cOut.forEach((k, i) => data.push({
-    x, y: w[k].map((v) => (v > 1 ? -v : null)), type: "bar", name: SOURCE_LABELS[k] ?? k,
+    x, y: w[k].map((v) => (v > 1 ? -v : null)), type: "bar", name: SOURCE_LABELS[k as keyof typeof SOURCE_LABELS] ?? k,
     legendgroup: "out",
     ...(i === 0 ? { legendgrouptitle: { text: "Withdrawals" } } : {}),
     marker: { color: (SOURCE_COLORS[k] ?? "#8b949e") + "cc" },
-    customdata: w[k], hovertemplate: `${SOURCE_LABELS[k] ?? k} %{customdata:$,.0f}<extra></extra>`,
+    customdata: w[k], hovertemplate: `${SOURCE_LABELS[k as keyof typeof SOURCE_LABELS] ?? k} %{customdata:$,.0f}<extra></extra>`,
   } as Data));
   if (cOut.length) {
     const outTotal = x.map((_, t) => {
@@ -688,9 +662,6 @@ export function AccountFlowsChart(props: {
   );
 }
 
-const POOL_LABELS: Record<string, string> = {
-  taxable: "Brokerage", trad: "Traditional", roth: "Roth", hsa: "HSA", cash: "Cash",
-};
 const POOL_COLORS: Record<string, string> = {
   taxable: FLOW_COLORS.taxable, trad: FLOW_COLORS.trad, roth: FLOW_COLORS.roth,
   hsa: FLOW_COLORS.hsa, cash: FLOW_COLORS.cash,
@@ -908,13 +879,6 @@ export function CompareBridgeChart(props: {
 // ---- outcome-distribution & robustness charts (Risk tab) -----------------
 
 type HistUnit = "money" | "percent" | "years" | "number";
-
-function median(xs: number[]): number {
-  if (!xs.length) return 0;
-  const s = [...xs].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
 
 const histTickFormat = (u: HistUnit): string | undefined =>
   u === "money" ? "$.3~s" : u === "percent" ? ".0%" : undefined;

@@ -8,16 +8,16 @@ import {
   Collapsible, Field, HeroRow, HeroStat, InfoTip, NumberInput, PercentInput,
   Section, SectionNav, Stat, fmtMoney, fmtPct,
 } from "../components/ui";
-import { ACCOUNT_LABELS, SOURCE_LABELS } from "../labels";
+import { ACCOUNT_LABELS, POOL_LABELS, SOURCE_LABELS } from "../labels";
+import { useShallow } from "zustand/react/shallow";
+import { median, percentile } from "../math";
+import { PENALTY_FREE_AGE } from "../constants";
 import { useStore } from "../store";
 import type {
   Account, AccountType, Liability, Scenario, WaterfallStep, WithdrawalSource,
 } from "../types";
 
 const POOLS = ["taxable", "trad", "roth", "hsa", "cash"] as const;
-const POOL_LABELS: Record<string, string> = {
-  taxable: "Taxable", trad: "Traditional", roth: "Roth", hsa: "HSA", cash: "Cash",
-};
 const DEFAULT_ORDER: WithdrawalSource[] =
   ["cash", "taxable", "roth_basis", "roth_matured_conversions", "trad", "hsa", "roth_earnings"];
 const DEFAULT_LATE_ORDER: WithdrawalSource[] =
@@ -34,20 +34,6 @@ function poolBalances(accounts: { type: string; balance: number }[]) {
     out[pool] += a.balance;
   }
   return out;
-}
-
-function median(xs: number[]): number {
-  if (!xs.length) return 0;
-  const s = [...xs].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
-
-function pctile(xs: number[], p: number): number {
-  if (!xs.length) return 0;
-  const s = [...xs].sort((a, b) => a - b);
-  const idx = Math.min(s.length - 1, Math.max(0, Math.round((p / 100) * (s.length - 1))));
-  return s[idx];
 }
 
 /** Section heading that doubles as a scroll anchor for the in-page sub-nav. */
@@ -172,7 +158,11 @@ interface SnapDraft {
 
 export default function Accounts() {
   const { scenario, result, axisMode, snapshots, categories,
-          addSnapshot, deleteSnapshot } = useStore();
+          addSnapshot, deleteSnapshot } = useStore(useShallow((s) => ({
+    scenario: s.scenario, result: s.result, axisMode: s.axisMode,
+    snapshots: s.snapshots, categories: s.categories,
+    addSnapshot: s.addSnapshot, deleteSnapshot: s.deleteSnapshot,
+  })));
   const setScenario = useStore((s) => s.setScenario);
   const [snapDraft, setSnapDraft] = useState<SnapDraft | null>(null);
   if (!scenario) return null;
@@ -546,7 +536,7 @@ export default function Accounts() {
                 <tbody>
                   {([["Typical", 50], ["1-In-4", 75],
                      ["1-In-10", 90], ["1-In-20", 95]] as [string, number][]).map(([label, p]) => {
-                    const dd = pctile(result.max_drawdown, p);
+                    const dd = percentile(result.max_drawdown, p);
                     return (
                       <tr key={label}>
                         <td>{label}</td>
@@ -640,8 +630,8 @@ export default function Accounts() {
             </thead>
             <tbody>
               {result.ladder_schedule.map((r) => {
-                const penaltyFree = r.age >= 60 ? "Immediate"
-                  : Math.min(r.matures, s.profile.birth_year + 60);
+                const penaltyFree = r.age >= PENALTY_FREE_AGE ? "Immediate"
+                  : Math.min(r.matures, s.profile.birth_year + PENALTY_FREE_AGE);
                 return (
                   <tr key={r.year}>
                     <td>{r.year}</td><td>{r.age}</td><td>{penaltyFree}</td>

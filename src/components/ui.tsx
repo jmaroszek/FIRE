@@ -1,15 +1,9 @@
 import React, { useState } from "react";
+import { fmtMoney, fmtPct } from "../format";
 
-export const fmtMoney = (v: number | null | undefined, digits = 0): string =>
-  v == null || !isFinite(v)
-    ? "—"
-    : v.toLocaleString("en-US", {
-        style: "currency", currency: "USD",
-        maximumFractionDigits: digits, minimumFractionDigits: 0,
-      });
-
-export const fmtPct = (v: number | null | undefined, digits = 1): string =>
-  v == null || !isFinite(v) ? "—" : `${(v * 100).toFixed(digits)}%`;
+// Re-exported so existing `import { fmtMoney, fmtPct } from "../components/ui"`
+// call sites keep working; the implementations live in ../format.
+export { fmtMoney, fmtPct };
 
 export function Section(props: {
   title: string; info?: string; children: React.ReactNode; actions?: React.ReactNode;

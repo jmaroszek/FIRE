@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { useStore, type Tab } from "./store";
 import Assumptions from "./tabs/Assumptions";
 import CashFlow from "./tabs/CashFlow";
@@ -27,7 +28,9 @@ const UTILITY: { id: Tab; label: string }[] = [
 /** The single, always-visible home for the age/year lens. Every chart reports in
  *  today's dollars, so there's no real/nominal control — see the Settings note. */
 function DisplayControls() {
-  const { axisMode, setAxisMode, scenario } = useStore();
+  const { axisMode, setAxisMode, scenario } = useStore(useShallow((s) => ({
+    axisMode: s.axisMode, setAxisMode: s.setAxisMode, scenario: s.scenario,
+  })));
   if (!scenario) return null;
   return (
     <span className="display-controls pair">
@@ -42,7 +45,10 @@ function DisplayControls() {
 /** Slim scenario control: a switcher that shows the current name, a dirty dot,
  *  a Save button (prominent only when dirty), and Save As… / Delete in overflow. */
 function ScenarioBar() {
-  const { scenario, savedAs, dirty, savedScenarios, saveAs, load, remove } = useStore();
+  const { scenario, savedAs, dirty, savedScenarios, saveAs, load, remove } = useStore(useShallow((s) => ({
+    scenario: s.scenario, savedAs: s.savedAs, dirty: s.dirty, savedScenarios: s.savedScenarios,
+    saveAs: s.saveAs, load: s.load, remove: s.remove,
+  })));
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -103,7 +109,10 @@ function ScenarioBar() {
 }
 
 export default function App() {
-  const { tab, setTab, init, engineUp, sidebarCollapsed, setSidebarCollapsed } = useStore();
+  const { tab, setTab, init, engineUp, sidebarCollapsed, setSidebarCollapsed } = useStore(useShallow((s) => ({
+    tab: s.tab, setTab: s.setTab, init: s.init, engineUp: s.engineUp,
+    sidebarCollapsed: s.sidebarCollapsed, setSidebarCollapsed: s.setSidebarCollapsed,
+  })));
 
   useEffect(() => { void init(); }, []);
 

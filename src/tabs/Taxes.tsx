@@ -4,12 +4,17 @@ import { AnnualTaxRateChart, TradOverfundingChart } from "../components/charts";
 import {
   Field, InfoTip, NumberInput, Section, Stat, fmtMoney, fmtPct,
 } from "../components/ui";
+import { useShallow } from "zustand/react/shallow";
 import { useStore } from "../store";
 import type { Scenario } from "../types";
 
 export default function Taxes() {
   const { scenario, result, axisMode, taxregime, taxregimeLoading, runTaxRegime,
-          laddersavings, runLadderSavings, laddersavingsLoading } = useStore();
+          laddersavings, runLadderSavings, laddersavingsLoading } = useStore(useShallow((s) => ({
+    scenario: s.scenario, result: s.result, axisMode: s.axisMode,
+    taxregime: s.taxregime, taxregimeLoading: s.taxregimeLoading, runTaxRegime: s.runTaxRegime,
+    laddersavings: s.laddersavings, runLadderSavings: s.runLadderSavings, laddersavingsLoading: s.laddersavingsLoading,
+  })));
   const setScenario = useStore((s) => s.setScenario);
   const [sunsetAge, setSunsetAge] = useState(scenario ? scenario.retirement_age : 60);
 

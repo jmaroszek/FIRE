@@ -1,9 +1,12 @@
 import React from "react";
+import { useShallow } from "zustand/react/shallow";
 import { InfoTip, Section } from "../components/ui";
 import { useStore } from "../store";
 
 export default function Settings() {
-  const { scenario, categories, setCategories } = useStore();
+  const { scenario, categories, setCategories } = useStore(useShallow((s) => ({
+    scenario: s.scenario, categories: s.categories, setCategories: s.setCategories,
+  })));
   if (!scenario) return null;
 
   return (

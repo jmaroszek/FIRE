@@ -9,6 +9,8 @@ import {
   Section, SectionNav, Stat, fmtMoney, fmtPct,
 } from "../components/ui";
 import { KIND_META, KIND_ORDER, displayKindOf, newEventOf, type DisplayKind } from "../events";
+import { useShallow } from "zustand/react/shallow";
+import { HSA_PENALTY_FREE_AGE, PENALTY_FREE_AGE } from "../constants";
 import { api } from "../api";
 import { useStore } from "../store";
 import type {
@@ -94,11 +96,11 @@ function EventRow({ ev, index }: { ev: FireEvent; index: number }) {
                   offered once the event is old enough — but a value already set is
                   never hidden out from under the user. (Recurring keys off its
                   first occurrence age, the conservative gate.) */}
-              {(kind === "expense" || kind === "recurring") && (evAge >= 60 || ev.account === "trad_401k") &&
-                <option value="trad_401k">Traditional{evAge < 60 ? " (early — penalty)" : ""}</option>}
+              {(kind === "expense" || kind === "recurring") && (evAge >= PENALTY_FREE_AGE || ev.account === "trad_401k") &&
+                <option value="trad_401k">Traditional{evAge < PENALTY_FREE_AGE ? " (early — penalty)" : ""}</option>}
               {(kind === "expense" || kind === "recurring") && <option value="roth_ira">Roth</option>}
-              {(kind === "expense" || kind === "recurring") && (evAge >= 65 || ev.account === "hsa") &&
-                <option value="hsa">HSA{evAge < 65 ? " (pre-65 — penalty)" : ""}</option>}
+              {(kind === "expense" || kind === "recurring") && (evAge >= HSA_PENALTY_FREE_AGE || ev.account === "hsa") &&
+                <option value="hsa">HSA{evAge < HSA_PENALTY_FREE_AGE ? " (pre-65 — penalty)" : ""}</option>}
             </select>
           </Field>
         </>
@@ -145,7 +147,12 @@ function EventRow({ ev, index }: { ev: FireEvent; index: number }) {
 export default function CashFlow() {
   const { scenario, result, axisMode, categories, snapshots,
           maxspend, runMaxSpend, maxspendLoading,
-          stress, stressLoading, runStress } = useStore();
+          stress, stressLoading, runStress } = useStore(useShallow((s) => ({
+    scenario: s.scenario, result: s.result, axisMode: s.axisMode,
+    categories: s.categories, snapshots: s.snapshots,
+    maxspend: s.maxspend, runMaxSpend: s.runMaxSpend, maxspendLoading: s.maxspendLoading,
+    stress: s.stress, stressLoading: s.stressLoading, runStress: s.runStress,
+  })));
   const setScenario = useStore((s) => s.setScenario);
   const [addKind, setAddKind] = useState<DisplayKind>("expense");
   if (!scenario) return null;
@@ -812,7 +819,7 @@ export default function CashFlow() {
             {result && retIdx >= 0 && (() => {
               const pct = plannedAtRet > 0 ? Math.round((modeledRetSpend / plannedAtRet - 1) * 100) : null;
               const under = plannedAtRet > 0 && modeledRetSpend < plannedAtRet * 0.85;
-              const liquidityBound = ss.kind === "percent_portfolio" && s.retirement_age < 60 && under;
+              const liquidityBound = ss.kind === "percent_portfolio" && s.retirement_age < PENALTY_FREE_AGE && under;
               return (
                 <p className="hint">
                   First retirement year (age {s.retirement_age}): <strong>{fmtMoney(modeledRetSpend)}/yr</strong> on the median path
@@ -823,7 +830,7 @@ export default function CashFlow() {
                 </p>
               );
             })()}
-            {result && ss.kind === "percent_portfolio" && s.retirement_age < 60 && (
+            {result && ss.kind === "percent_portfolio" && s.retirement_age < PENALTY_FREE_AGE && (
               <p className="hint">
                 The rate applies to your penalty-free <em>accessible</em> wealth, which is limited before 59½ — so during the bridge, spending is often capped by available liquidity rather than the rate. Changing the rate mainly moves spending after 59½, once your locked accounts open.
               </p>
