@@ -450,8 +450,9 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .shock-inputs { flex-direction: column; align-items: flex-start; gap: 12px; }
 .shock-compare { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
 /* New-retirement-age cell sits to the right of the success comparison, set off
-   by a divider. */
-.shock-newage { border-left: 1px solid var(--border); padding-left: 24px; }
+   by a divider. Top-aligned so its heading lines up with the others even before
+   the value is computed (the row is otherwise center-aligned). */
+.shock-newage { border-left: 1px solid var(--border); padding-left: 24px; align-self: flex-start; }
 
 /* Headroom & Resilience tiles compute on load: shrink the loading placeholder's
    reserved height to match the finished content (the global 220px is meant for
