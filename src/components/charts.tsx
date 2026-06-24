@@ -14,7 +14,7 @@ import {
   type LifeMark, type YFmt,
 } from "./chartShared";
 
-export function FanChart(props: {
+export const FanChart = React.memo(function FanChart(props: {
   result: SimulateResult;
   axisMode: "age" | "year";
   display: "real" | "nominal";
@@ -155,9 +155,9 @@ export function FanChart(props: {
       )}
     </div>
   );
-}
+});
 
-export function SweepChart(props: {
+export const SweepChart = React.memo(function SweepChart(props: {
   sweep: SweepResult; axisMode: "age" | "year";
   birthYear: number; height?: number;
 }) {
@@ -188,7 +188,7 @@ export function SweepChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
 /** Over-Saving Frontier: success probability (left axis) and the median real
  * ending estate with a p25–75 band (right axis), both vs retirement age. The
@@ -196,7 +196,7 @@ export function SweepChart(props: {
  * the estate hasn't ballooned — anything later is years of work funding an estate
  * you won't spend. Falls back to the plain success curve if the backend predates
  * the estate data. */
-export function FrontierChart(props: {
+export const FrontierChart = React.memo(function FrontierChart(props: {
   sweep: SweepResult; axisMode: "age" | "year"; birthYear: number;
   retirementMarker?: number | null; height?: number;
   // when given, the estate hover also reads as "≈N yr of spending unspent"
@@ -261,9 +261,9 @@ export function FrontierChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
-export function AccessibilityChart(props: {
+export const AccessibilityChart = React.memo(function AccessibilityChart(props: {
   result: SimulateResult; axisMode: "age" | "year";
   retirementMarker?: number | null; birthYear?: number; height?: number;
 }) {
@@ -335,12 +335,12 @@ export function AccessibilityChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
 /** Percentile fan of TOTAL penalty-free accessible dollars over time (real). The
  * median stack shows composition; this shows dispersion. The p5 line diving toward
  * zero before the 59½ marker is the bridge-failure signal the median can't show. */
-export function AccessibilityFanChart(props: {
+export const AccessibilityFanChart = React.memo(function AccessibilityFanChart(props: {
   result: SimulateResult; axisMode: "age" | "year";
   retirementMarker?: number | null; retirementAge?: number | null;
   birthYear?: number; height?: number;
@@ -438,7 +438,7 @@ export function AccessibilityFanChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
 /** How each year is funded (stacked, today's $): active work income and Social
  * Security at the base, then the amount drawn from each account source on top.
@@ -455,7 +455,7 @@ export function AccessibilityFanChart(props: {
  * difference them into a "net" or "deficit" line, since medians aren't additive
  * (median(expenses) ≠ Σ median(source)) — the per-path shortfall story lives on
  * Freedom (failure magnitude / survival). */
-export function AccountFlowsChart(props: {
+export const AccountFlowsChart = React.memo(function AccountFlowsChart(props: {
   result: SimulateResult; axisMode: "age" | "year";
   retirementAge?: number; birthYear?: number; height?: number;
 }) {
@@ -559,7 +559,7 @@ export function AccountFlowsChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
 const SPEND_PALETTE = [
   "#58a6ff", "#3fb950", "#d29922", "#bc8cff", "#f0883e", "#ff7b72",
@@ -569,7 +569,7 @@ const SPEND_PALETTE = [
 /** Recorded annual spending by category across snapshots, in today's dollars
  * (past nominals grown by the assumed mean inflation), with the current plan
  * total as a reference line. Lifestyle creep = bars climbing past the line. */
-export function SpendingActualsChart(props: {
+export const SpendingActualsChart = React.memo(function SpendingActualsChart(props: {
   snapshots: Snapshot[];
   categories: Category[];
   inflationMean: number;
@@ -630,9 +630,9 @@ export function SpendingActualsChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
-export function CompareChart(props: {
+export const CompareChart = React.memo(function CompareChart(props: {
   slots: CompareSlot[]; axisMode: "age" | "year"; height?: number;
 }) {
   const palette = ["#58a6ff", "#3fb950", "#d29922", "#bc8cff", "#f0883e", "#ff7b72"];
@@ -664,9 +664,9 @@ export function CompareChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
-export function CompareSweepChart(props: {
+export const CompareSweepChart = React.memo(function CompareSweepChart(props: {
   slots: CompareSlot[]; axisMode: "age" | "year"; height?: number;
 }) {
   const palette = ["#58a6ff", "#3fb950", "#d29922", "#bc8cff", "#f0883e", "#ff7b72"];
@@ -707,13 +707,13 @@ export function CompareSweepChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
 /** Overlay each pinned scenario's MEDIAN total penalty-free assets through the
  * bridge era — the A/B view of "whose early-retirement runway holds up". Focused
  * on the pre-60 window and capped to bridge magnitude (the 59½ unlock runs off
  * the top), so the comparison isn't crushed by post-unlock compounding. */
-export function CompareBridgeChart(props: {
+export const CompareBridgeChart = React.memo(function CompareBridgeChart(props: {
   slots: CompareSlot[]; axisMode: "age" | "year"; height?: number;
 }) {
   const palette = ["#58a6ff", "#3fb950", "#d29922", "#bc8cff", "#f0883e", "#ff7b72"];
@@ -767,7 +767,7 @@ export function CompareBridgeChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
 // ---- outcome-distribution & robustness charts (Risk tab) -----------------
 
@@ -778,7 +778,7 @@ const histTickFormat = (u: HistUnit): string | undefined =>
 
 /** Histogram of a per-path quantity (ending balance, lifetime spend, drawdown).
  * Draws dashed reference lines for the supplied markers (median by default). */
-export function HistogramChart(props: {
+export const HistogramChart = React.memo(function HistogramChart(props: {
   values: number[];
   title: string;
   xTitle: string;
@@ -851,10 +851,10 @@ export function HistogramChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
 /** Bar chart of the age at which failing paths first run short of money. */
-export function RuinAgeChart(props: {
+export const RuinAgeChart = React.memo(function RuinAgeChart(props: {
   data: SimulateResult["age_at_ruin"]; height?: number;
 }) {
   const { ages, counts } = props.data;
@@ -886,10 +886,10 @@ export function RuinAgeChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
 /** Heatmap of success rate over (retirement age × spending scale). */
-export function SurfaceHeatmap(props: {
+export const SurfaceHeatmap = React.memo(function SurfaceHeatmap(props: {
   data: SurfaceResult; axisMode: "age" | "year"; birthYear: number;
   currentAge?: number | null; height?: number;
 }) {
@@ -922,10 +922,10 @@ export function SurfaceHeatmap(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
 /** Horizontal tornado of one-at-a-time sensitivity, biggest swing on top. */
-export function TornadoChart(props: { data: SensitivityResult; height?: number }) {
+export const TornadoChart = React.memo(function TornadoChart(props: { data: SensitivityResult; height?: number }) {
   const { entries, base_success } = props.data;
   if (!entries.length) return <p className="hint">No sensitivity data.</p>;
   const rows = [...entries].reverse(); // Plotly stacks horizontal bars bottom-up
@@ -960,13 +960,13 @@ export function TornadoChart(props: { data: SensitivityResult; height?: number }
       style={{ width: "100%" }}
     />
   );
-}
+});
 
 // ---- shared time-axis primitives (Phase C) -------------------------------
 
 /** Generic single/multi-series line or area chart over an age/year axis, with
  * optional life-stage markers and horizontal reference lines. */
-export function SeriesChart(props: {
+export const SeriesChart = React.memo(function SeriesChart(props: {
   x: number[]; axisMode: "age" | "year"; yFormat: YFmt; title: string;
   series: { name: string; values: number[]; color: string; fill?: boolean }[];
   markers?: { shapes: Partial<Shape>[]; annotations: any[] };
@@ -1011,11 +1011,11 @@ export function SeriesChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
 /** Percentile fan (5–95 / 25–75 / median) for a series that can go negative,
  * so it does not force a zero baseline like the net-worth FanChart. */
-export function PercentileFanChart(props: {
+export const PercentileFanChart = React.memo(function PercentileFanChart(props: {
   x: number[]; fan: FanSeries; axisMode: "age" | "year"; yFormat: YFmt; title: string;
   color?: string; markers?: { shapes: Partial<Shape>[]; annotations: any[] };
   refLines?: { value: number; label: string; color?: string }[]; height?: number;
@@ -1065,7 +1065,7 @@ export function PercentileFanChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
 // ---- named wrappers consuming summarize() series -------------------------
 
@@ -1082,7 +1082,7 @@ export function enjoymentFactor(age: number, goGoEnd = 75, floor = 0.3, taperEnd
  * weighted by ability to enjoy them, over go-go / slow-go / no-go age bands. A
  * weighted line that droops far below planned spending in late years means money
  * is being saved for years it can't fully be enjoyed. */
-export function FulfillmentChart(props: {
+export const FulfillmentChart = React.memo(function FulfillmentChart(props: {
   result: SimulateResult; axisMode: "age" | "year"; retirementAge: number;
   birthYear?: number; goGoEnd?: number; floor?: number; height?: number;
 }) {
@@ -1103,12 +1103,12 @@ export function FulfillmentChart(props: {
       markers={retire}
       title="" />
   );
-}
+});
 
 /** Traditional over-funding: median forced RMD vs median spending after 70, with
  * the gap where the RMD exceeds spending shaded — ordinary income you're forced to
  * realize (and tax) without needing it, the signature of having deferred too much. */
-export function TradOverfundingChart(props: {
+export const TradOverfundingChart = React.memo(function TradOverfundingChart(props: {
   result: SimulateResult; axisMode: "age" | "year"; birthYear?: number; height?: number;
 }) {
   const rmd = props.result.rmds_median_real ?? [];
@@ -1160,9 +1160,9 @@ export function TradOverfundingChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
-export function SurvivalChart(props: {
+export const SurvivalChart = React.memo(function SurvivalChart(props: {
   result: SimulateResult; axisMode: "age" | "year";
   retirementAge: number; threshold?: number; birthYear?: number;
 }) {
@@ -1174,9 +1174,9 @@ export function SurvivalChart(props: {
       markers={lifeStageMarkers(props.axisMode, props.birthYear, [{ age: props.retirementAge, label: "Retire", color: "#d29922" }])}
       title="" />
   );
-}
+});
 
-export function SpendingDepthChart(props: {
+export const SpendingDepthChart = React.memo(function SpendingDepthChart(props: {
   result: SimulateResult; axisMode: "age" | "year"; retirementAge: number;
   enabled: boolean; floor: number; cap: number; birthYear?: number;
 }) {
@@ -1251,7 +1251,7 @@ export function SpendingDepthChart(props: {
       series={[{ name: "Discretionary vs Plan", values: props.result.spending_mult_median, color: ACCENT, fill: true }]}
       refLines={refs} markers={markers} title="" />
   );
-}
+});
 
 /** Compact in-tile preview for the Spending Strategy picker: the dollar lifestyle
  * the chosen strategy actually funds over time — median realized spending (today's $)
@@ -1262,7 +1262,7 @@ export function SpendingDepthChart(props: {
  * the contrast between strategies you want to see. The full percentile deep-dive
  * (framed as % of plan) lives in the Freedom tab's Realized Spending chart; this is
  * the at-a-glance companion to the dropdown. */
-export function SpendingPreviewChart(props: {
+export const SpendingPreviewChart = React.memo(function SpendingPreviewChart(props: {
   result: SimulateResult; axisMode: "age" | "year";
   retirementAge: number; birthYear?: number; height?: number;
 }) {
@@ -1299,14 +1299,14 @@ export function SpendingPreviewChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
 // ---- Phase 2C composites (merge several scattered charts into one) --------
 
 /** Net healthcare cost over life: ACA premium after subsidy (pre-65) plus the
  * IRMAA surcharge (65+), with the subsidy shown alongside. Median path, today's
  * $. Empty (both ACA and IRMAA off) -> the caller shows a hint instead. */
-export function HealthcareCostChart(props: {
+export const HealthcareCostChart = React.memo(function HealthcareCostChart(props: {
   result: SimulateResult; axisMode: "age" | "year"; retirementAge: number;
   coverageEndAge?: number; birthYear?: number; height?: number;
 }) {
@@ -1327,12 +1327,12 @@ export function HealthcareCostChart(props: {
       markers={lifeStageMarkers(props.axisMode, props.birthYear, marks)}
       title="Net Healthcare Cost Over Life — Today's $" />
   );
-}
+});
 
 /** The ACA-vs-conversion tension made visible: Roth conversions raise MAGI,
  * which shrinks the ACA subsidy. Median conversion $/yr from the ladder against
  * the subsidy received — watch the subsidy dip in the high-conversion years. */
-export function SubsidyConversionChart(props: {
+export const SubsidyConversionChart = React.memo(function SubsidyConversionChart(props: {
   result: SimulateResult; axisMode: "age" | "year"; retirementAge: number;
   coverageEndAge?: number; birthYear?: number; height?: number;
 }) {
@@ -1353,13 +1353,13 @@ export function SubsidyConversionChart(props: {
       markers={lifeStageMarkers(props.axisMode, props.birthYear, marks)}
       title="Conversions vs ACA Subsidy — The MAGI Trade-off, Today's $" />
   );
-}
+});
 
 /** Account balances by tax pool over the plan (stacked area, today's $). Purely
  * the growth/composition story — the contribution and withdrawal FLOWS now live
  * on the Cash Flow tab (ContributionsChart / FundingSourceChart), so a stock and
  * a flow are no longer conflated on one chart. */
-export function WealthFlowsChart(props: {
+export const WealthFlowsChart = React.memo(function WealthFlowsChart(props: {
   result: SimulateResult; axisMode: "age" | "year"; height?: number;
 }) {
   const xPools = xValues(props.result, props.axisMode); // T+1 (carries "today")
@@ -1386,7 +1386,7 @@ export function WealthFlowsChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
 const CONTRIB_LABELS: Record<string, string> = {
   match: "Employer Match", trad: "Traditional", roth: "Roth", hsa: "HSA",
@@ -1400,7 +1400,7 @@ const CONTRIB_COLORS: Record<string, string> = {
 /** Taxes over time: annual tax dollars (bars, left) with the marginal and
  * effective rates (lines, right) — merges Annual Taxes and Marginal Rate, and
  * adds the effective line that answers "why is marginal so high?". */
-export function AnnualTaxRateChart(props: {
+export const AnnualTaxRateChart = React.memo(function AnnualTaxRateChart(props: {
   result: SimulateResult; axisMode: "age" | "year"; retirementAge: number;
   claimingAge?: number; birthYear?: number; height?: number;
 }) {
@@ -1438,12 +1438,12 @@ export function AnnualTaxRateChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
 /** When can I retire: the success-vs-retirement-age curve (left) with the gain
  * from working one more year as bars (right) and the earliest-safe marker —
  * replaces the separate Years-to-Retirement and One-More-Year tiles. */
-export function SweepGainChart(props: {
+export const SweepGainChart = React.memo(function SweepGainChart(props: {
   sweep: SweepResult; axisMode: "age" | "year"; birthYear: number; height?: number;
 }) {
   const ages = Object.keys(props.sweep.sweep).map(Number).sort((a, b) => a - b);
@@ -1489,5 +1489,5 @@ export function SweepGainChart(props: {
       style={{ width: "100%" }}
     />
   );
-}
+});
 
