@@ -698,6 +698,7 @@ def run(
         irmaa_cost = zeros
         aca_active = aca.enabled and age >= retirement_age and age < aca.coverage_end_age
         irmaa_active = irmaa.enabled and age >= irmaa.start_age
+        prev_state: tuple | None = None
         for _ in range(FIXED_POINT_ITERATIONS):
             w_ordinary = wplan.ordinary_income if wplan is not None else zeros
             w_ltcg = wplan.ltcg_income if wplan is not None else zeros
@@ -775,6 +776,19 @@ def run(
                 else:
                     target = np.maximum(bracket_top_nom + std_nom - ordinary_excl_conv, 0.0)
                 conv = np.minimum(target, np.maximum(state.trad - wplan.takes[WithdrawalSource.trad], 0.0))
+
+            # The carried fixed-point state is (pretax, conv, wplan); PortfolioState
+            # isn't mutated until after the loop, so once this state stops changing
+            # the remaining iterations would reproduce it exactly. Break on exact
+            # equality — the result stays byte-identical to the full iteration sweep,
+            # we just skip the redundant passes once converged.
+            state_sig = (pretax, conv, wplan.ordinary_income,
+                         wplan.ltcg_income, wplan.penalty_base)
+            if prev_state is not None and all(
+                np.array_equal(a, b) for a, b in zip(state_sig, prev_state)
+            ):
+                break
+            prev_state = state_sig
 
         # ---- apply the converged plan
         apply_plan(state, wplan, age)
