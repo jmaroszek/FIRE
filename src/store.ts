@@ -14,7 +14,7 @@ export type Tab =
  * chokepoint where any scenario enters state (fresh, loaded, or edited). This keeps
  * old saved scenarios and engine requests consistent without surfacing the fields.
  * (Medical streams keep their own CPI+ control, so they're left untouched.) */
-function normalizeScenario(s: Scenario): Scenario {
+export function normalizeScenario(s: Scenario): Scenario {
   if (!s.expense_streams?.some((e) => !e.inflates || e.extra_inflation)) return s;
   return {
     ...s,
@@ -128,7 +128,7 @@ let pendingWorkspace: Scenario | null = null;
 let sweepInvalidated = false;
 // the sweep depends on the whole scenario except the planned retirement age,
 // which only moves the selected point along the curve, not the curve itself
-const sweepKey = (s: Scenario) => JSON.stringify({ ...s, retirement_age: 0 });
+export const sweepKey = (s: Scenario) => JSON.stringify({ ...s, retirement_age: 0 });
 
 export const useStore = create<AppState>((set, get) => {
   const scheduleSimulate = () => {

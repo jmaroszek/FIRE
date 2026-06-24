@@ -43,6 +43,14 @@ def test_simulate_returns_fan_and_metrics(client):
     assert "roth_matured_conversions" in body["accessibility_real"]
 
 
+def test_simulate_rejects_invalid_scenario_with_400(client):
+    s = small_scenario(client)
+    s["profile"]["horizon_age"] = 5  # no years to simulate
+    resp = client.post("/simulate", json=s)
+    assert resp.status_code == 400
+    assert "horizon" in resp.json()["detail"]
+
+
 def test_simulate_carries_distribution_metrics(client):
     s = small_scenario(client)
     body = client.post("/simulate", json=s).json()

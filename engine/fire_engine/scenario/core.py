@@ -98,6 +98,35 @@ class Scenario(BaseModel):
         return year - self.sim.start_year
 
 
+def validate_invariants(scenario: Scenario) -> list[str]:
+    """Hard, engine-breaking input errors (empty list = safe to run).
+
+    The backend mirror of the frontend's error-level checks (src/validate.ts):
+    these are the cases where the simulation can't produce a meaningful result —
+    a non-positive horizon yields zero years to simulate, an off-100% allocation
+    silently mis-scales returns. ``run()`` raises ``ValueError`` on any of these
+    so a malformed scenario (a hand-edited save, a stray API client) fails loudly
+    with a readable message instead of crashing deep in the numerics.
+    """
+    # Only the truly unrunnable cases belong here — they crash the numerics or
+    # silently mis-scale returns. "Retire past the horizon" is odd but the engine
+    # handles it (you simply work the whole horizon), so it stays a frontend-only
+    # advisory rather than a hard gate.
+    errors: list[str] = []
+    start_age = scenario.start_age
+    if scenario.profile.horizon_age <= start_age:
+        errors.append(
+            f"horizon age ({scenario.profile.horizon_age}) must be after the "
+            f"current age ({start_age}) — no years to simulate")
+    a = scenario.allocation
+    total = a.stocks + a.bonds + a.cash
+    if abs(total - 1.0) > 1e-4:
+        errors.append(f"allocation must sum to 1.0 (stocks+bonds+cash = {total:.4f})")
+    if scenario.sim.n_paths < 1:
+        errors.append(f"n_paths ({scenario.sim.n_paths}) must be at least 1")
+    return errors
+
+
 def example_scenario() -> Scenario:
     """A representative default scenario (used by GET /defaults and tests)."""
     return Scenario(

@@ -4,6 +4,10 @@ Every simplifying assumption in the simulation, in one place. Read this before
 trusting any number the app produces. Each entry notes what to keep in mind
 when making real decisions.
 
+> For *why* these effects matter and how they interact, see
+> [MODELING.md](MODELING.md); for a guided feature tour, [FEATURES.md](FEATURES.md);
+> for the system architecture, [DESIGN.md](DESIGN.md).
+
 | # | Assumption | Keep in mind |
 |---|------------|--------------|
 | 1 | **Annual timestep.** All flows, taxes, and returns are yearly; flows occur at the start of the year, growth applies at the end. | Intra-year sequence effects and dollar-cost averaging are invisible. "Age 59½" is modeled as the year you turn 60; "age 65" (HSA) as the year you turn 65. |

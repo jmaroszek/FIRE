@@ -13,8 +13,9 @@ from datetime import date
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from fire_engine import SCHEMA_VERSION, Scenario, example_scenario, run
@@ -55,6 +56,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(ValueError)
+def _value_error_handler(_request: Request, exc: ValueError) -> JSONResponse:
+    """A scenario the engine rejects (see validate_invariants) is a client
+    error, not a server fault — return 400 with the message, not an opaque 500."""
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
 def _safe_name(name: str) -> str:

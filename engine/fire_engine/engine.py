@@ -47,6 +47,7 @@ from .scenario import (
     TaxRegimeShock,
     WaterfallStep,
     WithdrawalSource,
+    validate_invariants,
 )
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -424,6 +425,9 @@ def run(
     tax_regime: TaxRegimeShock | None = None,
     deterministic: bool = False,
 ) -> SimResult:
+    errors = validate_invariants(scenario)
+    if errors:
+        raise ValueError("invalid scenario: " + "; ".join(errors))
     tables = taxmod.load_tax_tables()
     # TCJA-sunset / regime-shock tables: same structure, higher ordinary rates
     # and a smaller standard deduction, applied only from the sunset age forward.

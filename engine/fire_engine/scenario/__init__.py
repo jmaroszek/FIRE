@@ -54,4 +54,5 @@ from .core import (
     SimSettings,
     Scenario,
     example_scenario,
+    validate_invariants,
 )

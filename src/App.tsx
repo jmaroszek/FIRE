@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useStore, type Tab } from "./store";
+import { validateScenario } from "./validate";
+import { ErrorBoundary } from "./ErrorBoundary";
 import Assumptions from "./tabs/Assumptions";
 import CashFlow from "./tabs/CashFlow";
 import Accounts from "./tabs/Accounts";
@@ -108,6 +110,47 @@ function ScenarioBar() {
   );
 }
 
+/** Non-blocking advisory banner for inputs that would make the projection
+ *  meaningless (errors) or are probably mistakes (warnings). Re-appears whenever
+ *  the set of issues changes, even after a dismiss. */
+function ValidationBanner() {
+  const scenario = useStore((s) => s.scenario);
+  const issues = useMemo(() => (scenario ? validateScenario(scenario) : []), [scenario]);
+  const sig = issues.map((i) => `${i.level}:${i.field}`).join("|");
+  const [dismissed, setDismissed] = useState("");
+  if (!issues.length || sig === dismissed) return null;
+
+  const errors = issues.filter((i) => i.level === "error");
+  const warnings = issues.filter((i) => i.level === "warning");
+  const isError = errors.length > 0;
+  const accent = isError ? "#f85149" : "#d29922";
+
+  return (
+    <div role="alert" style={{
+      margin: "0 0 12px", padding: "10px 14px", borderRadius: 6,
+      borderLeft: `3px solid ${accent}`, background: "#1c2128", color: "#c9d1d9",
+      fontSize: 13, lineHeight: 1.5,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+        <strong style={{ color: accent }}>
+          {isError
+            ? `${errors.length} input ${errors.length === 1 ? "issue" : "issues"} — results may be meaningless`
+            : `${warnings.length} input ${warnings.length === 1 ? "warning" : "warnings"}`}
+        </strong>
+        <button className="ghost" style={{ color: "#8b949e" }}
+          title="Dismiss until the inputs change" onClick={() => setDismissed(sig)}>✕</button>
+      </div>
+      <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+        {[...errors, ...warnings].map((i) => (
+          <li key={`${i.level}:${i.field}`}>
+            <span style={{ color: "#8b949e" }}>{i.field}</span> — {i.message}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function App() {
   const { tab, setTab, init, engineUp, sidebarCollapsed, setSidebarCollapsed } = useStore(useShallow((s) => ({
     tab: s.tab, setTab: s.setTab, init: s.init, engineUp: s.engineUp,
@@ -182,13 +225,16 @@ export default function App() {
           <ScenarioBar />
         </div>
         <main>
-          {tab === "assumptions" && <Assumptions />}
-          {tab === "cashflow" && <CashFlow />}
-          {tab === "accounts" && <Accounts />}
-          {tab === "taxes" && <Taxes />}
-          {tab === "freedom" && <Freedom />}
-          {tab === "compare" && <Compare />}
-          {tab === "settings" && <Settings />}
+          <ValidationBanner />
+          <ErrorBoundary key={tab}>
+            {tab === "assumptions" && <Assumptions />}
+            {tab === "cashflow" && <CashFlow />}
+            {tab === "accounts" && <Accounts />}
+            {tab === "taxes" && <Taxes />}
+            {tab === "freedom" && <Freedom />}
+            {tab === "compare" && <Compare />}
+            {tab === "settings" && <Settings />}
+          </ErrorBoundary>
         </main>
       </div>
     </div>

@@ -4,7 +4,10 @@ import type {
   SurfaceResult, SweepResult, TaxRegimeResult,
 } from "./types";
 
-const BASE = `http://127.0.0.1:${(window as any).__FIRE_PORT__ ?? 8765}`;
+// Tauri injects the sidecar port on `window`; fall back to the dev default.
+// Guard `window` so this module is importable outside the browser (e.g. tests).
+const FIRE_PORT = typeof window !== "undefined" ? (window as any).__FIRE_PORT__ : undefined;
+const BASE = `http://127.0.0.1:${FIRE_PORT ?? 8765}`;
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(`${BASE}${path}`, {
