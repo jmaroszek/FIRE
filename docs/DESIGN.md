@@ -47,7 +47,7 @@ formatters, and the color/label system are defined once and imported everywhere
   healthcare medians, sensitivity tornado
 
 Everything is vectorized across paths with NumPy: 2,000 paths × 65 years ≈
-**185 ms**, which keeps slider-driven recompute interactive. The fixed-point
+**185 ms** on a modern laptop, which keeps slider-driven recompute interactive. The fixed-point
 loop breaks as soon as the carried state stops changing, rather than always
 running the full iteration count.
 
@@ -145,7 +145,7 @@ saved scenario fields.
 
 ## Testing
 
-- **Python — 187 tests** (`engine/tests/` + `server/`): hand-computed 2026 tax
+- **Python — 200+ tests** (`engine/tests/` + `server/`): hand-computed 2026 tax
   cases, closed-form compounding/spend-down, ladder seasoning, RMD math, the
   contribution-waterfall and allocation-glidepath schedules, conservation
   invariants, ACA/IRMAA, LTC, spending strategies, the SS-torpedo `income_tax()`,

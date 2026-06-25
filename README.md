@@ -16,6 +16,8 @@ recomputes the whole projection in a few hundred milliseconds.
 > Every simplifying assumption is documented there, with a note on what to keep
 > in mind for real decisions.
 
+**Jump to:** [Setup & run](#setup-once) · [Why it's not a spreadsheet](#why-this-isnt-a-spreadsheet) · [Feature tour](docs/FEATURES.md) · [Modeling](docs/MODELING.md) · [Assumptions](docs/ASSUMPTIONS.md) · [Architecture](docs/DESIGN.md)
+
 ---
 
 ## Why this isn't a spreadsheet
@@ -67,26 +69,11 @@ the engine.
 
 **Engineering**
 - Pure NumPy engine, fully vectorized across paths: **2,000 paths × 65 years ≈
-  185 ms**, fast enough for slider-driven recompute
+  185 ms** on a modern laptop, fast enough for slider-driven recompute
 - Clean three-layer split: pure Python engine → FastAPI sidecar → React +
   TypeScript + Zustand + Plotly, in a Tauri 2 desktop shell
-- **220 tests** (187 Python + 33 TypeScript), input validation, deterministic
+- **230+ tests** (200+ Python + 33 TypeScript), input validation, deterministic
   seeded runs. Architecture in **[docs/DESIGN.md](docs/DESIGN.md)**.
-
----
-
-## How many Monte Carlo paths?
-
-Set `n_paths` (Assumptions tab) for the precision you need:
-
-- **< 2,000 — testing/iteration.** Fast; the headline success rate is good to a
-  few points — enough to see whether a change moved the needle.
-- **5,000+ — a "real" runthrough.** The headline tightens to ~±1pt and the
-  *tails* (shortfall depth, age-at-ruin, ending-balance percentiles) stop
-  swinging run-to-run. Those are what you plan against.
-
-Rule of thumb: raise `n_paths` until the 95% interval on the Plan Success tile is
-narrower than the margin that would change your decision.
 
 ---
 
@@ -122,9 +109,22 @@ npm run tauri dev
 ## Tests
 
 ```powershell
-python -m pytest engine/tests server   # 187 Python tests
+python -m pytest engine/tests server   # 200+ Python tests
 npm test                               # 33 TypeScript tests (vitest)
 ```
+
+## How many Monte Carlo paths?
+
+Set `n_paths` (Assumptions tab) for the precision you need:
+
+- **< 2,000 — testing/iteration.** Fast; the headline success rate is good to a
+  few points — enough to see whether a change moved the needle.
+- **5,000+ — a "real" runthrough.** The headline tightens to ~±1pt and the
+  *tails* (shortfall depth, age-at-ruin, ending-balance percentiles) stop
+  swinging run-to-run. Those are what you plan against.
+
+Rule of thumb: raise `n_paths` until the 95% interval on the Plan Success tile is
+narrower than the margin that would change your decision.
 
 ## Annual maintenance
 
@@ -154,3 +154,9 @@ Copy-Item dist-engine\fire-server src-tauri\target\release\fire-server -Recurse 
 Note: the engine must build into `dist-engine/`, NOT the default `dist/` — vite
 empties `dist/` on every frontend build and would delete the bundle. The icon
 comes from `app-icon.png`; regenerate sizes with `npx tauri icon app-icon.png`.
+
+## License
+
+Source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md):
+use, modify, and share it freely for any **noncommercial** purpose — personal
+use, study, hobby projects. **Commercial use requires a separate license.**

@@ -63,8 +63,8 @@ effects below *together* rather than one at a time.
 
 ## The Social Security tax torpedo
 
-The most under-appreciated tax in retirement, and a flagship example of why
-interactions matter.
+One of the most under-appreciated taxes in retirement, and a clear illustration
+of why interactions matter.
 
 Social Security benefits aren't simply taxable or tax-free. The taxable share
 steps from 0% → 50% → 85% based on **provisional income** (your other income plus
@@ -102,7 +102,8 @@ gain-harvesting opportunity visible — and shows when a conversion would spend 
 ## The early-retirement bridge
 
 Retiring at 45 means funding ~15 years before penalty-free access at 59½. This is
-where most FIRE plans live or die, and the engine treats it as first-class:
+where many early-retirement plans succeed or fail, and the engine treats it as
+first-class:
 
 - **Penalty-free age rules.** Traditional and Roth *earnings* are penalty-locked
   until 59½ (modeled as the year you turn 60 on the annual grain); HSA
