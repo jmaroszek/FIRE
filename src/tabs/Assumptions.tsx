@@ -133,9 +133,15 @@ export default function Assumptions() {
             <span>{nominalMode ? "Nominal CAGR" : "Real CAGR"}</span>
             <span>Volatility</span>
           </div>
-          {(["stocks", "bonds"] as const).map((key) => (
+          {([
+            { key: "stocks", name: "Stocks" },
+            { key: "bonds", name: "Bonds" },
+            { key: "cash", name: "Cash", info: A.cash },
+          ] as const).map(({ key, name, info }) => (
             <div className="asset-matrix-row" key={key}>
-              <span className="asset-name">{key === "stocks" ? "Stocks" : "Bonds"}</span>
+              <span className="asset-name">
+                {name}{info ? <InfoTip text={info} /> : null}
+              </span>
               <span className="cagr-cell">
                 <PercentInput value={shownCagr(s.market[key].real_cagr)} step={0.25}
                   onChange={(v) => upAsset(key, { real_cagr: storeCagr(v) })} />
@@ -151,13 +157,6 @@ export default function Assumptions() {
           <Field label="Expense Ratio" info={A.expenseRatio}>
             <PercentInput value={s.market.expense_ratio} step={0.01}
               onChange={(v) => up({ market: { ...s.market, expense_ratio: v } })} />
-          </Field>
-          <Field label="Cash APY" info={A.cash}>
-            <span className="cagr-cell-inline">
-              <PercentInput value={shownCagr(s.market.cash.real_cagr)} step={0.25}
-                onChange={(v) => upAsset("cash", { real_cagr: storeCagr(v) })} />
-              <span className="cagr-alt">{altCagr(s.market.cash.real_cagr)}</span>
-            </span>
           </Field>
         </div>
 
@@ -191,13 +190,11 @@ export default function Assumptions() {
               <Row label="Born / Plan To" value={`${s.profile.birth_year} → age ${s.profile.horizon_age}`} />
               <Row label="State Tax" value={fmtPct(s.profile.state_tax_rate, 1)} />
               <Row label="Market Mode" value={s.market.mode === "bootstrap" ? "Bootstrap" : "Parametric"} />
-              <Row label="Stocks / Bonds (Real CAGR)"
-                value={`${fmtPct(s.market.stocks.real_cagr)} / ${fmtPct(s.market.bonds.real_cagr)}`} />
-              <Row label="Cash / HYSA (Real)" value={fmtPct(s.market.cash.real_cagr)} />
-              <Row label="Allocation (S/B/C)"
-                value={`${fmtPct(s.allocation.stocks, 0)} / ${fmtPct(s.allocation.bonds, 0)} / ${fmtPct(s.allocation.cash, 0)}`} />
-              <Row label="Allocation Glide"
-                value={(s.allocation_schedule ?? []).length > 0 ? `${(s.allocation_schedule ?? []).length} phase(s)` : "—"} />
+              <Row label="Stocks / Bonds / Cash CAGR"
+                value={`${fmtPct(s.market.stocks.real_cagr)} / ${fmtPct(s.market.bonds.real_cagr)} / ${fmtPct(s.market.cash.real_cagr)}`} />
+              <Row label="Stocks / Bonds / Cash Allocation"
+                value={`${fmtPct(s.allocation.stocks, 0)} / ${fmtPct(s.allocation.bonds, 0)} / ${fmtPct(s.allocation.cash, 0)}${
+                  (s.allocation_schedule ?? []).length > 0 ? ` · ${(s.allocation_schedule ?? []).length}-phase glide` : ""}`} />
               <Row label="Inflation Mean" value={fmtPct(s.inflation.mean)} />
             </tbody>
           </table>
@@ -206,7 +203,8 @@ export default function Assumptions() {
             <tbody>
               <tr><td colSpan={2} className="snap-head" style={{ margin: 0 }}>Money & Plan</td></tr>
               <Row label="Gross Salary" value={fmtMoney(s.income.gross_salary)} />
-              <Row label="Income Streams" value={String((s.income_streams ?? []).length)} />
+              <Row label="Income Streams"
+                value={String((s.income.gross_salary > 0 ? 1 : 0) + (s.income_streams ?? []).length)} />
               <Row label="Retirement Age" value={String(s.retirement_age)} />
               <Row label="Assets / Debt" value={`${fmtMoney(assets)} / ${fmtMoney(debt)}`} />
               <Row label="Planned Expenses" value={`${fmtMoney(planAnnual)}/yr`} />

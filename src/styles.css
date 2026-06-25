@@ -526,6 +526,10 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
   box-shadow: 0 6px 18px rgba(0,0,0,0.5);
   pointer-events: none;
   white-space: normal; /* labels set nowrap; the tooltip must always wrap */
+  /* Tooltips can be nested inside uppercased heads (e.g. .policy-col-head);
+     reset the inherited casing/spacing so the body always reads as prose. */
+  text-transform: none;
+  letter-spacing: normal;
   text-align: left;
 }
 

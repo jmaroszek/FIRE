@@ -156,8 +156,20 @@ def sensitivity_tornado(scenario: Scenario, n_paths: int = 2000,
     retirement age, and balances reuse one shared path set; market/inflation
     perturbations resample (they change the paths themselves). Bars sorted by
     swing — the answer to 'which assumption should I sweat?'."""
-    base_paths = sample_paths(scenario, n_paths=n_paths)
-    base = run(scenario, paths=base_paths).success_rate
+    # The market-CAGR bars only "bite" in bootstrap mode when mean-shift is on
+    # (otherwise raw history ignores the entered CAGRs), so _market_perturbed
+    # forces it on. To keep the whole chart on ONE baseline, the base and every
+    # other bar must honor that same setting — otherwise the mean-shift flip
+    # re-centers returns and floats the market bars off the "base" line (a
+    # zero-allocation asset would show a sliver offset from base instead of
+    # collapsing onto it). Only matters in bootstrap mode; parametric is untouched.
+    tscenario = scenario
+    if scenario.market.mode == "bootstrap" and not scenario.market.bootstrap_mean_shift:
+        tscenario = scenario.model_copy(deep=True)
+        tscenario.market.bootstrap_mean_shift = True
+
+    base_paths = sample_paths(tscenario, n_paths=n_paths)
+    base = run(tscenario, paths=base_paths).success_rate
     lo_f, hi_f = 1 - delta, 1 + delta
     pct = f"{int(round(delta * 100))}%"
 
@@ -167,18 +179,18 @@ def sensitivity_tornado(scenario: Scenario, n_paths: int = 2000,
 
     out = [
         entry("Spending Level", f"−{pct}",
-              run(scenario, paths=base_paths, spending_scale=lo_f).success_rate,
-              f"+{pct}", run(scenario, paths=base_paths, spending_scale=hi_f).success_rate),
+              run(tscenario, paths=base_paths, spending_scale=lo_f).success_rate,
+              f"+{pct}", run(tscenario, paths=base_paths, spending_scale=hi_f).success_rate),
         entry("Retirement Age", "−2 yr",
-              run(scenario, paths=base_paths, retirement_age=scenario.retirement_age - 2).success_rate,
-              "+2 yr", run(scenario, paths=base_paths, retirement_age=scenario.retirement_age + 2).success_rate),
+              run(tscenario, paths=base_paths, retirement_age=tscenario.retirement_age - 2).success_rate,
+              "+2 yr", run(tscenario, paths=base_paths, retirement_age=tscenario.retirement_age + 2).success_rate),
         entry("Starting Balances", f"−{pct}",
-              run(scenario, paths=base_paths, balance_scale=lo_f).success_rate,
-              f"+{pct}", run(scenario, paths=base_paths, balance_scale=hi_f).success_rate),
+              run(tscenario, paths=base_paths, balance_scale=lo_f).success_rate,
+              f"+{pct}", run(tscenario, paths=base_paths, balance_scale=hi_f).success_rate),
     ]
     for param, field in (("Stock Return", "stock_cagr"), ("Stock Volatility", "stock_vol"),
                          ("Bond Return", "bond_cagr"), ("Inflation", "infl_mean")):
-        s_lo, s_hi = _market_perturbed(scenario, field, lo_f), _market_perturbed(scenario, field, hi_f)
+        s_lo, s_hi = _market_perturbed(tscenario, field, lo_f), _market_perturbed(tscenario, field, hi_f)
         out.append(entry(
             param, f"−{pct}", run(s_lo, paths=sample_paths(s_lo, n_paths=n_paths)).success_rate,
             f"+{pct}", run(s_hi, paths=sample_paths(s_hi, n_paths=n_paths)).success_rate))

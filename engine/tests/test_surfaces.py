@@ -73,6 +73,26 @@ def test_tornado_signs_and_sorted():
     assert swings == sorted(swings, reverse=True)
 
 
+def test_tornado_zero_alloc_asset_sits_on_base():
+    """Regression: in bootstrap mode with mean-shift off, a 0%-allocation asset
+    must collapse ONTO the base line, not float off it. The market bars force
+    mean-shift on; if the base didn't honor the same setting, re-centering the
+    OTHER asset's returns would offset an inert bar from base."""
+    s = example_scenario()
+    s.market.mode = "bootstrap"
+    s.market.bootstrap_mean_shift = False
+    s.allocation.stocks = 1.0
+    s.allocation.bonds = 0.0
+    s.allocation.cash = 0.0
+    s.sim.n_paths = 400
+    res = m.sensitivity_tornado(s, n_paths=400)
+    bond = next(e for e in res["entries"] if e["param"] == "Bond Return")
+    # No bonds held -> perturbing the bond CAGR is a no-op, AND the bar must
+    # land on the (consistently mean-shifted) base, not beside it.
+    assert bond["low_success"] == pytest.approx(bond["high_success"])
+    assert bond["low_success"] == pytest.approx(res["base_success"])
+
+
 def test_income_stress_drops_success():
     s = example_scenario()
     s.sim.n_paths = 300
