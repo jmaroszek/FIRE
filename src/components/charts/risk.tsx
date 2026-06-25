@@ -181,7 +181,7 @@ export const TornadoChart = React.memo(function TornadoChart(props: { data: Sens
         marker: { color: "rgba(88,166,255,0.7)", line: { color: ACCENT, width: 1 } },
         customdata,
         hovertemplate:
-          "%{customdata[0]}: %{customdata[1]:.1%}<br>%{customdata[2]}: %{customdata[3]:.1%}<extra>%{y}</extra>",
+          "<b>%{y}</b><br>%{customdata[0]}: %{customdata[1]:.1%}<br>%{customdata[2]}: %{customdata[3]:.1%}<extra></extra>",
       } as Data]}
       layout={{
         ...baseLayout, height: props.height ?? 40 + rows.length * 38, showlegend: false,
