@@ -147,6 +147,60 @@ def test_windfall_event_adds_its_value_to_net_worth():
     assert result.pools["taxable"][0, -1] == pytest.approx(50000.0)
 
 
+@pytest.mark.parametrize(
+    "dest,pool",
+    [
+        (AccountType.trad_401k, "trad"),
+        (AccountType.roth_ira, "roth"),
+        (AccountType.hsa, "hsa"),
+    ],
+)
+def test_windfall_lands_in_its_destination_retirement_account(dest, pool):
+    """A windfall (negative one-time flow) routed to a specific tax-advantaged
+    account lands in that pool — not the default taxable bucket — and raises net
+    worth by exactly its size. The taxable case is covered separately; this pins
+    the trad / Roth / HSA destination branches."""
+    s = Scenario(
+        profile=Profile(birth_year=1986, horizon_age=42, state_tax_rate=0.0),
+        accounts=[Account(type=AccountType.cash, balance=100000)],
+        income=Income(gross_salary=0),
+        retirement_age=40,
+        expense_streams=[],
+        events=[Event(kind=EventKind.one_time_flow, name="gift",
+                      age=41, amount=-50000, account=dest)],
+        sim=SimSettings(n_paths=2, start_year=2026),
+        **NO_GROWTH,
+    )
+    s.withdrawal_policy.cash_buffer = 0.0
+    result = run(s)
+    assert result.net_worth[0, -1] == pytest.approx(150000.0)   # windfall stuck
+    assert result.pools[pool][0, -1] == pytest.approx(50000.0)  # in the right pool
+    assert result.pools["cash"][0, -1] == pytest.approx(100000.0)  # cash untouched
+
+
+def test_recurring_flow_windfall_repeats_on_its_interval():
+    """A recurring inflow fires at every interval through end_age and nowhere
+    else: three occurrences (ages 41, 43, 45) of 10,000 each, so with zero growth
+    net worth ends exactly 30,000 above where it started."""
+    s = Scenario(
+        profile=Profile(birth_year=1986, horizon_age=47, state_tax_rate=0.0),
+        accounts=[Account(type=AccountType.cash, balance=1000)],
+        income=Income(gross_salary=0),
+        retirement_age=40,
+        expense_streams=[],
+        events=[Event(kind=EventKind.recurring_flow, name="periodic gift",
+                      age=41, amount=-10000, interval_years=2, end_age=45,
+                      account=AccountType.cash)],
+        sim=SimSettings(n_paths=2, start_year=2026),
+        **NO_GROWTH,
+    )
+    s.withdrawal_policy.cash_buffer = 0.0
+    result = run(s)
+    # three inflows of 10k land; the fourth (age 47) is past end_age 45, so none
+    assert result.net_worth[0, -1] == pytest.approx(1000 + 30000.0)
+    assert result.net_worth[0] == pytest.approx(sorted(result.net_worth[0]))  # only ever rises
+
+
 def test_employer_match_is_external_money_in_traditional():
     """The match is employer money: it is recorded in the match pool and lands
     in the traditional account on top of the employee's own contributions."""

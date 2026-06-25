@@ -106,9 +106,9 @@ export default function Freedom() {
             <>
               <Stat label="Current Invested Total" value={fmtMoney(freedom.current_total)} />
               <Stat label={`Needed Today To Coast To ${s.sim.coast_target_age}`}
-                value={fmtMoney(freedom.coast.coast_number)}
+                value={freedom.coast.coast_number != null ? fmtMoney(freedom.coast.coast_number) : "—"}
                 sub={`assumes ${fmtPct(freedom.coast.assumed_real_return)} real return for ${freedom.coast.years_to_target} years`} />
-              <ProgressBar fraction={freedom.coast.progress} />
+              <ProgressBar fraction={freedom.coast.progress ?? 0} />
             </>
           ) : freedomLoading
             ? <div className="tile-loading"><span className="spinner" />Computing…</div>

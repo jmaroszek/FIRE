@@ -113,16 +113,45 @@ def fire_number_mc(scenario: Scenario, n_paths: int = 1000,
     return hi * current_total
 
 
-def coast_fire(scenario: Scenario) -> dict[str, float]:
-    """How much you'd need TODAY to hit the simple FIRE number by the coast
-    target age with no further contributions, at the blended real CAGR."""
+def _fire_number_mc_at_age(scenario: Scenario, at_age: int,
+                           n_paths: int) -> float | None:
+    """The Monte-Carlo FIRE number as if the plan starts at `at_age` and retires
+    immediately then: the smallest portfolio (today's dollars, same account mix as
+    now) whose retirement clears the success threshold. Shifts the sim's start to
+    that age so the FIRE target reflects the horizon, expenses, and Social Security
+    timing *at that age* — the per-age input the coast discount needs.
+
+    `fire_number_mc` scales current balances, so the absolute balances are
+    irrelevant here; only their composition carries through."""
+    if at_age <= scenario.start_age:
+        return fire_number_mc(scenario, n_paths=n_paths)
+    if at_age >= scenario.profile.horizon_age:
+        return None  # no years left to simulate a retirement at/after the horizon
+    shifted = scenario.model_copy(deep=True)
+    shifted.sim.start_year = scenario.profile.birth_year + at_age
+    return fire_number_mc(shifted, n_paths=n_paths)
+
+
+def coast_fire(scenario: Scenario, n_paths: int = 1000) -> dict[str, float | None]:
+    """How much you'd need invested TODAY to reach your FIRE number by the coast
+    target age with no further contributions, compounding at the blended real CAGR.
+
+    The FIRE target is the Monte-Carlo number — the smallest portfolio that retires
+    at the target age with success >= the scenario threshold — not the 25x rule of
+    thumb, so the coast goal carries the same sequence-risk, tax, and Social Security
+    modeling as the rest of the app. ``coast_number`` is None when there are no
+    assets to bisect or the target age leaves no horizon to simulate."""
     target_age = scenario.sim.coast_target_age
-    fire = FIRE_MULTIPLE * annual_retirement_expenses(scenario, target_age)
     w = scenario.allocation
     r = (w.stocks * scenario.market.stocks.real_cagr
          + w.bonds * scenario.market.bonds.real_cagr
          + w.cash * scenario.market.cash.real_cagr)
     years = max(target_age - scenario.start_age, 0)
+    fire = _fire_number_mc_at_age(scenario, target_age, n_paths=n_paths)
+    if fire is None:
+        return {"coast_number": None, "progress": None,
+                "fire_number_at_target": None,
+                "assumed_real_return": r, "years_to_target": years}
     coast_number = fire / (1 + r) ** years
     current = sum(a.balance for a in scenario.accounts)
     return {

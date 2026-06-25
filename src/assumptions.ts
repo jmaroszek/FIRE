@@ -40,7 +40,7 @@ export const A = {
   fireMc:
     "The smallest portfolio for which retiring TODAY meets your success threshold. It scales your CURRENT account mix — hitting the same total at a later age usually isn't equivalent, because by then more of it sits in retirement accounts you can't freely touch before 59½. The When Can I Retire curve is the age-honest answer.",
   coast:
-    "What you'd need invested today to reach 25× expenses by the coast age with no further contributions, compounding at your blended real return.",
+    "What you'd need invested today to reach your Monte-Carlo FIRE number — the smallest portfolio that retires at the coast age with at least your target success rate — with no further contributions, compounding at your blended real return.",
   accessibility:
     "Median accessible (penalty-free) dollars by source. The early-retirement bridge: cash + taxable + Roth contributions + matured ladder rungs must cover spending until 59½.",
   successRate:

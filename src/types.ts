@@ -375,9 +375,9 @@ export interface FreedomResult {
   fire_progress_mc: number | null;
   success_threshold: number;
   coast: {
-    coast_number: number;
-    progress: number;
-    fire_number_at_target: number;
+    coast_number: number | null;
+    progress: number | null;
+    fire_number_at_target: number | null;
     assumed_real_return: number;
     years_to_target: number;
   };

@@ -123,7 +123,7 @@ def freedom(req: FreedomRequest) -> dict:
     current_total = sum(a.balance for a in s.accounts)
     fire_simple = m.fire_number_simple(s)
     fire_mc = m.fire_number_mc(s, n_paths=req.n_paths)
-    coast = m.coast_fire(s)
+    coast = m.coast_fire(s, n_paths=req.n_paths)
     return {
         "current_total": current_total,
         "fire_number_simple": fire_simple,
