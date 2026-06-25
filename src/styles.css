@@ -92,8 +92,14 @@ body {
   gap: 8px;
 }
 .scenario-switch { max-width: 220px; }
-.dirty { color: var(--amber); }
-.saved-chip { color: var(--muted); font-size: 12px; }
+.status-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+}
+.status-dot.is-clean { background: var(--green); }
+.status-dot.is-dirty { background: var(--amber); }
 .overflow { position: relative; display: inline-flex; }
 .overflow-menu {
   position: absolute;

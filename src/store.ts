@@ -126,6 +126,15 @@ let pendingWorkspace: Scenario | null = null;
 // (anything but the single planned retirement age); the next simulate then drops
 // the now-stale sweep. Retirement-age-only edits leave the sweep curve intact.
 let sweepInvalidated = false;
+// remember which profile was last open so a reopen restores it (the empty
+// string means the Workspace scratchpad). Guarded for non-browser test runs.
+const LAST_PROFILE_KEY = "fire:lastProfile";
+const readLastProfile = (): string => {
+  try { return localStorage.getItem(LAST_PROFILE_KEY) ?? ""; } catch { return ""; }
+};
+const writeLastProfile = (name: string): void => {
+  try { localStorage.setItem(LAST_PROFILE_KEY, name); } catch { /* ignore */ }
+};
 // the sweep depends on the whole scenario except the planned retirement age,
 // which only moves the selected point along the curve, not the curve itself
 export const sweepKey = (s: Scenario) => JSON.stringify({ ...s, retirement_age: 0 });
@@ -215,22 +224,30 @@ export const useStore = create<AppState>((set, get) => {
       set({ engineUp: up });
       if (!up) return;
       const [names, snapshots, categories] = await Promise.all([
-        api.listScenarios().then((l) => l.map((x) => x.name)).catch(() => []),
+        api.listScenarios().then((l) => l.map((x) => x.name)).catch((): string[] => []),
         api.snapshots().catch(() => []),
         api.categories().catch(() => []),
       ]);
-      // the autosaved workspace is the persistent baseline; named scenarios
-      // are explicit snapshots on top of it
+      // Reopen wherever the user last was: a named profile if it still exists,
+      // otherwise the Workspace scratchpad (the persistent autosaved baseline).
+      const last = readLastProfile();
       let scenario: Scenario;
+      let savedAs = "";
       try {
-        scenario = await api.getWorkspace();
+        if (last && names.includes(last)) {
+          scenario = await api.loadScenario(last);
+          savedAs = last;
+        } else {
+          scenario = await api.getWorkspace();
+        }
       } catch {
         scenario = names.length > 0
           ? await api.loadScenario(names[0])
           : await api.defaults();
+        savedAs = "";
       }
       set({ savedScenarios: names, snapshots, categories,
-            scenario: normalizeScenario(scenario), savedAs: "", dirty: false });
+            scenario: normalizeScenario(scenario), savedAs, dirty: false });
       scheduleSimulate();
     },
 
@@ -240,6 +257,10 @@ export const useStore = create<AppState>((set, get) => {
       if (!prev || sweepKey(prev) !== sweepKey(scenario)) sweepInvalidated = true;
       set({ scenario, dirty: true });
       scheduleSimulate();
+      // Autosave only feeds the workspace scratchpad (savedAs === ""). While a
+      // named profile is loaded, edits stay in memory until an explicit Save, so
+      // the scratchpad is preserved and remains a place you can switch back to.
+      if (get().savedAs !== "") return;
       pendingWorkspace = scenario;
       if (autosaveTimer) clearTimeout(autosaveTimer);
       autosaveTimer = setTimeout(() => {
@@ -392,19 +413,23 @@ export const useStore = create<AppState>((set, get) => {
       if (!scenario) return;
       const named = { ...scenario, name };
       await api.saveScenario(name, named);
-      // keep the autosaved workspace in lock-step with the named save, so a
-      // reopen restores exactly what was just saved (not a pre-save autosave).
-      pendingWorkspace = null;
-      void api.saveWorkspace(named).catch(() => {});
+      // Promote the current buffer to a named profile but leave the workspace
+      // scratchpad untouched, so it stays available to switch back to.
       const names = (await api.listScenarios()).map((x) => x.name);
       set({ scenario: named, savedAs: name, dirty: false, savedScenarios: names });
+      writeLastProfile(name);
     },
 
     load: async (name) => {
-      const scenario = normalizeScenario(await api.loadScenario(name));
+      // name === "" is the workspace scratchpad; a non-empty name is a saved
+      // profile. Loading a named profile must NOT overwrite the workspace, so
+      // the scratchpad survives and the user can switch back to it.
+      const scenario = normalizeScenario(
+        name === "" ? await api.getWorkspace() : await api.loadScenario(name),
+      );
       set({ scenario, savedAs: name, dirty: false, result: null, sweep: null, freedom: null });
+      writeLastProfile(name);
       scheduleSimulate();
-      void api.saveWorkspace(scenario).catch(() => {});
     },
 
     remove: async (name) => {

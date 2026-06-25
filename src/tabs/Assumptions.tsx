@@ -137,7 +137,7 @@ export default function Assumptions() {
             { key: "stocks", name: "Stocks" },
             { key: "bonds", name: "Bonds" },
             { key: "cash", name: "Cash", info: A.cash },
-          ] as const).map(({ key, name, info }) => (
+          ] as { key: "stocks" | "bonds" | "cash"; name: string; info?: string }[]).map(({ key, name, info }) => (
             <div className="asset-matrix-row" key={key}>
               <span className="asset-name">
                 {name}{info ? <InfoTip text={info} /> : null}

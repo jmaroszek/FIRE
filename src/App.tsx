@@ -74,18 +74,18 @@ function ScenarioBar() {
     <div className="scenario-bar">
       <select className="scenario-switch" value={savedAs} title="Switch scenario"
         onChange={(e) => { const v = e.target.value; if (v !== savedAs) void load(v); }}>
-        {savedAs === "" && <option value="">{scenario.name} (unsaved)</option>}
+        <option value="">Workspace</option>
         {savedScenarios.map((n) => <option key={n} value={n}>{n}</option>)}
       </select>
-      {dirty ? (
-        <span className="dirty"
-          title="Edited since your last named save. Your edits are auto-saved to the workspace continuously — Save stores them under this name.">●</span>
-      ) : (
-        <span className="saved-chip"
-          title={savedAs ? "No changes since the last save under this name." : "Auto-saved to the workspace. Use Save As… to name it."}>
-          {savedAs ? "Saved" : "Autosaved"}
-        </span>
-      )}
+      <span className={`status-dot ${dirty ? "is-dirty" : "is-clean"}`}
+        title={dirty
+          ? (savedAs
+              ? "Unsaved changes since your last save under this name — click Save to store them."
+              : "Unsaved working changes — auto-saved to the Workspace, but not yet kept under a name. Use Save As… to name it.")
+          : (savedAs
+              ? "Saved — no changes since your last save under this name."
+              : "Workspace is up to date — every edit is auto-saved here.")} />
+
       <button className={dirty ? "" : "ghost"}
         onClick={() => (savedAs ? void saveAs(savedAs) : (setName(scenario.name), setNaming(true)))}>
         Save
