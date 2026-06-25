@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api } from "./api";
+import { getCached, setCacheSchemaVersion } from "./simCache";
 import type {
   BridgeCrashResult, Category, FreedomResult, LadderSavingsResult, MaxSpendResult,
   Scenario, SensitivityResult, SimulateResult, Snapshot, StressResult,
@@ -215,7 +216,9 @@ export const useStore = create<AppState>((set, get) => {
       let up = false;
       for (let i = 0; i < 15 && !up; i++) {
         try {
-          await api.health();
+          // Fold the engine's schema version into every result-cache key so a
+          // schema bump can't serve stale cached numbers (see simCache.ts).
+          setCacheSchemaVersion((await api.health()).schema_version);
           up = true;
         } catch {
           await new Promise((r) => setTimeout(r, 700));
@@ -246,8 +249,15 @@ export const useStore = create<AppState>((set, get) => {
           : await api.defaults();
         savedAs = "";
       }
+      scenario = normalizeScenario(scenario);
+      // Paint the projection plots immediately from the last run, if this exact
+      // profile was simulated before — no spinner, no waiting on the engine. The
+      // scheduleSimulate() below revalidates against the same cache (a hit, so a
+      // no-op repaint); it only recomputes when the inputs actually changed.
+      const cachedResult = getCached<SimulateResult>(
+        "simulate", withRecordedEarnings(scenario, snapshots));
       set({ savedScenarios: names, snapshots, categories,
-            scenario: normalizeScenario(scenario), savedAs, dirty: false });
+            scenario, savedAs, dirty: false, result: cachedResult });
       scheduleSimulate();
     },
 

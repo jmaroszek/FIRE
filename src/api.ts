@@ -3,6 +3,7 @@ import type {
   Scenario, SensitivityResult, SimulateResult, Snapshot, StressEarliestResult, StressResult,
   SurfaceResult, SweepResult, TaxRegimeResult,
 } from "./types";
+import { getCached, putCached } from "./simCache";
 
 // Tauri injects the sidecar port on `window`; fall back to the dev default.
 // Guard `window` so this module is importable outside the browser (e.g. tests).
@@ -21,63 +22,56 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return resp.json();
 }
 
+// The engine is seeded, so each analysis below is a pure function of its request
+// body — wrap them so a repeat call (e.g. reopening an unchanged profile) is
+// served from localStorage instead of recomputing the Monte Carlo. `body` is the
+// exact JSON sent to the server, so it doubles as the cache key. Storage-backed
+// endpoints (workspace/scenarios/snapshots/categories) are intentionally NOT
+// cached — they mutate.
+async function cachedPost<T>(tag: string, path: string, body: unknown): Promise<T> {
+  const hit = getCached<T>(tag, body);
+  if (hit !== null) return hit;
+  const value = await req<T>(path, { method: "POST", body: JSON.stringify(body) });
+  putCached(tag, body, value);
+  return value;
+}
+
 export const api = {
   health: () => req<{ ok: boolean; schema_version: number }>("/health"),
   defaults: () => req<Scenario>("/defaults"),
   simulate: (scenario: Scenario) =>
-    req<SimulateResult>("/simulate", { method: "POST", body: JSON.stringify(scenario) }),
+    cachedPost<SimulateResult>("simulate", "/simulate", scenario),
   // Success-probability analyses default to the scenario's own path count so they
   // sample the SAME seeded paths as the main /simulate run — every success number
   // on the Freedom tab then agrees exactly (no 800-vs-2000 sampling-noise gaps).
   sweep: (scenario: Scenario, nPaths = scenario.sim.n_paths) =>
-    req<SweepResult>("/simulate/sweep", {
-      method: "POST",
-      body: JSON.stringify({ scenario, n_paths: nPaths }),
-    }),
+    cachedPost<SweepResult>("sweep", "/simulate/sweep", { scenario, n_paths: nPaths }),
   freedom: (scenario: Scenario, nPaths = 800) =>
-    req<FreedomResult>("/simulate/freedom", {
-      method: "POST",
-      body: JSON.stringify({ scenario, n_paths: nPaths }),
-    }),
+    cachedPost<FreedomResult>("freedom", "/simulate/freedom", { scenario, n_paths: nPaths }),
   maxSpend: (scenario: Scenario, nPaths = 1000) =>
-    req<MaxSpendResult>("/simulate/max-spend", {
-      method: "POST", body: JSON.stringify({ scenario, n_paths: nPaths }),
-    }),
+    cachedPost<MaxSpendResult>("max-spend", "/simulate/max-spend", { scenario, n_paths: nPaths }),
   surface: (scenario: Scenario, nPaths = scenario.sim.n_paths) =>
-    req<SurfaceResult>("/simulate/surface", {
-      method: "POST", body: JSON.stringify({ scenario, n_paths: nPaths }),
-    }),
+    cachedPost<SurfaceResult>("surface", "/simulate/surface", { scenario, n_paths: nPaths }),
   sensitivity: (scenario: Scenario, nPaths = scenario.sim.n_paths) =>
-    req<SensitivityResult>("/simulate/sensitivity", {
-      method: "POST", body: JSON.stringify({ scenario, n_paths: nPaths }),
-    }),
+    cachedPost<SensitivityResult>("sensitivity", "/simulate/sensitivity",
+      { scenario, n_paths: nPaths }),
   stress: (scenario: Scenario, shockAge: number, duration = 1, nPaths = 2000) =>
-    req<StressResult>("/simulate/stress", {
-      method: "POST",
-      body: JSON.stringify({ scenario, shock_age: shockAge, duration, n_paths: nPaths }),
-    }),
+    cachedPost<StressResult>("stress", "/simulate/stress",
+      { scenario, shock_age: shockAge, duration, n_paths: nPaths }),
   stressEarliest: (scenario: Scenario, shockAge: number, duration = 1, nPaths = 800) =>
-    req<StressEarliestResult>("/simulate/stress-earliest", {
-      method: "POST",
-      body: JSON.stringify({ scenario, shock_age: shockAge, duration, n_paths: nPaths }),
-    }),
+    cachedPost<StressEarliestResult>("stress-earliest", "/simulate/stress-earliest",
+      { scenario, shock_age: shockAge, duration, n_paths: nPaths }),
   ladderSavings: (scenario: Scenario, nPaths = 1000) =>
-    req<LadderSavingsResult>("/simulate/ladder-savings", {
-      method: "POST", body: JSON.stringify({ scenario, n_paths: nPaths }),
-    }),
+    cachedPost<LadderSavingsResult>("ladder-savings", "/simulate/ladder-savings",
+      { scenario, n_paths: nPaths }),
   bridgeCrash: (scenario: Scenario, drop = 0.3, years = 2, nPaths = 2000) =>
-    req<BridgeCrashResult>("/simulate/bridge-crash", {
-      method: "POST",
-      body: JSON.stringify({ scenario, drop, years, n_paths: nPaths }),
-    }),
+    cachedPost<BridgeCrashResult>("bridge-crash", "/simulate/bridge-crash",
+      { scenario, drop, years, n_paths: nPaths }),
   taxRegime: (scenario: Scenario, sunsetAge: number,
               bracketRateMult = 1.15, stdDeductionMult = 0.5, nPaths = 2000) =>
-    req<TaxRegimeResult>("/simulate/tax-regime", {
-      method: "POST",
-      body: JSON.stringify({
-        scenario, sunset_age: sunsetAge, bracket_rate_mult: bracketRateMult,
-        std_deduction_mult: stdDeductionMult, n_paths: nPaths,
-      }),
+    cachedPost<TaxRegimeResult>("tax-regime", "/simulate/tax-regime", {
+      scenario, sunset_age: sunsetAge, bracket_rate_mult: bracketRateMult,
+      std_deduction_mult: stdDeductionMult, n_paths: nPaths,
     }),
   getWorkspace: () => req<Scenario>("/workspace"),
   saveWorkspace: (scenario: Scenario) =>
