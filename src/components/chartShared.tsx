@@ -10,24 +10,54 @@ import type { SimulateResult } from "../types";
 
 const RawPlot = createPlotlyComponent(Plotly);
 
-/** Wraps react-plotly so each chart resizes to its CONTAINER, not just the window.
- * Plotly's `responsive: true` only listens for window resizes; but our auto-fit grids
- * (`repeat(auto-fit, minmax(...))`) reflow their column count on window maximize/restore,
- * which changes a tile's width WITHOUT a window resize Plotly reacts to in time — leaving
- * the chart stuck at a stale width until a remount (which is why swapping tabs "fixes" it).
- * A ResizeObserver on the wrapping div catches the real element resize whatever its cause.
- * onInitialized/onUpdate are forwarded so callers (e.g. FanChart's hover) still get the gd. */
+/** Wraps react-plotly so each chart reliably resizes to its CONTAINER, whatever
+ * triggers the change. Plotly's own `responsive: true` only fires synchronously on
+ * the window `resize` event — but our auto-fit grids (`repeat(auto-fit, minmax(...))`)
+ * reflow their column count on maximize/restore, so Plotly measures the tile BEFORE
+ * the grid has settled and locks in a stale width. The chart then stays the wrong
+ * size (too wide → overflowing neighbours, or too narrow) until a remount, which is
+ * why swapping tabs or maximizing twice "fixes" it. Container-only changes (sidebar
+ * toggle) emit no window resize at all, so Plotly never reacts.
+ *
+ * The fix: we own resizing entirely (config sets `responsive: false`). Both a
+ * ResizeObserver on the wrapper AND a window `resize` listener funnel into one
+ * scheduler that defers the actual resize across two animation frames — long enough
+ * for the browser to finish the grid relayout, so we always measure the SETTLED
+ * container width rather than an intermediate one. onInitialized/onUpdate are
+ * forwarded so callers (e.g. FanChart's hover) still get the gd. */
 export function Plot(props: React.ComponentProps<typeof RawPlot>) {
   const gdRef = useRef<any>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const scheduleRef = useRef<() => void>(() => {});
   useEffect(() => {
     const el = wrapRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => {
-      if (gdRef.current) void Plotly.Plots.resize(gdRef.current);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
+    if (!el) return;
+    const resizeNow = () => { if (gdRef.current) void Plotly.Plots.resize(gdRef.current); };
+    let t0 = 0, t1 = 0;
+    const schedule = () => {
+      // Resize immediately AND on trailing timers. The immediate pass handles the
+      // common case where the container is already settled (and any environment
+      // where requestAnimationFrame is starved). The deferred passes re-measure
+      // after the browser finishes the grid relayout, correcting a width read
+      // mid-reflow on maximize/restore — the bug where a chart locks in a stale
+      // size until a remount. Timers (not rAF) so it fires even when idle; the
+      // clears coalesce a burst of drag-resize events onto one trailing resize.
+      resizeNow();
+      clearTimeout(t0);
+      clearTimeout(t1);
+      t0 = window.setTimeout(resizeNow, 60);
+      t1 = window.setTimeout(resizeNow, 250);
+    };
+    scheduleRef.current = schedule;
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(schedule) : null;
+    ro?.observe(el);
+    window.addEventListener("resize", schedule);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", schedule);
+      clearTimeout(t0);
+      clearTimeout(t1);
+    };
   }, []);
   return (
     <div ref={wrapRef} style={{ width: "100%" }}>
@@ -38,8 +68,8 @@ export function Plot(props: React.ComponentProps<typeof RawPlot>) {
           // The first draw can measure a stale or zero container width during a
           // tab's mount reflow, leaving the chart collapsed until something else
           // nudges it (e.g. pinning another scenario) — the Compare-tab "tiles
-          // won't size" bug. Force a resize to the settled container next frame.
-          requestAnimationFrame(() => { if (gdRef.current) void Plotly.Plots.resize(gdRef.current); });
+          // won't size" bug. Force a resize to the settled container.
+          scheduleRef.current();
           props.onInitialized?.(fig, gd);
         }}
         onUpdate={(fig, gd) => { gdRef.current = gd; props.onUpdate?.(fig, gd); }}
@@ -75,7 +105,9 @@ export const baseLayout: Partial<Layout> = {
   },
 };
 
-export const config: Partial<Config> = { displayModeBar: false, responsive: true };
+// responsive:false on purpose — the Plot wrapper owns resizing (deferred, settled
+// measurement). Plotly's built-in responsive handler fires too early on grid reflow.
+export const config: Partial<Config> = { displayModeBar: false, responsive: false };
 
 export function xValues(result: SimulateResult, axisMode: "age" | "year", extraPoint = true): number[] {
   const base = axisMode === "age" ? result.ages : result.years;
