@@ -88,6 +88,12 @@ export default function Freedom() {
     }
     return n > 0 ? sum / n : null;
   })();
+  // Liquid pile at retirement vs the up-front funding need: > 1× means day-one
+  // penalty-free assets cover the unseasoned window outright; < 1× leans on growth,
+  // the maturing ladder, or income to close it. null when there's no bridge.
+  const liquidAvail = bridge?.at_retirement?.accessible_real ?? 0;
+  const liquidNeed = bridge?.bridge_funding_total_real ?? 0;
+  const liquidRatio = liquidNeed > 0 ? liquidAvail / liquidNeed : null;
 
   return (
     <div className="stack">
@@ -295,9 +301,10 @@ export default function Freedom() {
             <HeroStat label="Liquid Needed" value={fmtMoney(bridge.bridge_funding_total_real ?? 0)}
               sub={`first ${bridge.bridge_funding_years} retirement years · spending + ${fmtMoney(bridge.bridge_funding_tax_real ?? 0)} tax`}
               info={A.bridgeFunding} />
-            <HeroStat tone="amber" label="Bridge Coverage" value={`${(bridge.coverage_p50 ?? 0).toFixed(1)}×`}
-              sub={`covers ~${Math.round(bridge.runway_p50 ?? 0)} yr of spending · worst 5%: ${(bridge.coverage_p5 ?? 0).toFixed(1)}×`}
-              info={A.bridgeCoverage} />
+            <HeroStat tone={liquidRatio != null && liquidRatio >= 1 ? "green" : "amber"}
+              label="Available ÷ Needed" value={liquidRatio != null ? `${liquidRatio.toFixed(2)}×` : "—"}
+              sub={`${fmtMoney(liquidAvail)} liquid available at retirement`}
+              info={A.bridgeLiquidAvailable} />
           </HeroRow>
 
           <Section title="Bridge Confidence: Can You Reach 59½?" info={A.bridgeConfidence}>

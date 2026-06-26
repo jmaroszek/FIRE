@@ -67,6 +67,10 @@ body {
 }
 .navitem:hover { color: var(--fg); background: #1f242c; }
 .navitem.active { color: var(--fg); background: #1f6feb33; }
+/* Settings sits at the very bottom of the nav as a gear, set apart from the
+   journey groups above it. */
+.navitem-gear { display: flex; align-items: center; gap: 8px; }
+.navitem-gear .gear-icon { font-size: 15px; line-height: 1; }
 
 /* ── Content column + top bar ───────────────────────────────────────── */
 .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -203,7 +207,12 @@ main { padding: 18px; max-width: 1500px; width: 100%; margin: 0 auto; }
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 14px 16px;
-  overflow-x: auto;
+  /* Cards grow to fit their content and never scroll. overflow-x:auto here would,
+     per the CSS spec, promote overflow-y to auto as well — turning a transient
+     Plotly mis-size on mount into a stuck scrollbar that clips the chart (the
+     Compare-tab "tiles won't size until you add another scenario" bug). Wide
+     inner content (e.g. the glidepath) carries its own horizontal scroller. */
+  overflow: visible;
 }
 
 /* Overview + Strategy: cards in a stretched row become flex columns so an inner
@@ -627,6 +636,48 @@ line.spikeline:not([stroke-dasharray]) { display: none !important; }
 .add-select { max-width: 160px; }
 .ext { color: var(--accent); font-size: 12px; text-decoration: none; white-space: nowrap; }
 .ext:hover { text-decoration: underline; }
+
+/* ── Compare tab: scenario manager chips + headline scorecard ───────── */
+.scenario-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.scenario-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: #1f242c; border: 1px solid var(--border); border-radius: 14px;
+  padding: 3px 6px 3px 10px; cursor: pointer; user-select: none;
+}
+.scenario-chip:hover { border-color: #495163; }
+/* focused chip: a colored ring (border + inset shadow set inline to the slot hue) */
+.scenario-chip.is-focused { background: #161b22; }
+.scenario-chip-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; display: inline-block; }
+.scenario-chip-name {
+  color: var(--fg); padding: 2px; font-size: 13px; max-width: 220px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.scenario-chip-input { max-width: 180px; padding: 2px 6px; font-size: 13px; }
+.scenario-chip-x { padding: 1px 6px; font-size: 12px; line-height: 1.2; border-radius: 10px; }
+/* the same swatch, reused as a leading marker in the comparison tables */
+.table .scenario-chip-dot { margin-right: 7px; }
+/* non-focused rows / columns fade while a scenario is focused */
+.is-dimmed { opacity: 0.4; }
+
+.compare-scorecard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 4px 24px;
+  margin-bottom: 14px;
+}
+
+/* Scenario Details: a transposed spec sheet (metrics as rows, scenarios as
+   columns) with an inline ranking bar under each numeric value. */
+.summary-scroll { overflow-x: auto; }
+.summary-table { min-width: 420px; }
+.summary-table th { white-space: nowrap; }
+.summary-table td, .summary-table th { vertical-align: top; }
+.summary-table .summary-label { color: var(--muted); white-space: nowrap; }
+.summary-group td {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--muted); padding-top: 12px; border-bottom: 1px solid var(--border);
+}
+.summary-val { color: var(--fg); }
 
 .offline {
   display: flex;

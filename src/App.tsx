@@ -20,11 +20,10 @@ const GROUPS: { label: string; tabs: { id: Tab; label: string }[] }[] = [
     { id: "accounts", label: "Accounts" },
     { id: "taxes", label: "Taxes" },
   ] },
-  { label: "Decide", tabs: [{ id: "freedom", label: "Freedom" }] },
-];
-const UTILITY: { id: Tab; label: string }[] = [
-  { id: "compare", label: "Compare" },
-  { id: "settings", label: "Settings" },
+  { label: "Decide", tabs: [
+    { id: "freedom", label: "Freedom" },
+    { id: "compare", label: "Compare" },
+  ] },
 ];
 
 /** The single, always-visible home for the age/year lens. Every chart reports in
@@ -207,12 +206,10 @@ export default function App() {
             </div>
           ))}
           <div className="sidebar-spacer" />
-          <div className="sidebar-group">
-            {UTILITY.map((t) => (
-              <button key={t.id} className={tab === t.id ? "navitem active" : "navitem"}
-                onClick={() => setTab(t.id)}>{t.label}</button>
-            ))}
-          </div>
+          <button className={`navitem navitem-gear${tab === "settings" ? " active" : ""}`}
+            title="Settings" onClick={() => setTab("settings")}>
+            <span className="gear-icon" aria-hidden="true">⚙</span> Settings
+          </button>
         </nav>
       </aside>
 

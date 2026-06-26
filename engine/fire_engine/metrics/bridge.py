@@ -76,10 +76,16 @@ def bridge_analysis(result: SimResult) -> dict:
     resources = acc_total[:, t0]  # penalty-free assets just inside retirement
     need_real = ((result.spending_need if result.spending_need is not None
                   else result.expenses) / deflate)
+    tax_real = result.taxes_paid / deflate
     bridge_need = need_real[:, bridge_cols].sum(axis=1)
     first_need = need_real[:, t0]
-    coverage = np.clip(np.divide(resources, bridge_need,
-                                 out=np.full(P, 20.0), where=bridge_need > 1.0), 0.0, 20.0)
+    # Coverage is liquidity vs everything the bridge actually costs — not just
+    # spending, but the income, Roth-conversion, and capital-gains tax those years
+    # realize, paid from the same penalty-free accounts. (runway stays a pure
+    # "years of spending" read, so it keeps the spending-only denominator.)
+    bridge_cost = bridge_need + tax_real[:, bridge_cols].sum(axis=1)
+    coverage = np.clip(np.divide(resources, bridge_cost,
+                                 out=np.full(P, 20.0), where=bridge_cost > 1.0), 0.0, 20.0)
     runway = np.clip(np.divide(resources, first_need,
                                out=np.full(P, 40.0), where=first_need > 1.0), 0.0, 40.0)
     min_accessible = acc_total[:, bridge_cols].min(axis=1)
@@ -98,7 +104,6 @@ def bridge_analysis(result: SimResult) -> dict:
     # capital-gains tax those early years trigger (paid from the same accounts),
     # not just the spending — so fold the realized tax over the window in.
     fund_cols = bridge_cols[:min(5, bridge_cols.size)]
-    tax_real = result.taxes_paid / deflate
     funding_spend = need_real[:, fund_cols].sum(axis=1)
     funding_tax = tax_real[:, fund_cols].sum(axis=1)
     funding_total = float(np.median(funding_spend + funding_tax))

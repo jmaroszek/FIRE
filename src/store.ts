@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api } from "./api";
+import { COMPARE_PALETTE } from "./constants";
 import { getCached, setCacheSchemaVersion } from "./simCache";
 import type {
   BridgeCrashResult, Category, FreedomResult, LadderSavingsResult, MaxSpendResult,
@@ -44,11 +45,20 @@ function withRecordedEarnings(s: Scenario, snapshots: Snapshot[]): Scenario {
 }
 
 export interface CompareSlot {
+  /** Stable identity, independent of the display name, so renaming a pin can't
+   *  break removal or the async sweep that resolves back into its slot. */
+  id: string;
   name: string;
+  /** Line color, bound at pin time and kept for the slot's life (see COMPARE_PALETTE). */
+  color: string;
   scenario: Scenario;
   result: SimulateResult;
   sweep: SweepResult | null;
   sweepPending?: boolean;
+  /** Monte Carlo FIRE number (portfolio needed to clear the success threshold);
+   *  fetched from the freedom endpoint in the background after the slot is pinned. */
+  mcNumber?: number | null;
+  mcPending?: boolean;
 }
 
 interface AppState {
@@ -108,7 +118,9 @@ interface AppState {
   load: (name: string) => Promise<void>;
   remove: (name: string) => Promise<void>;
   addToCompare: () => void;
-  removeFromCompare: (name: string) => void;
+  removeFromCompare: (id: string) => void;
+  renameInCompare: (id: string, name: string) => void;
+  clearCompare: () => void;
   refreshSnapshots: () => Promise<void>;
   setCategories: (categories: Category[]) => void;
   addSnapshot: (snap: Snapshot) => Promise<void>;
@@ -118,6 +130,8 @@ interface AppState {
 
 let simTimer: ReturnType<typeof setTimeout> | null = null;
 let simSeq = 0;
+// monotonic id source for pinned compare slots; identity that outlives renames
+let compareSeq = 0;
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 // the scenario waiting to be autosaved to the workspace; set on every edit and
 // cleared once written. flushWorkspace() drains it immediately (on tab-hide /
@@ -454,29 +468,62 @@ export const useStore = create<AppState>((set, get) => {
       let name = scenario.name + (get().dirty ? " (edited)" : "");
       let n = 2;
       while (compare.some((c) => c.name === name)) name = `${scenario.name} (${n++})`;
+      // First palette hue not already in use, so colors stay stable as slots come
+      // and go; fall back to cycling once every hue is taken.
+      const used = new Set(compare.map((c) => c.color));
+      const color = COMPARE_PALETTE.find((c) => !used.has(c))
+        ?? COMPARE_PALETTE[compare.length % COMPARE_PALETTE.length];
+      const id = `cmp-${++compareSeq}`;
       const snapshot = structuredClone(scenario);
       const slot: CompareSlot = {
-        name, scenario: snapshot, result, sweep, sweepPending: !sweep,
+        id, name, color, scenario: snapshot, result, sweep, sweepPending: !sweep,
+        mcNumber: get().freedom?.fire_number_mc ?? null, mcPending: true,
       };
       set({ compare: [...compare, slot] });
+      // The MC FIRE number lives on the freedom endpoint, not the simulate result;
+      // fetch it for this pinned scenario in the background, resolving back by id.
+      api.freedom(snapshot).then((f) => {
+        set({
+          compare: get().compare.map((c) =>
+            c.id === id ? { ...c, mcNumber: f.fire_number_mc, mcPending: false } : c),
+        });
+      }).catch(() => {
+        set({
+          compare: get().compare.map((c) =>
+            c.id === id ? { ...c, mcPending: false } : c),
+        });
+      });
       if (!sweep) {
-        // compute the success curve for this pinned scenario in the background
+        // compute the success curve for this pinned scenario in the background,
+        // resolving back into its slot by stable id (a rename can't lose it)
         api.sweep(snapshot).then((computed) => {
           set({
             compare: get().compare.map((c) =>
-              c.name === name ? { ...c, sweep: computed, sweepPending: false } : c),
+              c.id === id ? { ...c, sweep: computed, sweepPending: false } : c),
           });
         }).catch(() => {
           set({
             compare: get().compare.map((c) =>
-              c.name === name ? { ...c, sweepPending: false } : c),
+              c.id === id ? { ...c, sweepPending: false } : c),
           });
         });
       }
     },
 
-    removeFromCompare: (name) =>
-      set({ compare: get().compare.filter((c) => c.name !== name) }),
+    removeFromCompare: (id) =>
+      set({ compare: get().compare.filter((c) => c.id !== id) }),
+
+    renameInCompare: (id, name) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      // keep names unique so they stay unambiguous in the legend and table
+      let unique = trimmed;
+      let n = 2;
+      while (get().compare.some((c) => c.id !== id && c.name === unique)) unique = `${trimmed} (${n++})`;
+      set({ compare: get().compare.map((c) => (c.id === id ? { ...c, name: unique } : c)) });
+    },
+
+    clearCompare: () => set({ compare: [] }),
 
     refreshSnapshots: async () => set({ snapshots: await api.snapshots() }),
 

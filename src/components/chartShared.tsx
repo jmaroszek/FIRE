@@ -33,7 +33,15 @@ export function Plot(props: React.ComponentProps<typeof RawPlot>) {
     <div ref={wrapRef} style={{ width: "100%" }}>
       <RawPlot
         {...props}
-        onInitialized={(fig, gd) => { gdRef.current = gd; props.onInitialized?.(fig, gd); }}
+        onInitialized={(fig, gd) => {
+          gdRef.current = gd;
+          // The first draw can measure a stale or zero container width during a
+          // tab's mount reflow, leaving the chart collapsed until something else
+          // nudges it (e.g. pinning another scenario) — the Compare-tab "tiles
+          // won't size" bug. Force a resize to the settled container next frame.
+          requestAnimationFrame(() => { if (gdRef.current) void Plotly.Plots.resize(gdRef.current); });
+          props.onInitialized?.(fig, gd);
+        }}
         onUpdate={(fig, gd) => { gdRef.current = gd; props.onUpdate?.(fig, gd); }}
       />
     </div>
