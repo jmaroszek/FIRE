@@ -6,6 +6,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import Assumptions from "./tabs/Assumptions";
 import CashFlow from "./tabs/CashFlow";
 import Accounts from "./tabs/Accounts";
+import Housing from "./tabs/Housing";
 import Taxes from "./tabs/Taxes";
 import Freedom from "./tabs/Freedom";
 import Compare from "./tabs/Compare";
@@ -18,6 +19,7 @@ const GROUPS: { label: string; tabs: { id: Tab; label: string }[] }[] = [
   { label: "Plan", tabs: [
     { id: "cashflow", label: "Cash Flow" },
     { id: "accounts", label: "Accounts" },
+    { id: "housing", label: "Housing" },
     { id: "taxes", label: "Taxes" },
   ] },
   { label: "Decide", tabs: [
@@ -227,6 +229,7 @@ export default function App() {
             {tab === "assumptions" && <Assumptions />}
             {tab === "cashflow" && <CashFlow />}
             {tab === "accounts" && <Accounts />}
+            {tab === "housing" && <Housing />}
             {tab === "taxes" && <Taxes />}
             {tab === "freedom" && <Freedom />}
             {tab === "compare" && <Compare />}

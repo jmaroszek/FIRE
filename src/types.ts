@@ -184,6 +184,69 @@ export interface LTCConfig {
   extra_inflation: number;
 }
 
+/** Primary residence (today's $ unless noted). One config from which the engine
+ *  derives the mortgage, carrying costs, and an appreciating home asset. The home
+ *  equity rides a separate "net worth including home" line and stays out of the
+ *  withdrawal / FIRE-success math. Off by default. Mirrors engine HousingConfig. */
+export interface HousingConfig {
+  enabled: boolean;
+  // Purchase
+  purchase_age: number;
+  home_price: number;
+  down_payment_pct: number;
+  closing_costs_pct: number;
+  /** Account the up-front cash comes from; null = use the withdrawal policy. */
+  down_payment_account: AccountType | null;
+  // Mortgage
+  loan_term_years: number;
+  loan_type: "fixed" | "arm";
+  mortgage_rate: number;
+  points: number;
+  arm_fixed_years: number;
+  arm_reset_rate: number;
+  // Carrying costs
+  property_tax_rate: number;
+  insurance_annual: number;
+  maintenance_pct: number;
+  appreciation_real: number;
+  pmi_rate: number;
+  // Sale / downsize
+  sale_age?: number | null;
+  selling_costs_pct: number;
+  cap_gains_exclusion: number;
+  cap_gains_rate: number;
+  sale_proceeds_account: AccountType;
+  // Taxes
+  itemize_deductions: boolean;
+}
+
+/** The default HousingConfig (mirror of engine defaults: WI/Madison seed, off). */
+export const DEFAULT_HOUSING: HousingConfig = {
+  enabled: false,
+  purchase_age: 30,
+  home_price: 350000,
+  down_payment_pct: 0.20,
+  closing_costs_pct: 0.03,
+  down_payment_account: "taxable",
+  loan_term_years: 30,
+  loan_type: "fixed",
+  mortgage_rate: 0.065,
+  points: 0,
+  arm_fixed_years: 5,
+  arm_reset_rate: 0.075,
+  property_tax_rate: 0.017,
+  insurance_annual: 1673,
+  maintenance_pct: 0.01,
+  appreciation_real: 0,
+  pmi_rate: 0.0075,
+  sale_age: null,
+  selling_costs_pct: 0.06,
+  cap_gains_exclusion: 250000,
+  cap_gains_rate: 0.15,
+  sale_proceeds_account: "taxable",
+  itemize_deductions: true,
+};
+
 export type EventKind = "one_time_flow" | "recurring_flow" | "regime_change" | "crash";
 
 export interface RegimeOverrides {
@@ -254,6 +317,8 @@ export interface Scenario {
   irmaa: IRMAAConfig;
   /** Long-term / end-of-life care provision; absent = treated as disabled. */
   ltc?: LTCConfig;
+  /** Primary residence; absent = treated as disabled (default config). */
+  housing?: HousingConfig;
   events: FireEvent[];
   sim: SimSettings;
 }
@@ -322,6 +387,16 @@ export interface SimulateResult {
   expenses_fan_real: FanSeries;
   investing_real: Record<string, number[]>;
   liability_balance: number[];
+  /** Housing overlay (today's $), present & non-empty only when housing enabled.
+   *  home_value − home_mortgage = home_equity; net_worth_incl_home adds the home
+   *  value to the financial net-worth fan (the FIRE math itself is unchanged). */
+  home_value_real?: number[];
+  home_mortgage_real?: number[];
+  home_equity_real?: number[];
+  net_worth_incl_home?: FanSeries;
+  /** The plan's typical real portfolio CAGR (median path), mode-agnostic — used by
+   *  rent-vs-buy so Bootstrap mode reflects the dataset's real return, not inputs. */
+  median_real_return?: number;
   // outcome-distribution & robustness views
   ending_balance: { nominal: number[]; real: number[] };
   spending_distribution: { total_real: number[]; years_in_cut: number[] };

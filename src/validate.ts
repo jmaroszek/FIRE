@@ -156,6 +156,52 @@ export function validateScenario(s: Scenario): ValidationIssue[] {
   s.expense_streams.forEach((st) => checkStreamWindow(st, "expense_streams", out));
   s.medical_streams.forEach((st) => checkStreamWindow(st, "medical_streams", out));
 
+  // --- Housing ------------------------------------------------------------
+  const h = s.housing;
+  if (h?.enabled) {
+    if (h.loan_term_years < 1) {
+      out.push({ level: "error", field: "housing.loan_term_years",
+        message: `Loan term (${h.loan_term_years}) must be at least 1 year.` });
+    }
+    if (h.down_payment_pct < 0 || h.down_payment_pct > 1) {
+      out.push({ level: "error", field: "housing.down_payment_pct",
+        message: `Down payment (${(h.down_payment_pct * 100).toFixed(0)}%) must be between 0 and 100%.` });
+    }
+    if (h.home_price < 0) {
+      out.push({ level: "warning", field: "housing.home_price",
+        message: `Home price is negative (${h.home_price}).` });
+    }
+    if (h.purchase_age < startAge) {
+      out.push({ level: "warning", field: "housing.purchase_age",
+        message: `Purchase age (${h.purchase_age}) is before your current age (${startAge}); v1 models a fresh purchase from today onward.` });
+    }
+    if (h.sale_age != null && h.sale_age <= h.purchase_age) {
+      out.push({ level: "warning", field: "housing.sale_age",
+        message: `Sale age (${h.sale_age}) is at or before the purchase age (${h.purchase_age}).` });
+    }
+    // Double-count guard: the Housing config already generates the mortgage and
+    // the property-tax / insurance / maintenance costs. Flag manual rows that
+    // duplicate them so the two don't stack.
+    const mortgageRe = /mortgage|home\s*loan|house\s*loan/i;
+    const homeCostRe = /property\s*tax|home\s*insurance|home\s*maintenance|homeowners?\s*insurance/i;
+    (s.liabilities ?? []).forEach((l) => {
+      if (mortgageRe.test(l.name))
+        out.push({ level: "warning", field: `liabilities[${l.name}]`,
+          message: `"${l.name}" looks like a mortgage, but Housing already models one — remove it to avoid double-counting.` });
+    });
+    s.expense_streams.forEach((e) => {
+      if (homeCostRe.test(e.name))
+        out.push({ level: "warning", field: `expense_streams[${e.name}]`,
+          message: `"${e.name}" duplicates a cost Housing already adds — remove it or it will double-count.` });
+    });
+    const buyEventRe = /down\s*payment|home\s*purchase|house\s*purchase|buy(ing)?\s*(a\s*)?(house|home)/i;
+    s.events.forEach((e) => {
+      if (buyEventRe.test(e.name))
+        out.push({ level: "warning", field: `events[${e.name}]`,
+          message: `"${e.name}" looks like a home purchase, but Housing already models the down payment — remove this event to avoid double-counting.` });
+    });
+  }
+
   return out;
 }
 

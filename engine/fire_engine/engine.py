@@ -41,6 +41,7 @@ from .scenario import (
     AccountType,
     Allocation,
     EventKind,
+    ExpenseStream,
     ROTH_TYPES,
     SS_CLAIMING_FACTORS,
     Scenario,
@@ -107,6 +108,168 @@ def _liability_schedule(scenario: Scenario, T: int) -> tuple[np.ndarray, np.ndar
     return payments, balance
 
 
+def _annual_payment(principal: float, rate: float, n_years: int) -> float:
+    """Level annual mortgage payment that amortizes `principal` over `n_years`."""
+    if principal <= 0.0 or n_years <= 0:
+        return 0.0
+    if rate <= 1e-12:
+        return principal / n_years
+    return principal * rate / (1.0 - (1.0 + rate) ** (-n_years))
+
+
+@dataclass
+class HousingSchedule:
+    """Deterministic home lifecycle: a nominal contract like a liability.
+
+    All arrays are off the mean-inflation path (identical across paths). Effects
+    are timed so the home asset, the mortgage balance, and the down-payment cash
+    outflow all land at the SAME net-worth boundary — no spurious step at purchase.
+    The down payment is a forced withdrawal in year `purchase_t` (it lands at the
+    next boundary, where the home and mortgage first appear); ownership costs and
+    payments begin the following year. See the frontend `xValues` for why the
+    home appears at boundary `purchase_t + 1` (plotted at the purchase age).
+    """
+
+    home_value: np.ndarray         # (T+1,) nominal; 0 when not owned
+    mortgage_balance: np.ndarray   # (T+1,) nominal; 0 when not owned
+    payment: np.ndarray            # (T,) nominal P&I each year (rides liab_payments)
+    interest: np.ndarray           # (T,) nominal interest portion (for itemization)
+    property_tax: np.ndarray       # (T,) nominal property tax (deterministic; itemization)
+    down_outflow: float            # nominal cash out at purchase (down + closing + points)
+    purchase_t: int                # sim-year index of the down-payment outflow
+    down_account: AccountType | None  # None = drawn via the withdrawal policy
+    sale_t: int | None             # sim-year index of the sale windfall, or None
+    sale_proceeds: float           # nominal net proceeds deposited at sale
+    sale_account: AccountType
+
+
+def _housing_schedule(scenario: Scenario, T: int) -> "HousingSchedule | None":
+    """Derive the whole home from `scenario.housing` (None when disabled).
+
+    Sizes the nominal mortgage from the today's-$ inputs off the mean-inflation
+    path, so the inputs and the loan can never drift; amortizes annually (fixed
+    or a single ARM reset); and, for a sale, computes net proceeds after payoff,
+    selling costs, and the gain above the §121 primary-residence exclusion.
+    """
+    h = scenario.housing
+    if not h.enabled:
+        return None
+    start_age = scenario.start_age
+    pt = max(h.purchase_age - start_age, 0)       # down-payment year
+    if pt >= T:
+        return None                               # purchase at/after the horizon
+    own0 = pt + 1                                  # boundary ownership begins (purchase age)
+
+    mean = scenario.inflation.mean
+    g = (1.0 + mean) * (1.0 + h.appreciation_real) - 1.0  # nominal home appreciation
+
+    # optional sale: proceeds land at boundary sale_t+1; held through boundary sale_t
+    sale_t: int | None = None
+    if h.sale_age is not None:
+        s = h.sale_age - start_age
+        if own0 <= s <= T:
+            sale_t = s
+    last = sale_t if sale_t is not None else T     # last boundary the home is held
+
+    home_value = np.zeros(T + 1)
+    mortgage_balance = np.zeros(T + 1)
+    payment = np.zeros(T)
+    interest = np.zeros(T)
+    property_tax = np.zeros(T)
+
+    # nominal price = the home's value at the purchase age (boundary own0)
+    price = h.home_price * (1.0 + g) ** pt
+    loan0 = (1.0 - h.down_payment_pct) * price
+    down_outflow = (h.down_payment_pct + h.closing_costs_pct) * price + h.points * loan0
+
+    for t in range(own0, last + 1):
+        home_value[t] = price * (1.0 + g) ** (t - own0)
+
+    # annual amortization; loan originates at boundary own0, first payment year own0
+    bal = loan0
+    rate = h.mortgage_rate
+    pay = _annual_payment(loan0, rate, h.loan_term_years)
+    for t in range(own0, last + 1):
+        mortgage_balance[t] = bal
+        if t >= T:
+            break                                  # boundary T has no year to process
+        if sale_t is not None and t == sale_t:
+            break                                  # sale year: paid off via proceeds, no carry
+        if h.loan_type == "arm" and (t - own0) == h.arm_fixed_years and bal > 1e-9:
+            rate = h.arm_reset_rate
+            pay = _annual_payment(bal, rate, max(h.loan_term_years - h.arm_fixed_years, 1))
+        if bal > 1e-9:
+            intr = bal * rate
+            principal = min(pay - intr, bal)
+            interest[t] = intr
+            payment[t] = intr + principal
+            bal = bal - principal
+        property_tax[t] = h.property_tax_rate * home_value[t]  # year-t deductible (itemization)
+
+    sale_proceeds = 0.0
+    if sale_t is not None:
+        value = home_value[sale_t]
+        payoff = mortgage_balance[sale_t]
+        costs = h.selling_costs_pct * value
+        gain = max(value - price - costs, 0.0)
+        exclusion = h.cap_gains_exclusion * (1.0 + mean) ** sale_t
+        cap_tax = h.cap_gains_rate * max(gain - exclusion, 0.0)
+        sale_proceeds = max(value - payoff - costs - cap_tax, 0.0)
+
+    return HousingSchedule(
+        home_value=home_value, mortgage_balance=mortgage_balance, payment=payment,
+        interest=interest, property_tax=property_tax, down_outflow=down_outflow,
+        purchase_t=pt, down_account=h.down_payment_account, sale_t=sale_t,
+        sale_proceeds=sale_proceeds, sale_account=h.sale_proceeds_account,
+    )
+
+
+def _expand_housing_streams(scenario: Scenario) -> Scenario:
+    """A copy of `scenario` with the home's carrying costs appended as essential
+    expense streams (no-op when housing is disabled). Property tax and maintenance
+    scale with the home's real appreciation; insurance is flat real. Costs run from
+    the year after purchase (when payments begin) through the last owned year.
+    """
+    h = scenario.housing
+    if not h.enabled:
+        return scenario
+    start_age = scenario.start_age
+    pt = max(h.purchase_age - start_age, 0)
+    own_age = start_age + pt + 1                    # carrying costs begin with payments
+    last_age = (h.sale_age - 1 if h.sale_age is not None and h.sale_age - start_age > pt + 1
+                else scenario.profile.horizon_age)
+    if own_age > last_age:
+        return scenario
+    extra = h.appreciation_real                     # carrying costs track real appreciation
+    new = [
+        ExpenseStream(name="Property Tax", annual=h.property_tax_rate * h.home_price,
+                      start_age=own_age, end_age=last_age, extra_inflation=extra,
+                      essential=True),
+        ExpenseStream(name="Home Insurance", annual=h.insurance_annual,
+                      start_age=own_age, end_age=last_age, essential=True),
+        ExpenseStream(name="Home Maintenance", annual=h.maintenance_pct * h.home_price,
+                      start_age=own_age, end_age=last_age, extra_inflation=extra,
+                      essential=True),
+    ]
+    # PMI: a flat nominal cost when the down payment is under 20%, ending once the
+    # loan amortizes to 78% of the original value (HPA auto-termination). The cutoff
+    # is timed off the initial rate — a documented approximation for ARMs.
+    if h.down_payment_pct < 0.20 and h.pmi_rate > 0:
+        mean = scenario.inflation.mean
+        g = (1.0 + mean) * (1.0 + h.appreciation_real) - 1.0
+        price = h.home_price * (1.0 + g) ** pt
+        loan0 = (1.0 - h.down_payment_pct) * price
+        pay = _annual_payment(loan0, h.mortgage_rate, h.loan_term_years)
+        bal, yrs = loan0, 0
+        while bal > 0.78 * price and yrs < h.loan_term_years:
+            bal = bal * (1.0 + h.mortgage_rate) - min(pay, bal * (1.0 + h.mortgage_rate))
+            yrs += 1
+        pmi_end = min(own_age + max(yrs - 1, 0), last_age)
+        new.append(ExpenseStream(name="PMI", annual=h.pmi_rate * loan0, start_age=own_age,
+                                 end_age=pmi_end, inflates=False, essential=True))
+    return scenario.model_copy(update={"expense_streams": list(scenario.expense_streams) + new})
+
+
 @dataclass
 class SimResult:
     scenario: Scenario
@@ -125,6 +288,11 @@ class SimResult:
     contributions: np.ndarray  # (P, T) nominal total contributions
     contrib_pools: dict[str, np.ndarray] | None = None  # destination -> (P, T) nominal
     liability_balance: np.ndarray | None = None  # (T+1,) nominal outstanding debt
+    # Housing overlay (deterministic, off the mean-inflation path; None when housing
+    # is disabled). The home is an asset reported alongside net worth but kept OUT
+    # of the spendable pool. home_mortgage_balance is already inside liability_balance.
+    home_value: np.ndarray | None = None  # (T+1,) nominal home value
+    home_mortgage_balance: np.ndarray | None = None  # (T+1,) nominal outstanding mortgage
     conversion_marginal_rate: np.ndarray | None = None  # (P, T) marginal tax on next conversion $
     conversion_tax: np.ndarray | None = None  # (P, T) nominal tax attributable to the year's Roth
     # conversion (year's income tax minus its no-conversion counterfactual) — the added tax the
@@ -494,6 +662,26 @@ def run(
 
     liab_payments, liab_balance = _liability_schedule(scenario, T)
 
+    # Housing: derive the mortgage (rides the liability channels — payment is an
+    # essential expense, balance reduces net worth) and the appreciating home
+    # asset (a separate overlay kept OUT of the spendable pool). The down payment
+    # (forced outflow) and sale (windfall) are injected in-loop at their years.
+    # Carrying-cost streams are expanded onto a working copy; the original scenario
+    # is returned in the result so the round-trip stays clean.
+    original_scenario = scenario
+    housing = _housing_schedule(scenario, T)
+    if housing is not None:
+        scenario = _expand_housing_streams(scenario)
+        liab_payments = liab_payments + housing.payment
+        liab_balance = liab_balance + housing.mortgage_balance
+    housing_forced: dict[int, tuple] = {}
+    housing_windfall: dict[int, tuple] = {}
+    if housing is not None:
+        if 0 <= housing.purchase_t < T and housing.down_outflow > 0:
+            housing_forced[housing.purchase_t] = (housing.down_account, housing.down_outflow)
+        if housing.sale_t is not None and 0 <= housing.sale_t < T and housing.sale_proceeds > 0:
+            housing_windfall[housing.sale_t] = (housing.sale_account, housing.sale_proceeds)
+
     # result arrays
     nw = np.zeros((P, T + 1))
     nw[:, 0] = state.total_net_worth() - liab_balance[0]
@@ -663,6 +851,19 @@ def run(
             else:
                 src = _FORCED_SOURCE[ev.account]
                 forced[src] = forced.get(src, 0) + amount_nom
+        # housing: down payment at purchase (from a chosen account, realizing any
+        # gains; None routes it through the withdrawal policy like a general outflow);
+        # net sale proceeds (windfall) at the sale year. Deterministic nominal scalars.
+        if t in housing_forced:
+            _acct, _amt = housing_forced[t]
+            if _acct is None:
+                general_out = general_out + (zeros + _amt)
+            else:
+                _src = _FORCED_SOURCE[_acct]
+                forced[_src] = forced.get(_src, 0) + (zeros + _amt)
+        if t in housing_windfall:
+            _acct, _amt = housing_windfall[t]
+            windfalls.append((_acct, zeros + _amt))
 
         cash_interest = state.cash * paths.cash[:, t]
         dividends = state.taxable * regime.weights[0] * div_yield
@@ -676,6 +877,16 @@ def run(
         else:
             bracket_top_nom = taxmod.ordinary_bracket_top(conv_rule.bracket_top, tables, infl)
         std_nom = tables_eff.standard_deduction * infl
+
+        # Housing itemized deduction (nominal): mortgage interest + property tax
+        # capped at the SALT limit ($10k, treated as today's $ and inflated). The
+        # tax engine takes max(standard, itemized). SALT is applied to property tax
+        # alone (state income tax is not stacked into the cap) — a documented
+        # simplification; see docs/ASSUMPTIONS.md.
+        itemized_nom = zeros
+        if housing is not None and scenario.housing.itemize_deductions:
+            salt = np.minimum(housing.property_tax[t], 10000.0 * infl)
+            itemized_nom = housing.interest[t] + salt
 
         # Bracket-filled decumulation ceiling (59.5+ only). The traditional
         # spending draw is capped so its ordinary income tops out here; the
@@ -718,6 +929,7 @@ def run(
                 withdrawal_penalty_base=w_penalty, ss_benefits=ss_nom,
                 tables=tables, tables_eff=tables_eff, infl=infl,
                 state_rate=scenario.profile.state_tax_rate,
+                itemized=itemized_nom,
             )
             ordinary_excl_ss = tax.ordinary_excl_ss
             ltcg = tax.ltcg
@@ -827,7 +1039,7 @@ def run(
         # what filling the bracket one notch higher would actually cost.
         bump = 1000.0 * infl
         ss_bumped = taxmod.taxable_social_security(ordinary_excl_ss + bump + ltcg, ss_nom, tables)
-        fed_b, ot_b, lt_b = taxmod.federal_tax(ordinary_excl_ss + bump + ss_bumped, ltcg, tables_eff, infl)
+        fed_b, ot_b, lt_b = taxmod.federal_tax(ordinary_excl_ss + bump + ss_bumped, ltcg, tables_eff, infl, itemized_nom)
         tax_b = fed_b + scenario.profile.state_tax_rate * (ot_b + lt_b)
         conv_marginal_rate[:, t] = (tax_b - (fed + state_tax)) / bump
 
@@ -840,7 +1052,7 @@ def run(
         if conv_active:
             oe_nc = ordinary_excl_ss - conv
             ss_nc = taxmod.taxable_social_security(oe_nc + ltcg, ss_nom, tables)
-            fed_nc, ot_nc, lt_nc = taxmod.federal_tax(oe_nc + ss_nc, ltcg, tables_eff, infl)
+            fed_nc, ot_nc, lt_nc = taxmod.federal_tax(oe_nc + ss_nc, ltcg, tables_eff, infl, itemized_nom)
             tax_nc = fed_nc + scenario.profile.state_tax_rate * (ot_nc + lt_nc)
             conv_tax_out[:, t] = np.maximum((fed + state_tax) - tax_nc, 0.0)
 
@@ -928,7 +1140,7 @@ def run(
     legacy_met = real_ending >= legacy_target if legacy_target > 0 else np.ones(P, dtype=bool)
 
     return SimResult(
-        scenario=scenario,
+        scenario=original_scenario,
         ages=np.arange(start_age, start_age + T),
         years=np.arange(scenario.sim.start_year, scenario.sim.start_year + T),
         cum_inflation=paths.cum_inflation,
@@ -944,6 +1156,8 @@ def run(
         contributions=contributions_out,
         contrib_pools=contrib_pools_out,
         liability_balance=liab_balance,
+        home_value=(housing.home_value if housing is not None else None),
+        home_mortgage_balance=(housing.mortgage_balance if housing is not None else None),
         conversion_marginal_rate=conv_marginal_rate,
         conversion_tax=conv_tax_out,
         effective_rate=effective_rate_out,

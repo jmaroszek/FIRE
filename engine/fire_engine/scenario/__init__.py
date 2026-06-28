@@ -45,6 +45,9 @@ from .health import (
     IRMAAConfig,
     LTCConfig,
 )
+from .housing import (
+    HousingConfig,
+)
 from .events import (
     RegimeOverrides,
     Event,

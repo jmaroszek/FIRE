@@ -21,6 +21,44 @@ from .timeseries import (
 )
 
 
+def _home_series_real(result: SimResult, arr) -> list:
+    """Median real (today's $) of a deterministic (T+1,) nominal home series,
+    deflated by each path's cumulative inflation. Empty when housing is off."""
+    if arr is None:
+        return []
+    return np.median(arr[None, :] / result.cum_inflation, axis=0).tolist()
+
+
+def _home_equity_real(result: SimResult) -> list:
+    """Median real home equity (value − mortgage). Empty when housing is off."""
+    if result.home_value is None or result.home_mortgage_balance is None:
+        return []
+    equity = result.home_value - result.home_mortgage_balance
+    return np.median(equity[None, :] / result.cum_inflation, axis=0).tolist()
+
+
+def _median_real_return(result: SimResult) -> float:
+    """The plan's typical real portfolio CAGR: each path's geometric-mean real
+    annual return, taken at the median. Mode-agnostic — in Historical Bootstrap it
+    reflects the dataset's realized real return, not the (ignored) entered CAGRs."""
+    if result.port_return is None:
+        return 0.0
+    infl = result.cum_inflation[:, 1:] / result.cum_inflation[:, :-1] - 1.0
+    real = (1.0 + result.port_return) / (1.0 + infl) - 1.0
+    geo = np.expm1(np.mean(np.log1p(real), axis=1))  # per-path geometric mean
+    return float(np.median(geo))
+
+
+def _nwih_fan(result: SimResult) -> dict:
+    """Real net-worth-including-home percentile fan: the financial net-worth fan
+    plus the (deterministic) home value. The FIRE math itself is unchanged — this
+    is a reported overlay only. Empty when housing is off."""
+    if result.home_value is None:
+        return {}
+    real = (result.net_worth + result.home_value[None, :]) / result.cum_inflation
+    return {f"p{p}": np.percentile(real, p, axis=0).tolist() for p in (5, 25, 50, 75, 95)}
+
+
 def summarize(result: SimResult) -> dict:
     """The standard metric bundle the API returns alongside the fan."""
     sweep = None  # computed separately (expensive)
@@ -62,6 +100,13 @@ def summarize(result: SimResult) -> dict:
             result.liability_balance.tolist()
             if result.liability_balance is not None else []
         ),
+        # Housing overlay (today's $). The home is reported alongside net worth but
+        # stays out of the FIRE-success math; these are empty when housing is off.
+        "home_value_real": _home_series_real(result, result.home_value),
+        "home_mortgage_real": _home_series_real(result, result.home_mortgage_balance),
+        "home_equity_real": _home_equity_real(result),
+        "net_worth_incl_home": _nwih_fan(result),
+        "median_real_return": _median_real_return(result),
         # outcome-distribution & robustness views (ride every /simulate run)
         "ending_balance": ending_balance_distribution(result),
         "spending_distribution": spending_distribution(result),

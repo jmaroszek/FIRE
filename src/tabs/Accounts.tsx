@@ -11,6 +11,7 @@ import {
 import { ACCOUNT_LABELS, POOL_LABELS, SOURCE_LABELS } from "../labels";
 import { useShallow } from "zustand/react/shallow";
 import { median, percentile } from "../math";
+import { housingDerived } from "../housing";
 import { PENALTY_FREE_AGE } from "../constants";
 import { useStore } from "../store";
 import type {
@@ -175,6 +176,9 @@ export default function Accounts() {
   const assets = Object.values(pools).reduce((a, b) => a + b, 0);
   const debt = (s.liabilities ?? []).reduce((a, l) => a + l.balance, 0);
   const total = assets - debt;
+  // The mortgage the Housing config generates, shown read-only so it's visible
+  // here without letting this tab and the Housing tab drift apart.
+  const derivedHousing = s.housing ? housingDerived(s.housing, startAge, s.profile.horizon_age) : null;
 
   // Growth-section headline metrics (median path, real $)
   const endingRealMedian = result ? result.fan.real.p50[result.fan.real.p50.length - 1] : 0;
@@ -226,6 +230,17 @@ export default function Accounts() {
         <Section title="Net Worth" className="span1">
           <Stat label={debt > 0 ? "Assets Minus Liabilities" : "Total Across All Pools"}
             value={fmtMoney(total)} />
+          {s.housing?.enabled && result?.net_worth_incl_home?.p50?.length && (() => {
+            const incl = result.net_worth_incl_home.p50;
+            const fin = result.fan.real.p50;
+            const homeAtEnd = incl[incl.length - 1] - fin[fin.length - 1];
+            return (
+              <Stat label="Ending Net Worth (Incl. Home)"
+                info="Median ending net worth in today's dollars with home equity added back. The home lifts your reported wealth but never funds the FIRE-success math — see the Housing tab."
+                value={fmtMoney(incl[incl.length - 1])}
+                sub={`+${fmtMoney(homeAtEnd)} home equity vs spendable-only`} />
+            );
+          })()}
           <div className="acc-scroll">
           <table className="table">
             <tbody>
@@ -299,7 +314,7 @@ export default function Accounts() {
               name: "New Loan", balance: 0, interest_rate: 0.05, annual_payment: 0,
             }] })}>+ Add Loan</button>
         }>
-        {(s.liabilities ?? []).length > 0 ? (
+        {(s.liabilities ?? []).length > 0 || derivedHousing ? (
           <div style={{ maxHeight: 280, overflowY: "auto" }}>
           <table className="table">
             <thead>
@@ -311,6 +326,18 @@ export default function Accounts() {
               </tr>
             </thead>
             <tbody>
+              {derivedHousing && (
+                <tr title="Generated from your Housing config — edit it on the Housing tab"
+                  style={{ opacity: 0.75 }}>
+                  <td className="namecell">🏠 Mortgage (Housing)</td>
+                  <td style={{ color: "#8b949e" }}>{fmtMoney(derivedHousing.mortgage.loanToday)}</td>
+                  <td style={{ color: "#8b949e" }}>{fmtPct(derivedHousing.mortgage.rate)}</td>
+                  <td style={{ color: "#8b949e" }}>{fmtMoney(derivedHousing.mortgage.annualPaymentToday)}</td>
+                  <td style={{ color: "#8b949e" }}>{derivedHousing.mortgage.startAge}</td>
+                  <td style={{ color: "#8b949e" }}>Age {derivedHousing.mortgage.payoffAge}</td>
+                  <td title="Locked — managed on the Housing tab">🔒</td>
+                </tr>
+              )}
               {(s.liabilities ?? []).map((l, i) => (
                 <tr key={i}>
                   <td className="namecell"><input value={l.name}
@@ -333,6 +360,13 @@ export default function Accounts() {
           </div>
         ) : (
           <p className="hint">Mortgage, car loan, business loans. Payments count as essential non-inflating expenses; the outstanding balance reduces net worth.</p>
+        )}
+        {derivedHousing && (
+          <p className="hint">
+            🏠 Your home loan is generated from the <strong>Housing</strong> config
+            and shown here read-only — don't add a second mortgage loan, or it'll
+            double-count. Edit it on the Housing tab.
+          </p>
         )}
       </Section>
 

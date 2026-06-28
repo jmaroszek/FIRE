@@ -83,6 +83,30 @@ Liquidity & Drawdown / History):
 
 ---
 
+## Housing — your home as a first-class asset
+
+One config in today's dollars from which the engine derives the whole home, so a
+home you don't yet own stops *understating* your net worth (a mortgage with no
+offsetting asset) and the unit traps of hand-assembling a loan + down payment +
+expense streams become impossible:
+
+- **Home & mortgage** — purchase age, price, down payment, term, rate (fixed or
+  ARM), points, property tax / insurance / maintenance, and appreciation; the
+  engine derives the nominal mortgage, the down-payment outflow, and the carrying
+  costs from this one place. PMI auto-applies under 20% down and ends at 78% LTV.
+- **Equity over time** — home value, mortgage owed, and the equity between them,
+  plus a **net worth *including* home** line. The home equity is reported but kept
+  **out** of the FIRE-success math — you can't spend your house.
+- **Sale / downsize** — optionally sell at a chosen age and move the net equity
+  (after selling costs and the §121 cap-gains exclusion) into a liquid account.
+- **Loan comparison & rent-vs-buy** — instant client-side what-ifs: 15- vs 30-yr,
+  fixed vs ARM, points, and whether buying beats renting-and-investing over your
+  holding period.
+- **Itemized deductions** — mortgage interest + (SALT-capped) property tax are
+  itemized in the years they beat the standard deduction.
+
+---
+
 ## Taxes — the consequence scoreboard
 
 ![Taxes tab](img/taxes.png)

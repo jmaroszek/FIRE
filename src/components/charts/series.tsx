@@ -22,6 +22,8 @@ export const SeriesChart = React.memo(function SeriesChart(props: {
   markers?: { shapes: Partial<Shape>[]; annotations: any[] };
   refLines?: { value: number; label: string; color?: string }[];
   height?: number; legend?: boolean;
+  /** Omit the x-axis title so a bottom legend can't overlap it. */
+  hideXTitle?: boolean;
 }) {
   const data: Data[] = props.series.map((s) => ({
     x: props.x, y: s.values, type: "scatter", mode: "lines", name: s.name,
@@ -54,7 +56,8 @@ export const SeriesChart = React.memo(function SeriesChart(props: {
           ticksuffix: props.yFormat === "multiplier" ? "×" : undefined,
           rangemode: "tozero",
         },
-        xaxis: { ...baseLayout.xaxis, title: { text: props.axisMode === "age" ? "Age" : "Year" } },
+        xaxis: { ...baseLayout.xaxis,
+          title: props.hideXTitle ? undefined : { text: props.axisMode === "age" ? "Age" : "Year" } },
         title: { text: props.title, font: { size: 14 } },
       }}
       config={config}
@@ -68,6 +71,10 @@ export const PercentileFanChart = React.memo(function PercentileFanChart(props: 
   color?: string; markers?: { shapes: Partial<Shape>[]; annotations: any[] };
   refLines?: { value: number; label: string; color?: string }[]; height?: number;
   yRange?: [number, number];
+  /** Drop the wide outer (5–95%) band — keeps the y-axis tight on the bulk of paths. */
+  showOuterBand?: boolean;
+  /** Omit the x-axis title (frees the bottom margin so the legend can't overlap it). */
+  hideXTitle?: boolean;
 }) {
   const c = props.color ?? ACCENT;
   const band = (lo: string, hi: string, alpha: string, label: string): Data[] => [
@@ -77,7 +84,7 @@ export const PercentileFanChart = React.memo(function PercentileFanChart(props: 
       fillcolor: c + alpha, line: { width: 0 }, name: label, hoverinfo: "skip" },
   ];
   const data: Data[] = [
-    ...band("p5", "p95", "12", "5–95% Of Paths"),
+    ...(props.showOuterBand === false ? [] : band("p5", "p95", "12", "5–95% Of Paths")),
     ...band("p25", "p75", "24", "25–75% Of Paths"),
     { x: props.x, y: props.fan.p50, type: "scatter", mode: "lines", name: "Median",
       line: { color: c, width: 2 }, hovertemplate: `${yHover(props.yFormat)}<extra></extra>` },
@@ -106,7 +113,7 @@ export const PercentileFanChart = React.memo(function PercentileFanChart(props: 
           ...(props.yRange ? { range: props.yRange, autorange: false } : {}),
         },
         xaxis: { ...baseLayout.xaxis, showspikes: false,
-          title: { text: props.axisMode === "age" ? "Age" : "Year" } },
+          title: props.hideXTitle ? undefined : { text: props.axisMode === "age" ? "Age" : "Year" } },
         title: { text: props.title, font: { size: 14 } },
       }}
       config={config}

@@ -102,18 +102,21 @@ def ltcg_stacked_tax(ordinary_taxable: np.ndarray, ltcg_taxable: np.ndarray,
 
 
 def federal_tax(ordinary_income: np.ndarray, ltcg_income: np.ndarray,
-                tables: TaxTables, infl: np.ndarray | float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+                tables: TaxTables, infl: np.ndarray | float,
+                itemized: np.ndarray | float = 0.0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Federal tax given gross ordinary income and gross LTCG income.
 
-    The standard deduction applies to ordinary income first; any remainder
-    shields LTCG. Returns (total_federal, ordinary_taxable, ltcg_taxable).
+    The deduction (the larger of the standard deduction and `itemized`, both
+    nominal) applies to ordinary income first; any remainder shields LTCG.
+    Returns (total_federal, ordinary_taxable, ltcg_taxable).
     """
     ordinary_income = np.maximum(np.asarray(ordinary_income, dtype=float), 0.0)
     ltcg_income = np.maximum(np.asarray(ltcg_income, dtype=float), 0.0)
     infl_arr = np.asarray(infl, dtype=float)
     std = tables.standard_deduction * infl_arr
-    ordinary_taxable = np.maximum(ordinary_income - std, 0.0)
-    leftover_deduction = np.maximum(std - ordinary_income, 0.0)
+    deduction = np.maximum(std, np.asarray(itemized, dtype=float))
+    ordinary_taxable = np.maximum(ordinary_income - deduction, 0.0)
+    leftover_deduction = np.maximum(deduction - ordinary_income, 0.0)
     ltcg_taxable = np.maximum(ltcg_income - leftover_deduction, 0.0)
     tax = bracket_tax(ordinary_taxable, tables.ordinary_thresholds, tables.ordinary_rates, infl)
     tax = tax + ltcg_stacked_tax(ordinary_taxable, ltcg_taxable, tables, infl)
@@ -196,6 +199,7 @@ def income_tax(
     tables_eff: TaxTables,
     infl: np.ndarray | float,
     state_rate: float,
+    itemized: np.ndarray | float = 0.0,
 ) -> IncomeTax:
     """Total income tax for one year, co-resolving the Social Security
     provisional-income test (the "tax torpedo") and LTCG stacking.
@@ -215,7 +219,7 @@ def income_tax(
     ltcg = dividends + withdrawal_ltcg
     taxable_ss = taxable_social_security(ordinary_excl_ss + ltcg, ss_benefits, tables)
     ordinary = ordinary_excl_ss + taxable_ss
-    fed, ord_taxable, ltcg_taxable = federal_tax(ordinary, ltcg, tables_eff, infl)
+    fed, ord_taxable, ltcg_taxable = federal_tax(ordinary, ltcg, tables_eff, infl, itemized)
     state = state_rate * (ord_taxable + ltcg_taxable)
     fica = fica_tax(wages, tables, infl)
     penalty = tables.early_penalty * withdrawal_penalty_base

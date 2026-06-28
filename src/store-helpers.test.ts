@@ -6,8 +6,10 @@ import { normalizeScenario, sweepKey } from "./store";
 // invariant (the per-stream inflation control was removed from the UI); medical
 // streams keep their own CPI+ control and must be left untouched.
 describe("normalizeScenario", () => {
+  // `housing` is present so the backfill in normalizeScenario is a no-op here —
+  // these cases exercise only the expense-stream invariant.
   const withStreams = (expense_streams: unknown[], medical_streams: unknown[] = []) =>
-    ({ expense_streams, medical_streams } as unknown as Scenario);
+    ({ expense_streams, medical_streams, housing: { enabled: false } } as unknown as Scenario);
 
   it("forces inflates=true and zeroes extra_inflation on expense streams", () => {
     const s = withStreams([{ name: "Rent", annual: 20000, inflates: false, extra_inflation: 0.02 }]);

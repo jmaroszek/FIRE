@@ -17,6 +17,9 @@ interface Props {
   retirementAge: number;
   onEventAge: (index: number, age: number) => void;
   onRetirementAge: (age: number) => void;
+  /** Read-only markers derived from another tab (e.g. a Housing purchase/sale).
+   *  Drawn as hollow diamonds — visible but not draggable, owned elsewhere. */
+  derivedMarkers?: { age: number; label: string; color: string }[];
 }
 
 type Drag = { type: "event"; index: number } | { type: "retire" } | null;
@@ -154,6 +157,22 @@ export default function TimelineEditor(props: Props) {
             </text>
             <line x1={x} y1={y + 9} x2={x} y2={axisY} stroke={color} strokeWidth={0.6}
               opacity={0.45} />
+          </g>
+        );
+      })}
+
+      {/* derived (read-only) markers — hollow diamonds, owned by another tab */}
+      {(props.derivedMarkers ?? []).map((mk, i) => {
+        const x = ageToX(Math.min(Math.max(mk.age, minAge), maxAge));
+        return (
+          <g key={`dm-${i}`}>
+            <line x1={x} y1={TOP_PAD + 2} x2={x} y2={axisY} stroke={mk.color}
+              strokeWidth={0.8} strokeDasharray="2 3" opacity={0.5} />
+            <rect x={x - 6} y={TOP_PAD - 4} width={12} height={12} fill="none"
+              stroke={mk.color} strokeWidth={1.5} transform={`rotate(45 ${x} ${TOP_PAD + 2})`} />
+            <text x={x} y={TOP_PAD - 8} fill={mk.color} fontSize={11} textAnchor="middle">
+              {mk.label}
+            </text>
           </g>
         );
       })}

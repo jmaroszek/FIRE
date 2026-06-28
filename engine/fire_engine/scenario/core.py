@@ -15,6 +15,7 @@ from .spending import (
     WithdrawalPolicy, default_waterfall,
 )
 from .health import ACAConfig, HSARule, IRMAAConfig, LTCConfig, SocialSecurity
+from .housing import HousingConfig
 from .events import Event
 
 
@@ -76,6 +77,11 @@ class Scenario(BaseModel):
     # Long-term / end-of-life care provision (off by default). When enabled it
     # adds a late-life essential, HSA-eligible medical expense over its window.
     ltc: LTCConfig = LTCConfig()
+    # Primary residence (off by default). When enabled it derives the mortgage,
+    # carrying costs, and an appreciating home asset from one today's-$ config;
+    # the home equity rides a separate net-worth line and stays out of the
+    # withdrawal / FIRE-success math.
+    housing: HousingConfig = HousingConfig()
     events: list[Event] = Field(default_factory=list)
     sim: SimSettings = SimSettings()
 
@@ -124,6 +130,17 @@ def validate_invariants(scenario: Scenario) -> list[str]:
         errors.append(f"allocation must sum to 1.0 (stocks+bonds+cash = {total:.4f})")
     if scenario.sim.n_paths < 1:
         errors.append(f"n_paths ({scenario.sim.n_paths}) must be at least 1")
+    h = scenario.housing
+    if h.enabled:
+        # A non-positive term divides by zero in the amortization; an out-of-range
+        # down payment yields a negative loan or a negative up-front outflow.
+        if h.loan_term_years < 1:
+            errors.append(
+                f"housing loan term ({h.loan_term_years}) must be at least 1 year")
+        if not 0.0 <= h.down_payment_pct <= 1.0:
+            errors.append(
+                f"housing down payment ({h.down_payment_pct:.2f}) must be a "
+                f"fraction in [0, 1]")
     return errors
 
 

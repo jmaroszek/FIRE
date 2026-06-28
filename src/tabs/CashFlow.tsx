@@ -9,6 +9,7 @@ import {
   Section, SectionNav, Stat, fmtMoney, fmtPct,
 } from "../components/ui";
 import { KIND_META, KIND_ORDER, displayKindOf, newEventOf, type DisplayKind } from "../events";
+import { housingDerived } from "../housing";
 import { useShallow } from "zustand/react/shallow";
 import { HSA_PENALTY_FREE_AGE, PENALTY_FREE_AGE } from "../constants";
 import { api } from "../api";
@@ -159,6 +160,9 @@ export default function CashFlow() {
   const s = scenario;
   const up = (patch: Partial<Scenario>) => setScenario({ ...s, ...patch });
   const startAge = s.sim.start_year - s.profile.birth_year;
+  // Read-only primitives the Housing config generates (mortgage, purchase/sale,
+  // carrying costs), surfaced here so the home shows up where users expect it.
+  const derivedHousing = s.housing ? housingDerived(s.housing, startAge, s.profile.horizon_age) : null;
   const midCareer = Math.round((startAge + s.retirement_age) / 2);
   const [shockAge, setShockAge] = useState(midCareer);
   const [shockDur, setShockDur] = useState(1);
@@ -450,8 +454,25 @@ export default function CashFlow() {
                   up({ expense_streams: s.expense_streams.filter((_, j) => j !== i) })}>✕</button></td>
               </tr>
             ))}
+            {(derivedHousing?.expenses ?? []).map((e, i) => (
+              <tr key={`dh-${i}`} title="Generated from your Housing config — edit it on the Housing tab"
+                style={{ opacity: 0.75 }}>
+                <td className="namecell">🏠 {e.name}</td>
+                <td style={{ color: "#8b949e" }}>{fmtMoney(e.annualToday)}</td>
+                <td style={{ color: "#8b949e" }}>{e.startAge}–{e.endAge}</td>
+                <td className="essential-col" style={{ color: "#8b949e" }}>Yes</td>
+                <td /><td /><td />
+              </tr>
+            ))}
           </tbody>
         </table>
+        {derivedHousing && (
+          <p className="hint">
+            🏠 Property tax, insurance, and maintenance are added automatically from
+            your <strong>Housing</strong> config — don't re-enter them here, or
+            they'll double-count. Edit them on the Housing tab.
+          </p>
+        )}
         {expTotal > 0 && (
           <div className="table-summary">
             {fmtMoney(expTotal)}/yr active now · {fmtPct(expEssential / expTotal, 0)} essential
@@ -489,6 +510,9 @@ export default function CashFlow() {
             const events = s.events.map((e, j) => (j === index ? { ...e, age, year: null } : e));
             up({ events });
           }}
+          derivedMarkers={(derivedHousing?.events ?? []).map((e) => ({
+            age: e.age, label: e.name, color: "#3fb950",
+          }))}
         />
         {s.events.length > 0 ? (
           <div className="event-details">

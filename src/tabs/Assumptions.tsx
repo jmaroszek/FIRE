@@ -137,7 +137,12 @@ export default function Assumptions() {
             { key: "stocks", name: "Stocks" },
             { key: "bonds", name: "Bonds" },
             { key: "cash", name: "Cash", info: A.cash },
-          ] as { key: "stocks" | "bonds" | "cash"; name: string; info?: string }[]).map(({ key, name, info }) => (
+          ] as { key: "stocks" | "bonds" | "cash"; name: string; info?: string }[])
+            // In Historical Bootstrap, stock/bond returns and volatility come from
+            // history and the entered CAGRs are ignored — unless Mean Shift re-centers
+            // them. Hide those dead inputs then; Cash is always used (no history series).
+            .filter(({ key }) => key === "cash" || !isBootstrap || s.market.bootstrap_mean_shift)
+            .map(({ key, name, info }) => (
             <div className="asset-matrix-row" key={key}>
               <span className="asset-name">
                 {name}{info ? <InfoTip text={info} /> : null}
@@ -152,6 +157,13 @@ export default function Assumptions() {
             </div>
           ))}
         </div>
+        {isBootstrap && !s.market.bootstrap_mean_shift && (
+          <p className="hint">
+            Stock &amp; bond returns and volatility come straight from history in
+            Bootstrap mode — enable <strong>Mean Shift</strong> above to re-center
+            them to your own CAGRs.
+          </p>
+        )}
 
         <div className="fields" style={{ marginTop: 14 }}>
           <Field label="Expense Ratio" info={A.expenseRatio}>

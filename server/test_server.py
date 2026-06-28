@@ -43,6 +43,28 @@ def test_simulate_returns_fan_and_metrics(client):
     assert "roth_matured_conversions" in body["accessibility_real"]
 
 
+def test_defaults_include_disabled_housing(client):
+    s = client.get("/defaults").json()
+    assert "housing" in s
+    assert s["housing"]["enabled"] is False
+    assert s["housing"]["home_price"] > 0
+
+
+def test_simulate_surfaces_home_overlay_when_enabled(client):
+    s = small_scenario(client)
+    # housing off: the overlay fields are empty
+    off = client.post("/simulate", json=s).json()
+    assert off["home_value_real"] == []
+    assert off["net_worth_incl_home"] == {}
+    # housing on: the overlay rides the same /simulate response
+    s["housing"]["enabled"] = True
+    s["housing"]["purchase_age"] = s["sim"]["start_year"] - s["profile"]["birth_year"] + 2
+    on = client.post("/simulate", json=s).json()
+    assert len(on["home_value_real"]) == len(on["ages"]) + 1
+    assert len(on["home_equity_real"]) == len(on["ages"]) + 1
+    assert set(on["net_worth_incl_home"]) == {"p5", "p25", "p50", "p75", "p95"}
+
+
 def test_simulate_rejects_invalid_scenario_with_400(client):
     s = small_scenario(client)
     s["profile"]["horizon_age"] = 5  # no years to simulate

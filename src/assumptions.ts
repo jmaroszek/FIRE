@@ -129,4 +129,22 @@ export const A = {
     "Whether you've locked too much in pre-tax accounts. From 75 the IRS forces a minimum withdrawal (RMD) whether you need it or not; where the gold RMD line rises above your spending, the red 'forced surplus' is ordinary income you must realize and pay tax on with nowhere to spend it — it just lands back in your taxable estate. A large or growing surplus means convert more during the low-bracket bridge years (Roth Conversion Ladder above) so less is trapped behind RMDs. Median path, today's dollars.",
   ltc:
     "Late-life care (in-home aide, assisted living, or nursing home), modeled as an essential, HSA-eligible, healthcare-inflating expense over the years you choose. A deterministic planning provision — size it to the care level and length you want covered. US medians run ~$70–120k/yr for a typical 2–3 year stay.",
+  housing:
+    "Your home as a first-class asset. Enter everything in today's dollars; the engine derives the nominal mortgage, the down payment, and the property-tax / insurance / maintenance costs from this one place, so nothing double-counts. The home's equity is reported in the 'Including Home' net-worth line but stays OUT of the FIRE-success math — you can't spend your house to fund retirement.",
+  housingValue:
+    "The home's purchase price in today's dollars. The engine grows it to the actual (nominal) price at your purchase age using your inflation and appreciation assumptions, so a future purchase is priced correctly. A frugal Madison-area single-family anchor is ≈ $350k.",
+  housingAppreciation:
+    "How fast the home's value grows ABOVE inflation. Long-run US home prices have roughly tracked inflation (≈ 0% real); 0 is a conservative default. A small positive premium (0.5–1%) reflects desirable markets. The mortgage is nominal, so even 0% real appreciation builds equity through principal paydown.",
+  housingPropertyTax:
+    "Annual property tax as a percent of the home's value. Dane County (Madison) runs ≈ 1.7% — among Wisconsin's highest and the largest ongoing cost of owning here. Charged every year you own, scaling with the home's value.",
+  housingPmi:
+    "Private mortgage insurance, charged when your down payment is under 20% (loan-to-value above 80%). It's an extra annual cost — a percent of the original loan — that automatically ends once you've paid the balance down to 78% of the home's value.",
+  housingSale:
+    "Optionally sell or downsize at a chosen age: the home's equity, net of selling costs and any capital-gains tax above the $250k single-filer exclusion, is moved into a liquid account — turning home equity into spendable wealth late in the plan.",
+  housingItemize:
+    "When on, the engine itemizes your mortgage interest plus (SALT-capped) property tax in years it beats the standard deduction — lowering taxable income, which matters most in your high-earning years and for Roth-conversion headroom. Off = always take the standard deduction.",
+  housingRentVsBuy:
+    "Compares buying (equity built, net of all ownership costs) against renting and investing the down payment plus any monthly cost difference at your market return. Both paths spend the same each year; the break-even is when buying overtakes renting. A flat home with strong markets can favor renting — this shows when.",
+  housingEquity:
+    "Your home's value, the mortgage you still owe, and the equity between them (value − mortgage) over time. Equity grows two ways: the mortgage amortizing down, and the home appreciating. This equity feeds the 'Including Home' net-worth line but never the spendable-portfolio math.",
 };

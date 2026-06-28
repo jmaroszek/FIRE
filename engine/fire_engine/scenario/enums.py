@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 
 
-SCHEMA_VERSION = 6  # v6: tax-aware (bracket_filled) withdrawal policy fields
+SCHEMA_VERSION = 7  # v7: first-class Housing config (home asset + derived mortgage)
 
 
 class AccountType(str, Enum):
