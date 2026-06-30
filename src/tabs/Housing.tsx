@@ -53,32 +53,41 @@ export default function Housing() {
   const subNav = [
     { id: "house-config", label: "Home & Mortgage" },
     ...(hasHome ? [{ id: "house-equity", label: "Equity Over Time" }] : []),
-    { id: "house-compare", label: "Loan Comparison" },
-    { id: "house-rentbuy", label: "Rent vs Buy" },
+    ...(h.enabled ? [
+      { id: "house-compare", label: "Loan Comparison" },
+      { id: "house-rentbuy", label: "Rent vs Buy" },
+    ] : []),
   ];
 
   return (
     <div className="stack">
-      <SectionNav items={subNav} />
+      {h.enabled && <SectionNav items={subNav} />}
 
       {/* ───────────── HOME & MORTGAGE ───────────── */}
-      <Head id="house-config">Home &amp; Mortgage</Head>
-      <Section title="Your Home" info={A.housing}
-        actions={
+      {h.enabled && <Head id="house-config">Home &amp; Mortgage</Head>}
+      <Section title="Your Home" info={A.housing} className={!h.enabled ? "housing-empty-card" : undefined}
+        actions={h.enabled ? (
           <label className="field" style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
             <span className="field-label" style={{ margin: 0 }}>Enable Housing</span>
             <input type="checkbox" checked={h.enabled}
               onChange={(e) => upH({ enabled: e.target.checked })} />
           </label>
-        }>
+        ) : undefined}>
         {!h.enabled ? (
-          <p className="hint">
-            Turn on Housing to model a home purchase: the engine derives the mortgage,
-            down payment, and property-tax / insurance / maintenance costs from one
-            set of today's-dollar inputs, and tracks your home equity in a separate
-            "net worth including home" line — without ever counting the house as
-            spendable retirement money.
-          </p>
+          <div className="housing-empty">
+            <label className="housing-enable">
+              <span>Enable Housing</span>
+              <input type="checkbox" checked={h.enabled}
+                onChange={(e) => upH({ enabled: e.target.checked })} />
+            </label>
+            <p className="hint">
+              Turn on Housing to model a home purchase from today's-dollar inputs.
+              The plan will derive the mortgage, down payment, property tax,
+              insurance, and maintenance costs. It also tracks home equity in a
+              separate "net worth including home" line, without counting the house
+              as spendable retirement money.
+            </p>
+          </div>
         ) : (
           <>
             <HeroRow>
@@ -94,140 +103,157 @@ export default function Housing() {
                 sub={equityAtRet != null ? "today's $, median path" : "simulation pending…"} />
             </HeroRow>
 
-            <h3 style={{ fontSize: 13, margin: "18px 0 8px" }}>Purchase</h3>
-            <div className="fields">
-              <Field label="Purchase Age"
-                info="The age you buy. The home and mortgage appear on your net worth at this age; the down payment comes out of the account below. v1 models a fresh purchase from today onward.">
-                <NumberInput value={h.purchase_age} step={1} min={startAge}
-                  max={s.profile.horizon_age} onChange={(v) => upH({ purchase_age: v })} />
-              </Field>
-              <Field label="Home Price (Today's $)" info={A.housingValue}>
-                <NumberInput value={h.home_price} step={10000} min={0}
-                  onChange={(v) => upH({ home_price: v })} />
-              </Field>
-              <Field label="Down Payment" info="Share of the price paid up front. Under 20% adds PMI (below).">
-                <PercentInput value={h.down_payment_pct} step={1}
-                  onChange={(v) => upH({ down_payment_pct: v })} />
-              </Field>
-              <Field label="Closing Costs" info="One-time costs at purchase (title, fees, escrow) as a percent of price.">
-                <PercentInput value={h.closing_costs_pct} step={0.5}
-                  onChange={(v) => upH({ closing_costs_pct: v })} />
-              </Field>
-              <Field label="Down Payment From"
-                info="Where the down payment and closing costs come from. Pick a single account (selling those assets may realize taxable gains), or Withdrawal Policy to draw across your accounts in the order set on the Accounts tab.">
-                <select value={h.down_payment_account ?? ""}
-                  onChange={(e) => upH({ down_payment_account: (e.target.value || null) as AccountType | null })}>
-                  <option value="">Withdrawal Policy</option>
-                  {CASH_OR_BROKERAGE.map((a) => <option key={a} value={a}>{ACCOUNT_LABELS[a]}</option>)}
-                </select>
-              </Field>
-            </div>
-
-            <h3 style={{ fontSize: 13, margin: "18px 0 8px" }}>Mortgage</h3>
-            <div className="fields">
-              <Field label="Loan Term (Years)">
-                <NumberInput value={h.loan_term_years} step={5} min={1}
-                  onChange={(v) => upH({ loan_term_years: v })} />
-              </Field>
-              <Field label="Loan Type"
-                info="Fixed holds the rate for the whole term. ARM holds the initial rate for a fixed period, then resets once to the rate below (no annual caps modeled).">
-                <select value={h.loan_type}
-                  onChange={(e) => upH({ loan_type: e.target.value as "fixed" | "arm" })}>
-                  <option value="fixed">Fixed</option>
-                  <option value="arm">Adjustable (ARM)</option>
-                </select>
-              </Field>
-              <Field label={h.loan_type === "arm" ? "Initial Rate" : "Mortgage Rate"}>
-                <PercentInput value={h.mortgage_rate} step={0.125}
-                  onChange={(v) => upH({ mortgage_rate: v })} />
-              </Field>
-              <Field label="Points"
-                info="Discount points: each is 1% of the loan paid up front to buy down the rate. Enter the number of points (e.g. 1 = 1% of the loan).">
-                <NumberInput value={h.points} step={0.25} min={0}
-                  onChange={(v) => upH({ points: v })} />
-              </Field>
-              {h.loan_type === "arm" && (
-                <>
-                  <Field label="Fixed Period (Years)" info="Years the initial rate holds before the reset.">
-                    <NumberInput value={h.arm_fixed_years} step={1} min={1}
-                      onChange={(v) => upH({ arm_fixed_years: v })} />
+            <div className="housing-home-layout">
+              <div className="housing-home-controls">
+                <h3 style={{ fontSize: 13, margin: "18px 0 8px" }}>Purchase</h3>
+                <div className="fields">
+                  <Field label="Purchase Age"
+                    info="The age you buy. The home and mortgage appear on your net worth at this age; the down payment comes out of the account below. v1 models a fresh purchase from today onward.">
+                    <NumberInput value={h.purchase_age} step={1} min={startAge}
+                      max={s.profile.horizon_age} onChange={(v) => upH({ purchase_age: v })} />
                   </Field>
-                  <Field label="Reset Rate">
-                    <PercentInput value={h.arm_reset_rate} step={0.125}
-                      onChange={(v) => upH({ arm_reset_rate: v })} />
+                  <Field label="Home Price (Today's $)" info={A.housingValue}>
+                    <NumberInput value={h.home_price} step={10000} min={0}
+                      onChange={(v) => upH({ home_price: v })} />
                   </Field>
-                </>
-              )}
-            </div>
-
-            <h3 style={{ fontSize: 13, margin: "18px 0 8px" }}>Carrying Costs &amp; Value</h3>
-            <div className="fields">
-              <Field label="Property Tax Rate" info={A.housingPropertyTax}>
-                <PercentInput value={h.property_tax_rate} step={0.1}
-                  onChange={(v) => upH({ property_tax_rate: v })} />
-              </Field>
-              <Field label="Insurance / Year (Today's $)">
-                <NumberInput value={h.insurance_annual} step={100} min={0}
-                  onChange={(v) => upH({ insurance_annual: v })} />
-              </Field>
-              <Field label="Maintenance / Year"
-                info="Upkeep as a percent of home value — the '1% rule' is a common estimate.">
-                <PercentInput value={h.maintenance_pct} step={0.25}
-                  onChange={(v) => upH({ maintenance_pct: v })} />
-              </Field>
-              <Field label="Appreciation (Real)" info={A.housingAppreciation}>
-                <PercentInput value={h.appreciation_real} step={0.25}
-                  onChange={(v) => upH({ appreciation_real: v })} />
-              </Field>
-              {h.down_payment_pct < 0.2 && (
-                <Field label="PMI Rate" info={A.housingPmi}>
-                  <PercentInput value={h.pmi_rate} step={0.05}
-                    onChange={(v) => upH({ pmi_rate: v })} />
-                </Field>
-              )}
-              <Field label="Itemize Deductions" info={A.housingItemize}>
-                <input type="checkbox" checked={h.itemize_deductions}
-                  onChange={(e) => upH({ itemize_deductions: e.target.checked })} />
-              </Field>
-            </div>
-
-            <h3 style={{ fontSize: 13, margin: "18px 0 8px" }}>
-              Sale / Downsize <InfoTip text={A.housingSale} />
-            </h3>
-            <div className="fields">
-              <Field label="Sell At Age" info="Leave blank to hold the home through the horizon. Set an age to sell and move the net equity into a liquid account.">
-                <NumberInput value={h.sale_age ?? 0} step={1} min={0}
-                  onChange={(v) => upH({ sale_age: v > h.purchase_age ? v : null })} />
-              </Field>
-              {h.sale_age != null && (
-                <>
-                  <Field label="Selling Costs" info="Realtor commission + closing at sale, as a percent of the sale price.">
-                    <PercentInput value={h.selling_costs_pct} step={0.5}
-                      onChange={(v) => upH({ selling_costs_pct: v })} />
+                  <Field label="Down Payment" info="Share of the price paid up front. Under 20% adds PMI (below).">
+                    <PercentInput value={h.down_payment_pct} step={1}
+                      onChange={(v) => upH({ down_payment_pct: v })} />
                   </Field>
-                  <Field label="Cap-Gains Exclusion (Today's $)"
-                    info="Tax-free gain on a primary residence — $250k for a single filer (§121). Gain above this is taxed at the rate beside it.">
-                    <NumberInput value={h.cap_gains_exclusion} step={50000} min={0}
-                      onChange={(v) => upH({ cap_gains_exclusion: v })} />
+                  <Field label="Closing Costs" info="One-time costs at purchase (title, fees, escrow) as a percent of price.">
+                    <PercentInput value={h.closing_costs_pct} step={0.5}
+                      onChange={(v) => upH({ closing_costs_pct: v })} />
                   </Field>
-                  <Field label="Cap-Gains Rate">
-                    <PercentInput value={h.cap_gains_rate} step={1}
-                      onChange={(v) => upH({ cap_gains_rate: v })} />
-                  </Field>
-                  <Field label="Proceeds To">
-                    <select value={h.sale_proceeds_account}
-                      onChange={(e) => upH({ sale_proceeds_account: e.target.value as AccountType })}>
+                  <Field label="Down Payment From"
+                    info="Where the down payment and closing costs come from. Pick a single account (selling those assets may realize taxable gains), or Withdrawal Policy to draw across your accounts in the order set on the Accounts tab.">
+                    <select value={h.down_payment_account ?? ""}
+                      onChange={(e) => upH({ down_payment_account: (e.target.value || null) as AccountType | null })}>
+                      <option value="">Withdrawal Policy</option>
                       {CASH_OR_BROKERAGE.map((a) => <option key={a} value={a}>{ACCOUNT_LABELS[a]}</option>)}
                     </select>
                   </Field>
-                </>
-              )}
+                </div>
+
+                <h3 style={{ fontSize: 13, margin: "18px 0 8px" }}>Mortgage</h3>
+                <div className="fields">
+                  <Field label="Loan Term (Years)">
+                    <NumberInput value={h.loan_term_years} step={5} min={1}
+                      onChange={(v) => upH({ loan_term_years: v })} />
+                  </Field>
+                  <Field label="Loan Type"
+                    info="Fixed holds the rate for the whole term. ARM holds the initial rate for a fixed period, then resets once to the rate below (no annual caps modeled).">
+                    <select value={h.loan_type}
+                      onChange={(e) => upH({ loan_type: e.target.value as "fixed" | "arm" })}>
+                      <option value="fixed">Fixed</option>
+                      <option value="arm">Adjustable (ARM)</option>
+                    </select>
+                  </Field>
+                  <Field label={h.loan_type === "arm" ? "Initial Rate" : "Mortgage Rate"}>
+                    <PercentInput value={h.mortgage_rate} step={0.125}
+                      onChange={(v) => upH({ mortgage_rate: v })} />
+                  </Field>
+                  <Field label="Points"
+                    info="Discount points: each is 1% of the loan paid up front to buy down the rate. Enter the number of points (e.g. 1 = 1% of the loan).">
+                    <NumberInput value={h.points} step={0.25} min={0}
+                      onChange={(v) => upH({ points: v })} />
+                  </Field>
+                  {h.loan_type === "arm" && (
+                    <>
+                      <Field label="Fixed Period (Years)" info="Years the initial rate holds before the reset.">
+                        <NumberInput value={h.arm_fixed_years} step={1} min={1}
+                          onChange={(v) => upH({ arm_fixed_years: v })} />
+                      </Field>
+                      <Field label="Reset Rate">
+                        <PercentInput value={h.arm_reset_rate} step={0.125}
+                          onChange={(v) => upH({ arm_reset_rate: v })} />
+                      </Field>
+                    </>
+                  )}
+                </div>
+
+                <h3 style={{ fontSize: 13, margin: "18px 0 8px" }}>Carrying Costs &amp; Value</h3>
+                <div className="fields">
+                  <Field label="Property Tax Rate" info={A.housingPropertyTax}>
+                    <PercentInput value={h.property_tax_rate} step={0.1}
+                      onChange={(v) => upH({ property_tax_rate: v })} />
+                  </Field>
+                  <Field label="Insurance / Year (Today's $)">
+                    <NumberInput value={h.insurance_annual} step={100} min={0}
+                      onChange={(v) => upH({ insurance_annual: v })} />
+                  </Field>
+                  <Field label="Maintenance / Year"
+                    info="Upkeep as a percent of home value — the '1% rule' is a common estimate.">
+                    <PercentInput value={h.maintenance_pct} step={0.25}
+                      onChange={(v) => upH({ maintenance_pct: v })} />
+                  </Field>
+                  <Field label="Appreciation (Real)" info={A.housingAppreciation}>
+                    <PercentInput value={h.appreciation_real} step={0.25}
+                      onChange={(v) => upH({ appreciation_real: v })} />
+                  </Field>
+                  {h.down_payment_pct < 0.2 && (
+                    <Field label="PMI Rate" info={A.housingPmi}>
+                      <PercentInput value={h.pmi_rate} step={0.05}
+                        onChange={(v) => upH({ pmi_rate: v })} />
+                    </Field>
+                  )}
+                  <Field label="Itemize Deductions" info={A.housingItemize}>
+                    <input type="checkbox" checked={h.itemize_deductions}
+                      onChange={(e) => upH({ itemize_deductions: e.target.checked })} />
+                  </Field>
+                </div>
+
+                <h3 style={{ fontSize: 13, margin: "18px 0 8px" }}>
+                  Sale / Downsize <InfoTip text={A.housingSale} />
+                </h3>
+                <div className="fields">
+                  <Field label="Sell At Age" info="Leave blank to hold the home through the horizon. Set an age to sell and move the net equity into a liquid account.">
+                    <NumberInput value={h.sale_age ?? 0} step={1} min={0}
+                      onChange={(v) => upH({ sale_age: v > h.purchase_age ? v : null })} />
+                  </Field>
+                  {h.sale_age != null && (
+                    <>
+                      <Field label="Selling Costs" info="Realtor commission + closing at sale, as a percent of the sale price.">
+                        <PercentInput value={h.selling_costs_pct} step={0.5}
+                          onChange={(v) => upH({ selling_costs_pct: v })} />
+                      </Field>
+                      <Field label="Cap-Gains Exclusion (Today's $)"
+                        info="Tax-free gain on a primary residence — $250k for a single filer (§121). Gain above this is taxed at the rate beside it.">
+                        <NumberInput value={h.cap_gains_exclusion} step={50000} min={0}
+                          onChange={(v) => upH({ cap_gains_exclusion: v })} />
+                      </Field>
+                      <Field label="Cap-Gains Rate">
+                        <PercentInput value={h.cap_gains_rate} step={1}
+                          onChange={(v) => upH({ cap_gains_rate: v })} />
+                      </Field>
+                      <Field label="Proceeds To">
+                        <select value={h.sale_proceeds_account}
+                          onChange={(e) => upH({ sale_proceeds_account: e.target.value as AccountType })}>
+                          {CASH_OR_BROKERAGE.map((a) => <option key={a} value={a}>{ACCOUNT_LABELS[a]}</option>)}
+                        </select>
+                      </Field>
+                    </>
+                  )}
+                </div>
+                <p className="hint" style={{ marginTop: 12 }}>
+                  Home equity is reported in the "Net Worth (Including Home)" projection
+                  below and on the Accounts tab — but it never funds the FIRE-success
+                  math. You can't eat your house.
+                </p>
+              </div>
+              <div className="housing-loan-compare" id="house-compare">
+                <h3>
+                  Compare Loan Options
+                  <InfoTip text="Side-by-side what-ifs on the same price and down payment: term, rate, ARM, and points. Instant — these don't change your saved plan." />
+                </h3>
+                <div className="housing-table-scroll">
+                  <LoanComparison terms={loanTerms} rate={h.mortgage_rate} armReset={h.arm_reset_rate} />
+                </div>
+                <p className="hint" style={{ marginTop: 10 }}>
+                  Payments are accurate monthly figures (what a lender quotes). The plan
+                  projection above uses an annual approximation, so the two can differ by a rounding.
+                </p>
+              </div>
             </div>
-            <p className="hint" style={{ marginTop: 12 }}>
-              Home equity is reported in the "Net Worth (Including Home)" projection
-              below and on the Accounts tab — but it never funds the FIRE-success
-              math. You can't eat your house.
-            </p>
           </>
         )}
       </Section>
@@ -270,28 +296,21 @@ export default function Housing() {
         </>
       )}
 
-      {/* ───────────── LOAN COMPARISON ───────────── */}
-      <Head id="house-compare">Loan Comparison</Head>
-      <Section title="Compare Loan Options"
-        info="Side-by-side what-ifs on the same price and down payment: term, rate, ARM, and points. Instant — these don't change your saved plan.">
-        <LoanComparison terms={loanTerms} rate={h.mortgage_rate} armReset={h.arm_reset_rate} />
-        <p className="hint" style={{ marginTop: 10 }}>
-          Payments are accurate monthly figures (what a lender quotes). The plan
-          projection above uses an annual approximation, so the two can differ by a rounding.
-        </p>
-      </Section>
-
       {/* ───────────── RENT VS BUY ───────────── */}
-      <Head id="house-rentbuy">Rent vs Buy</Head>
-      <Section title="Rent vs Buy" info={A.housingRentVsBuy}>
-        <div className="fields">
-          <Field label="Monthly Rent (Today's $)"
-            info="What you'd pay to rent a comparable place instead. The renter invests the down payment, closing costs, and any month it's cheaper to rent than own.">
-            <NumberInput value={rent} step={100} min={0} onChange={setRent} />
-          </Field>
-        </div>
-        <RentVsBuyView scenario={s} housing={h} rent={rent} axisMode={axisMode} result={result} />
-      </Section>
+      {h.enabled && (
+        <>
+          <Head id="house-rentbuy">Rent vs Buy</Head>
+          <Section title="Rent vs Buy" info={A.housingRentVsBuy}>
+            <div className="fields">
+              <Field label="Monthly Rent (Today's $)"
+                info="What you'd pay to rent a comparable place instead. The renter invests the down payment, closing costs, and any month it's cheaper to rent than own.">
+                <NumberInput value={rent} step={100} min={0} onChange={setRent} />
+              </Field>
+            </div>
+            <RentVsBuyView scenario={s} housing={h} rent={rent} axisMode={axisMode} result={result} />
+          </Section>
+        </>
+      )}
     </div>
   );
 }

@@ -276,6 +276,66 @@ main { padding: 18px; max-width: 1500px; width: 100%; margin: 0 auto; }
   .healthcare-grid .card.full { grid-column: auto; }
 }
 
+/* Housing: when enabled, keep the core inputs and the loan what-if table in the
+   same card. The table uses the former right-hand gutter on desktop and stacks
+   below the inputs on narrower screens. */
+.housing-home-layout {
+  display: grid;
+  grid-template-columns: minmax(560px, 1fr) minmax(520px, 0.85fr);
+  gap: 10px 32px;
+  align-items: start;
+}
+.housing-home-controls { min-width: 0; }
+.housing-loan-compare {
+  min-width: 0;
+  scroll-margin-top: 96px;
+}
+.housing-loan-compare h3 {
+  font-size: 13px;
+  margin: 18px 0 8px;
+}
+.housing-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.housing-table-scroll .table {
+  min-width: 620px;
+}
+.housing-table-scroll .table th,
+.housing-table-scroll .table td {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.housing-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 860px;
+}
+.housing-empty-card {
+  width: min(760px, 100%);
+}
+.housing-empty .hint {
+  max-width: 680px;
+  margin: 0;
+}
+.housing-enable {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.housing-enable input { margin: 0; }
+
+@media (max-width: 1240px) {
+  .housing-home-layout { grid-template-columns: 1fr; }
+}
+
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
