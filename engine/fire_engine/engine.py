@@ -911,7 +911,8 @@ def run(
         aca_subsidy = zeros
         net_premium = zeros
         irmaa_cost = zeros
-        aca_active = aca.enabled and age >= retirement_age and age < aca.coverage_end_age
+        aca_start_age = max(retirement_age, getattr(aca, "coverage_start_age", 0) or 0)
+        aca_active = aca.enabled and age >= aca_start_age and age < aca.coverage_end_age
         irmaa_active = irmaa.enabled and age >= irmaa.start_age
         prev_state: tuple | None = None
         for _ in range(FIXED_POINT_ITERATIONS):

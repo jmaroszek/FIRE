@@ -10,8 +10,8 @@ import type {
 import { DEFAULT_HOUSING } from "./types";
 
 export type Tab =
-  | "assumptions" | "cashflow" | "accounts" | "housing" | "taxes" | "freedom"
-  | "compare" | "settings";
+  | "assumptions" | "cashflow" | "accounts" | "housing" | "healthcare"
+  | "taxes" | "freedom" | "compare" | "settings";
 
 /** Every living expense is subject to inflation — the per-stream Inflates / CPI+
  * controls were removed from the UI, so we enforce the invariant here at the single
@@ -21,12 +21,14 @@ export type Tab =
 export function normalizeScenario(s: Scenario): Scenario {
   const expensesOk = !s.expense_streams?.some((e) => !e.inflates || e.extra_inflation);
   const housingOk = s.housing != null;  // backfill so older saves load with a config
-  if (expensesOk && housingOk) return s;
+  const acaOk = s.aca?.coverage_start_age != null;
+  if (expensesOk && housingOk && acaOk) return s;
   return {
     ...s,
     expense_streams: expensesOk ? s.expense_streams : s.expense_streams.map((e) =>
       e.inflates && !e.extra_inflation ? e : { ...e, inflates: true, extra_inflation: 0 }),
     housing: s.housing ?? DEFAULT_HOUSING,
+    aca: acaOk ? s.aca : { ...s.aca, coverage_start_age: 0 },
   };
 }
 

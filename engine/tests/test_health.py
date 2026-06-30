@@ -77,6 +77,22 @@ def test_aca_subsidy_engine_value_and_stops_at_65():
     assert np.allclose(r.net_health_cost[:, post65], 0.0)
 
 
+def test_aca_can_start_after_retirement():
+    s = _aca_retiree()
+    s.aca = ACAConfig(
+        enabled=True,
+        benchmark_annual=12000,
+        actual_annual=12000,
+        coverage_start_age=50,
+    )
+    r = run(s)
+    pre50 = r.ages < 50
+    start_idx = np.where(r.ages == 50)[0][0]
+    assert np.allclose(r.net_health_cost[:, pre50], 0.0)
+    assert np.all(r.net_health_cost[:, start_idx] > 0)
+    assert np.all(r.aca_subsidy[:, start_idx] > 0)
+
+
 def test_aca_disabled_is_zero():
     s = _aca_retiree()
     s.aca = ACAConfig(enabled=False)

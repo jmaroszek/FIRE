@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { A } from "../assumptions";
 import {
-  AccountFlowsChart, HealthcareCostChart, SpendingActualsChart, SpendingPreviewChart,
+  AccountFlowsChart, SpendingActualsChart, SpendingPreviewChart,
 } from "../components/charts";
 import TimelineEditor from "../components/TimelineEditor";
 import {
@@ -204,12 +204,9 @@ export default function CashFlow() {
   const sortExpensesByAge = () =>
     up({ expense_streams: [...s.expense_streams].sort((a, b) =>
       (a.start_age ?? startAge) - (b.start_age ?? startAge) || b.annual - a.annual) });
-  const upMedical = (i: number, patch: Partial<ExpenseStream>) =>
-    up({ medical_streams: (s.medical_streams ?? []).map((e, j) => (j === i ? { ...e, ...patch } : e)) });
   const upIncome = (i: number, patch: Partial<IncomeStream>) =>
     up({ income_streams: (s.income_streams ?? []).map((e, j) => (j === i ? { ...e, ...patch } : e)) });
   const ss = s.spending_strategy;
-  const ltc = s.ltc ?? { enabled: false, onset_age: 84, annual_cost: 0, duration_years: 3, extra_inflation: 0.015 };
 
   // ---- section hero metrics (always-on; from scenario + median result) -------
   const activeNow = (start?: number | null, end?: number | null) =>
@@ -256,10 +253,9 @@ export default function CashFlow() {
     .filter((e) => e.annual > 0 && !activeNow(e.start_age, e.end_age)).length;
 
   const retIdx = result ? result.ages.findIndex((a) => a >= s.retirement_age) : -1;
-  const netHc = result?.healthcare?.net_cost_real ?? [];
-  const subHc = result?.healthcare?.subsidy_real ?? [];
+  const healthCostAtRet = result && retIdx >= 0 ? (result.healthcare?.net_cost_real?.[retIdx] ?? 0) : 0;
   const annualRetSpend = result && retIdx >= 0
-    ? (result.expenses_median_real[retIdx] ?? 0) + (netHc[retIdx] ?? 0) : 0;
+    ? (result.expenses_median_real[retIdx] ?? 0) + healthCostAtRet : 0;
   // What the chosen spending strategy actually funds in the first retirement year
   // (living + medical, median path) vs the plan's intended amount — the readout
   // that makes a portfolio-% strategy starving discretionary spending visible.
@@ -279,10 +275,6 @@ export default function CashFlow() {
     const tot = sp.reduce((a, b) => a + b, 0);
     return tot > 0 ? sp.reduce((acc, v, i) => acc + (result.ages[i] <= 75 ? v : 0), 0) / tot : 0;
   })();
-  const lifetimeHc = netHc.reduce((a, b) => a + b, 0);
-  const peakHc = netHc.length ? Math.max(...netHc) : 0;
-  const peakHcAge = peakHc > 1 && result ? result.ages[netHc.indexOf(peakHc)] : null;
-  const subCaptured = subHc.reduce((a, b) => a + b, 0);
 
   return (
     <div className="stack">
@@ -291,7 +283,6 @@ export default function CashFlow() {
         { id: "cf-flow", label: "Cash Flow Over Time" },
         { id: "cf-headroom", label: "Headroom & Resilience" },
         { id: "cf-retire", label: "Spending In Retirement" },
-        { id: "cf-health", label: "Healthcare" },
       ]} />
 
       {/* ───────────── EARNING & SAVING ───────────── */}
@@ -867,149 +858,6 @@ export default function CashFlow() {
             )}
           </div>
         </div>
-      </Section>
-
-      {/* ───────────── HEALTHCARE ───────────── */}
-      <Head id="cf-health">Healthcare</Head>
-      <HeroRow>
-        <HeroStat tone="purple" label="Lifetime Net Healthcare" value={fmtMoney(lifetimeHc)}
-          sub="premiums − subsidy + IRMAA, today's $"
-          info="Sum of modeled net healthcare cost over the plan (median path). Zero until you enable ACA (below) or IRMAA (Taxes tab)." />
-        <HeroStat tone="purple" label="Peak Annual Net Cost" value={fmtMoney(peakHc)}
-          sub={peakHcAge ? `at age ${peakHcAge}` : "enable ACA / IRMAA to model"} />
-        <HeroStat tone="green" label="ACA Subsidy Captured" value={fmtMoney(subCaptured)}
-          sub="lifetime, today's $" />
-      </HeroRow>
-
-      <div className="group-grid stretch">
-      <Section
-        title="Medical Spending (HSA-Eligible)"
-        className="span1"
-        info="Out-of-pocket medical spending, kept separate from general expenses. Always essential; the HSA pays its share (set utilization under HSA on the Accounts tab). Don't list insurance premiums here — those are modeled under ACA / IRMAA, which add on top."
-        actions={
-          <button className="ghost" onClick={() =>
-            up({ medical_streams: [...(s.medical_streams ?? []), {
-              name: "Out-Of-Pocket Medical", annual: 0, inflates: true, extra_inflation: 0,
-              is_medical: false, essential: true,
-            }] })}>+ Add Medical</button>
-        }>
-        {(s.medical_streams ?? []).length > 0 ? (
-          <table className="table fit">
-            <thead>
-              <tr><th>Name</th><th>$ / Yr</th><th>Ages<InfoTip text={ageRangeTip} /></th>
-                <th>CPI +<InfoTip text={A.cpiPlus} /></th><th /></tr>
-            </thead>
-            <tbody>
-              {(s.medical_streams ?? []).map((e, i) => (
-                <tr key={i}>
-                  <td className="namecell"><input value={e.name} onChange={(ev) => upMedical(i, { name: ev.target.value })} /></td>
-                  <td><NumberInput value={e.annual} step={250} onChange={(v) => upMedical(i, { annual: v })} /></td>
-                  <td className="agecell">
-                    <NumberInput value={e.start_age ?? startAge} step={1}
-                      onChange={(v) => upMedical(i, { start_age: v })} />
-                    –
-                    <NumberInput value={e.end_age ?? s.profile.horizon_age} step={1}
-                      onChange={(v) => upMedical(i, { end_age: v })} />
-                  </td>
-                  <td className="cpicell"><PercentInput value={e.extra_inflation} step={0.25}
-                    onChange={(v) => upMedical(i, { extra_inflation: v })} /></td>
-                  <td><button className="ghost" onClick={() =>
-                    up({ medical_streams: (s.medical_streams ?? []).filter((_, j) => j !== i) })}>✕</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="hint">No medical streams yet. Add prescriptions, dental, copays — the spending your HSA is meant to cover.</p>
-        )}
-      </Section>
-
-      <Section title="ACA Premium Subsidy (Pre-65)" info={A.aca} className="span1">
-        <div className="fields">
-          <Field label="Enabled">
-            <input type="checkbox" checked={s.aca.enabled}
-              onChange={(e) => up({ aca: { ...s.aca, enabled: e.target.checked } })} />
-          </Field>
-          <Field label="Benchmark Premium (Today's $/yr)"
-            info="The second-lowest-cost Silver plan in your area — the plan the subsidy is computed against.">
-            <NumberInput value={s.aca.benchmark_annual} step={500}
-              onChange={(v) => up({ aca: { ...s.aca, benchmark_annual: v } })} />
-          </Field>
-          <Field label="Your Plan's Premium (Today's $/yr)">
-            <NumberInput value={s.aca.actual_annual} step={500}
-              onChange={(v) => up({ aca: { ...s.aca, actual_annual: v } })} />
-          </Field>
-          <Field label="Coverage Ends At Age"
-            info="Medicare eligibility — marketplace coverage (and this subsidy) stops here.">
-            <NumberInput value={s.aca.coverage_end_age} step={1}
-              onChange={(v) => up({ aca: { ...s.aca, coverage_end_age: v } })} />
-          </Field>
-        </div>
-        <p className="hint">
-          <strong>What the subsidy is:</strong> if you retire before 65 you buy insurance on the ACA marketplace,
-          and the government caps what you're expected to pay for a benchmark plan at a sliding share of income
-          (up to 8.5% of MAGI, no cliff). The subsidy is benchmark premium minus that expected share, which lowers
-          your premium. Off by default because the two premium numbers depend on your age and area —
-          look them up with HealthCare.gov's window-shopping tool, then enable.
-        </p>
-        <p className="hint">Roth conversions and capital gains raise MAGI and shrink the subsidy — the collision the Accounts tab's subsidy-vs-conversion view surfaces. Don't also list this premium as an expense stream.</p>
-      </Section>
-      </div>
-
-      <Section title="Long-Term / End-Of-Life Care" info={A.ltc}>
-        <div className="fields">
-          <Field label="Enabled">
-            <input type="checkbox" checked={ltc.enabled}
-              onChange={(e) => up({ ltc: { ...ltc, enabled: e.target.checked,
-                annual_cost: e.target.checked && ltc.annual_cost <= 0 ? 75000 : ltc.annual_cost } })} />
-          </Field>
-          <Field label="Quick-Fill Cost"
-            info="Typical US median costs (2024). Sets the annual cost; edit it after if your area differs.">
-            <select value="" onChange={(e) => {
-              if (e.target.value) up({ ltc: { ...ltc, annual_cost: parseFloat(e.target.value) } }); }}>
-              <option value="">Choose…</option>
-              <option value="75000">In-Home Aide (~$75k/yr)</option>
-              <option value="70000">Assisted Living (~$70k/yr)</option>
-              <option value="95000">Nursing Home, Semi-Private (~$95k/yr)</option>
-              <option value="120000">Nursing Home, Private (~$120k/yr)</option>
-            </select>
-          </Field>
-          <Field label="Annual Cost (Today's $)">
-            <NumberInput value={ltc.annual_cost} step={5000} min={0}
-              onChange={(v) => up({ ltc: { ...ltc, annual_cost: v } })} />
-          </Field>
-          <Field label="Starts At Age"
-            info="When care begins. Most long-term-care need lands in the mid-80s.">
-            <NumberInput value={ltc.onset_age} step={1} min={s.retirement_age} max={s.profile.horizon_age}
-              onChange={(v) => up({ ltc: { ...ltc, onset_age: v } })} />
-          </Field>
-          <Field label="For How Long (Years)">
-            <NumberInput value={ltc.duration_years} step={1} min={1}
-              onChange={(v) => up({ ltc: { ...ltc, duration_years: Math.max(1, Math.round(v)) } })} />
-          </Field>
-        </div>
-        <p className="hint">
-          Most people need some long-term care late in life — the biggest cost most plans ignore. This adds
-          it as an essential, HSA-eligible expense (so your HSA helps pay) over the window you set. US medians
-          (2024): in-home aide ≈ $75k/yr, assisted living ≈ $70k/yr, nursing home ≈ $95–120k/yr; a typical
-          stay is 2–3 years, longer for women. Off by default — turn it on to stress-test it.
-        </p>
-      </Section>
-
-      <Section title="Net Healthcare Cost" info={A.healthcareTrajectory}>
-        {result ? (
-          result.healthcare?.net_cost_real?.some((v) => v > 1)
-            || result.healthcare?.subsidy_real?.some((v) => v > 1) ? (
-            <HealthcareCostChart result={result} axisMode={axisMode}
-              retirementAge={s.retirement_age} coverageEndAge={s.aca.coverage_end_age}
-              birthYear={s.profile.birth_year} />
-          ) : (
-            <p className="hint">
-              No modeled healthcare cost yet. Turn on ACA Premium Subsidy above (pre-65) or
-              IRMAA on the Taxes tab (65+) to see net premium, subsidy, and surcharge over life.
-            </p>
-          )
-        ) : <p className="hint">Simulation pending…</p>}
       </Section>
     </div>
   );

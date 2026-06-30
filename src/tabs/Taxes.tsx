@@ -6,7 +6,6 @@ import {
 } from "../components/ui";
 import { useShallow } from "zustand/react/shallow";
 import { useStore } from "../store";
-import type { Scenario } from "../types";
 
 export default function Taxes() {
   const { scenario, result, axisMode, taxregime, taxregimeLoading, runTaxRegime,
@@ -15,7 +14,6 @@ export default function Taxes() {
     taxregime: s.taxregime, taxregimeLoading: s.taxregimeLoading, runTaxRegime: s.runTaxRegime,
     laddersavings: s.laddersavings, runLadderSavings: s.runLadderSavings, laddersavingsLoading: s.laddersavingsLoading,
   })));
-  const setScenario = useStore((s) => s.setScenario);
   const [sunsetAge, setSunsetAge] = useState(scenario ? scenario.retirement_age : 60);
 
   // Both readouts are cheap, so compute them automatically once the simulation
@@ -29,7 +27,6 @@ export default function Taxes() {
 
   if (!scenario) return null;
   const s = scenario;
-  const up = (patch: Partial<Scenario>) => setScenario({ ...s, ...patch });
 
   return (
     <div className="stack">
@@ -148,16 +145,6 @@ export default function Taxes() {
             {taxregimeLoading ? "Computing…" : "Simulation pending…"}
           </p>
         )}
-      </Section>
-
-      <Section title="IRMAA Medicare Surcharge (65+)" className="span1" info={A.irmaa}>
-        <div className="fields">
-          <Field label="Enabled">
-            <input type="checkbox" checked={s.irmaa.enabled}
-              onChange={(e) => up({ irmaa: { ...s.irmaa, enabled: e.target.checked } })} />
-          </Field>
-        </div>
-        <p className="hint">Uses the 2025 single-filer Part B + D tiers (the surcharge starts above ~$106k MAGI). A high Roth-conversion or RMD year can trip a tier — cross-check the conversion ladder (Accounts) and the RMD table above.</p>
       </Section>
       </div>
     </div>

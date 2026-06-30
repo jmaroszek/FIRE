@@ -48,6 +48,7 @@ class ACAConfig(BaseModel):
     enabled: bool = False
     benchmark_annual: float = 0.0  # today's $, the SLCSP benchmark premium
     actual_annual: float = 0.0  # today's $, your chosen plan's premium
+    coverage_start_age: int = 0  # 0 = start when retired; otherwise delay until this age
     coverage_end_age: int = 65  # Medicare starts; ACA stops
     fpl_base_single: float = 15060.0  # 2025 federal poverty line, single (today's $)
 

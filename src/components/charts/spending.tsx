@@ -232,7 +232,7 @@ export const SpendingPreviewChart = React.memo(function SpendingPreviewChart(pro
 
 export const HealthcareCostChart = React.memo(function HealthcareCostChart(props: {
   result: SimulateResult; axisMode: "age" | "year"; retirementAge: number;
-  coverageEndAge?: number; birthYear?: number; height?: number;
+  coverageStartAge?: number; coverageEndAge?: number; birthYear?: number; height?: number;
 }) {
   const x = props.axisMode === "age" ? [...props.result.ages] : [...props.result.years];
   const net = props.result.healthcare?.net_cost_real ?? [];
@@ -243,6 +243,8 @@ export const HealthcareCostChart = React.memo(function HealthcareCostChart(props
   if (sub.some((v) => v > 1))
     series.push({ name: "ACA Subsidy", values: sub, color: "#3fb950", fill: false });
   const marks: LifeMark[] = [{ age: props.retirementAge, label: "Retire", color: "#d29922" }];
+  if (props.coverageStartAge && props.coverageStartAge > props.retirementAge)
+    marks.push({ age: props.coverageStartAge, label: `ACA ${props.coverageStartAge}`, color: "#3fb950" });
   if (props.coverageEndAge)
     marks.push({ age: props.coverageEndAge, label: `Medicare ${props.coverageEndAge}`, color: "#bc8cff" });
   return (

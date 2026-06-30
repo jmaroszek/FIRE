@@ -202,6 +202,80 @@ main { padding: 18px; max-width: 1500px; width: 100%; margin: 0 auto; }
   min-width: 340px;
 }
 
+/* Healthcare: the medical-stream editor has a dense row of inputs, while ACA and
+   IRMAA are compact MAGI-dependent premium controls. Give the table the wide
+   lane and stack the premium toggles together. */
+.healthcare-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+}
+.healthcare-grid .card { min-width: 0; }
+.healthcare-left-stack {
+  grid-column: span 2;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  min-height: 0;
+}
+.healthcare-grid .healthcare-medical {
+  flex: 1 1 auto;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+.healthcare-grid .healthcare-ltc { flex: 0 0 auto; }
+.healthcare-ltc .hint { max-width: 760px; }
+.healthcare-grid .healthcare-premiums { grid-column: span 1; }
+.healthcare-grid .card.full { grid-column: 1 / -1; }
+.medical-table-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.healthcare-medical .table.fit { width: 100%; table-layout: fixed; }
+.healthcare-medical .namecell input { width: 100%; }
+.healthcare-medical .table th:nth-child(1) { width: 42%; }
+.healthcare-medical .table th:nth-child(2) { width: 18%; }
+.healthcare-medical .table th:nth-child(3) { width: 18%; }
+.healthcare-medical .table th:nth-child(4) { width: 14%; }
+.healthcare-medical .table th:nth-child(5) { width: 8%; }
+.healthcare-medical .table .agecell .numwrap input { max-width: 52px; }
+.premium-modeling-block + .premium-modeling-block {
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+  padding-top: 14px;
+}
+.premium-modeling-block h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--fg);
+}
+.premium-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+.premium-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  align-items: flex-end;
+}
+.premium-row-paired .field { flex: 0 0 140px; }
+.premium-row-paired input[type="number"] { width: 110px; max-width: 110px; }
+.healthcare-premiums .hint { max-width: 100%; }
+
+@media (max-width: 900px) {
+  .healthcare-grid { grid-template-columns: 1fr; }
+  .healthcare-left-stack,
+  .healthcare-grid .healthcare-medical,
+  .healthcare-grid .healthcare-premiums,
+  .healthcare-grid .card.full { grid-column: auto; }
+}
+
 .card {
   background: var(--panel);
   border: 1px solid var(--border);

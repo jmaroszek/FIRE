@@ -1,4 +1,4 @@
-// TypeScript mirror of engine/fire_engine/scenario.py (SCHEMA_VERSION 6)
+// TypeScript mirror of engine/fire_engine/scenario.py (SCHEMA_VERSION 8)
 
 export type AccountType =
   | "taxable" | "trad_401k" | "trad_ira" | "roth_ira" | "roth_401k" | "hsa" | "cash";
@@ -162,6 +162,8 @@ export interface ACAConfig {
   enabled: boolean;
   benchmark_annual: number;
   actual_annual: number;
+  /** 0 = start when retired; otherwise delay ACA marketplace coverage until this age. */
+  coverage_start_age: number;
   coverage_end_age: number;
   fpl_base_single: number;
 }

@@ -9,7 +9,12 @@ describe("normalizeScenario", () => {
   // `housing` is present so the backfill in normalizeScenario is a no-op here —
   // these cases exercise only the expense-stream invariant.
   const withStreams = (expense_streams: unknown[], medical_streams: unknown[] = []) =>
-    ({ expense_streams, medical_streams, housing: { enabled: false } } as unknown as Scenario);
+    ({
+      expense_streams,
+      medical_streams,
+      housing: { enabled: false },
+      aca: { coverage_start_age: 0 },
+    } as unknown as Scenario);
 
   it("forces inflates=true and zeroes extra_inflation on expense streams", () => {
     const s = withStreams([{ name: "Rent", annual: 20000, inflates: false, extra_inflation: 0.02 }]);
@@ -30,6 +35,11 @@ describe("normalizeScenario", () => {
     );
     const out = normalizeScenario(s);
     expect(out.medical_streams[0].extra_inflation).toBe(0.015);
+  });
+
+  it("backfills ACA coverage_start_age on older scenarios", () => {
+    const s = { expense_streams: [], medical_streams: [], housing: { enabled: false }, aca: {} } as unknown as Scenario;
+    expect(normalizeScenario(s).aca.coverage_start_age).toBe(0);
   });
 });
 

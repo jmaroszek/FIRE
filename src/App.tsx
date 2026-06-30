@@ -7,6 +7,7 @@ import Assumptions from "./tabs/Assumptions";
 import CashFlow from "./tabs/CashFlow";
 import Accounts from "./tabs/Accounts";
 import Housing from "./tabs/Housing";
+import Healthcare from "./tabs/Healthcare";
 import Taxes from "./tabs/Taxes";
 import Freedom from "./tabs/Freedom";
 import Compare from "./tabs/Compare";
@@ -20,6 +21,7 @@ const GROUPS: { label: string; tabs: { id: Tab; label: string }[] }[] = [
     { id: "cashflow", label: "Cash Flow" },
     { id: "accounts", label: "Accounts" },
     { id: "housing", label: "Housing" },
+    { id: "healthcare", label: "Healthcare" },
     { id: "taxes", label: "Taxes" },
   ] },
   { label: "Decide", tabs: [
@@ -230,6 +232,7 @@ export default function App() {
             {tab === "cashflow" && <CashFlow />}
             {tab === "accounts" && <Accounts />}
             {tab === "housing" && <Housing />}
+            {tab === "healthcare" && <Healthcare />}
             {tab === "taxes" && <Taxes />}
             {tab === "freedom" && <Freedom />}
             {tab === "compare" && <Compare />}

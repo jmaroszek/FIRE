@@ -51,9 +51,9 @@ Everything that flows across your life:
   own covered-earnings history** (the early-retiree correction: zero-earning years
   after you stop working pull the benefit down, often 20–35% below a
   work-until-FRA projection).
-- **Expenses & medical** — inflation-aware expense streams, separate HSA-eligible
-  medical spending, and optional **ACA premium subsidy** modeling (pre-65) that
-  responds to your MAGI.
+- **Expenses & healthcare** — inflation-aware living-expense streams plus a
+  first-class Healthcare tab for HSA-eligible medical spending, ACA
+  premiums/subsidy, IRMAA, and long-term care.
 - **Spending strategy** — constant-dollar with optional **Guyton-Klinger
   guardrails**, or a percent-of-portfolio rule (fixed % or VPW) on *accessible*
   wealth, with bounds and endowment smoothing.

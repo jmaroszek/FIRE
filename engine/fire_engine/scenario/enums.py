@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 
 
-SCHEMA_VERSION = 7  # v7: first-class Housing config (home asset + derived mortgage)
+SCHEMA_VERSION = 8  # v8: ACA coverage_start_age for delayed marketplace coverage
 
 
 class AccountType(str, Enum):

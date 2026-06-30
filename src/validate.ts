@@ -142,6 +142,19 @@ export function validateScenario(s: Scenario): ValidationIssue[] {
       message: `Success threshold (${s.sim.success_threshold}) should be a fraction in (0, 1].` });
   }
 
+  // --- Healthcare ---------------------------------------------------------
+  if (s.aca?.enabled) {
+    const acaStart = s.aca.coverage_start_age > 0 ? s.aca.coverage_start_age : s.retirement_age;
+    if (s.aca.coverage_end_age <= acaStart) {
+      out.push({ level: "warning", field: "aca.coverage_end_age",
+        message: `ACA coverage ends at age ${s.aca.coverage_end_age}, before it can start at age ${acaStart}.` });
+    }
+    if (s.aca.coverage_start_age > 0 && s.aca.coverage_start_age < s.retirement_age) {
+      out.push({ level: "warning", field: "aca.coverage_start_age",
+        message: `ACA coverage start age (${s.aca.coverage_start_age}) is before retirement; the engine still waits until retirement at age ${s.retirement_age}.` });
+    }
+  }
+
   // --- Money sanity -------------------------------------------------------
   if (s.income.gross_salary < 0) {
     out.push({ level: "error", field: "income.gross_salary",

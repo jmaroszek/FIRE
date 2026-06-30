@@ -695,7 +695,7 @@ export default function Accounts() {
               birthYear={s.profile.birth_year} />
           ) : (
             <p className="hint">
-              Enable the ACA Premium Subsidy (Cash Flow tab) to see what each conversion dollar
+              Enable the ACA Premium Subsidy (Healthcare tab) to see what each conversion dollar
               costs you in lost subsidy — every dollar converted raises MAGI and shrinks the
               pre-65 subsidy.
             </p>

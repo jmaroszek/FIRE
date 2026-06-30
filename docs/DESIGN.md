@@ -61,13 +61,15 @@ warnings (see [Frontend](#frontend-src)).
 
 ### Schema versioning
 
-`SCHEMA_VERSION` (currently **6**) tags every saved Scenario. New optional fields
+`SCHEMA_VERSION` (currently **8**) tags every saved Scenario. New optional fields
 default empty, so older scenarios load unchanged — the sidecar only rejects a
 file whose version is *newer* than it understands. History:
 - v2: `income_streams`, `waterfall_schedule`, `medical_streams`, `Liability.start_age`
 - v3: `allocation_schedule` (age-keyed allocation glidepath)
 - v5: spending strategy consolidated to `constant_dollar` + `percent_portfolio`
 - v6: tax-aware withdrawal policy (`mode`, `bracket_top`, `custom_top`)
+- v7: first-class `housing` config
+- v8: ACA `coverage_start_age`
 
 The TypeScript types in `src/types.ts` mirror this schema and must be kept in sync.
 
@@ -124,14 +126,16 @@ Tabs, organized around the question each answers (`src/tabs/`):
 
 - **Assumptions** — the exogenous backdrop you can't control (market, inflation,
   profile, sim settings) plus a read-only **Assumptions Summary** audit surface.
-- **Cash Flow** — income + streams, Social Security, expenses, medical, ACA,
-  spending strategy, the life-events timeline, income-shock stress; spending /
-  fulfillment / healthcare / lifestyle-creep charts; max sustainable spend.
+- **Cash Flow** — income + streams, Social Security, expenses, spending strategy,
+  the life-events timeline, income-shock stress; spending / fulfillment /
+  lifestyle-creep charts; max sustainable spend.
 - **Accounts** — balances, debt, contributions, withdrawal policy, allocation +
   glidepath, the Roth conversion ladder; wealth-&-flows, drawdown, liquidity,
   bridge, subsidy-vs-conversion charts; snapshot recorder + net-worth history.
+- **Healthcare** — HSA-eligible medical spending, ACA premiums/subsidy, IRMAA,
+  long-term care, and the net healthcare trajectory.
 - **Taxes** — taxes-over-time (marginal/effective), Roth-vs-Traditional, lifetime
-  tax, RMDs, traditional over-funding, TCJA-sunset stress, IRMAA.
+  tax, RMDs, traditional over-funding, TCJA-sunset stress.
 - **Freedom** — success + CI, FIRE/Coast, the when-can-I-retire sweep, success
   surface, sensitivity tornado; survival, ruin, failure severity; over-saving
   frontier, headroom, ending-net-worth distribution.
