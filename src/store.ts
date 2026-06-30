@@ -2,6 +2,12 @@ import { create } from "zustand";
 import { api } from "./api";
 import { COMPARE_PALETTE } from "./constants";
 import { getCached, setCacheSchemaVersion } from "./simCache";
+import {
+  readTaxReminderDismissedYear,
+  readTaxReminderEnabled,
+  writeTaxReminderDismissedYear,
+  writeTaxReminderEnabled,
+} from "./taxMaintenance";
 import type {
   BridgeCrashResult, Category, FreedomResult, LadderSavingsResult, MaxSpendResult,
   Scenario, SensitivityResult, SimulateResult, Snapshot, StressResult,
@@ -103,9 +109,14 @@ interface AppState {
   axisMode: "age" | "year";
   sidebarCollapsed: boolean;
   engineUp: boolean | null;
+  taxReminderEnabled: boolean;
+  taxReminderDismissedYear: number | null;
 
   setTab: (t: Tab) => void;
   setSidebarCollapsed: (v: boolean) => void;
+  setTaxReminderEnabled: (v: boolean) => void;
+  dismissTaxReminder: (year: number) => void;
+  resetTaxReminderDismissal: () => void;
   init: () => Promise<void>;
   setScenario: (s: Scenario) => void;
   patchScenario: (patch: Partial<Scenario>) => void;
@@ -227,9 +238,23 @@ export const useStore = create<AppState>((set, get) => {
     axisMode: "age",
     sidebarCollapsed: false,
     engineUp: null,
+    taxReminderEnabled: readTaxReminderEnabled(),
+    taxReminderDismissedYear: readTaxReminderDismissedYear(),
 
     setTab: (tab) => set({ tab }),
     setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
+    setTaxReminderEnabled: (taxReminderEnabled) => {
+      writeTaxReminderEnabled(taxReminderEnabled);
+      set({ taxReminderEnabled });
+    },
+    dismissTaxReminder: (year) => {
+      writeTaxReminderDismissedYear(year);
+      set({ taxReminderDismissedYear: year });
+    },
+    resetTaxReminderDismissal: () => {
+      writeTaxReminderDismissedYear(null);
+      set({ taxReminderDismissedYear: null });
+    },
 
     init: async () => {
       // the bundled engine exe takes a few seconds to unpack on cold start —

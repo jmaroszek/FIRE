@@ -2,15 +2,47 @@ import React from "react";
 import { useShallow } from "zustand/react/shallow";
 import { InfoTip, Section } from "../components/ui";
 import { useStore } from "../store";
+import { nextTaxMaintenanceLabel } from "../taxMaintenance";
 
 export default function Settings() {
-  const { scenario, categories, setCategories } = useStore(useShallow((s) => ({
+  const {
+    scenario, categories, setCategories,
+    taxReminderEnabled, taxReminderDismissedYear,
+    setTaxReminderEnabled, resetTaxReminderDismissal,
+  } = useStore(useShallow((s) => ({
     scenario: s.scenario, categories: s.categories, setCategories: s.setCategories,
+    taxReminderEnabled: s.taxReminderEnabled,
+    taxReminderDismissedYear: s.taxReminderDismissedYear,
+    setTaxReminderEnabled: s.setTaxReminderEnabled,
+    resetTaxReminderDismissal: s.resetTaxReminderDismissal,
   })));
   if (!scenario) return null;
+  const nextReminder = nextTaxMaintenanceLabel(new Date());
 
   return (
     <div className="stack">
+      <Section
+        title="Annual Tax Data Reminder"
+        info="Shows a once-a-year November checklist for refreshing the bundled federal tax brackets and contribution limits. It never changes the tax data automatically.">
+        <div className="settings-row">
+          <label className="toggle-row">
+            <input type="checkbox" checked={taxReminderEnabled}
+              onChange={(e) => setTaxReminderEnabled(e.target.checked)} />
+            <span>Remind me each November</span>
+          </label>
+          <span className="hint">
+            Next reminder window: {nextReminder}.
+            {taxReminderDismissedYear
+              ? ` Dismissed for ${taxReminderDismissedYear}.`
+              : " Not dismissed for the current reminder year."}
+          </span>
+          {taxReminderDismissedYear && (
+            <button className="ghost" onClick={resetTaxReminderDismissal}>
+              Reset Dismissal
+            </button>
+          )}
+        </div>
+      </Section>
       <Section
         title="Spending Categories"
         info="Categories for recorded spending snapshots (Dashboard → Record A Snapshot) and the Cash Flow → Lifestyle Creep chart. Add-only by design: names and order are freely editable, but each category keeps a permanent internal id so renames never break your history. Order is purely organizational."

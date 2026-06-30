@@ -123,6 +123,52 @@ body {
 
 main { padding: 18px; max-width: 1500px; width: 100%; margin: 0 auto; }
 
+.maintenance-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid #765b1f;
+  border-left: 3px solid var(--amber);
+  border-radius: 6px;
+  background: #1c1a14;
+}
+.maintenance-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.maintenance-title { color: var(--amber); font-weight: 600; }
+.maintenance-body {
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.maintenance-body code {
+  display: inline-block;
+  margin: 0 4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #0d1117;
+  color: var(--fg);
+  font-size: 12px;
+}
+.maintenance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 780px) {
+  .maintenance-banner { flex-direction: column; }
+  .maintenance-actions { justify-content: flex-start; }
+}
+
 /* Sticky in-page section jump bar for deep tabs */
 .section-nav {
   position: sticky;
@@ -148,6 +194,17 @@ main { padding: 18px; max-width: 1500px; width: 100%; margin: 0 auto; }
 .section-nav-link:hover { color: var(--fg); background: #1f242c; }
 
 .stack { display: flex; flex-direction: column; gap: 16px; }
+.settings-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+}
+.toggle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 16px; align-items: start; }
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: stretch; }
 /* horizontal pair of stats that stays side-by-side even in a narrow tile

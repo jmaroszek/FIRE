@@ -12,6 +12,7 @@ import Taxes from "./tabs/Taxes";
 import Freedom from "./tabs/Freedom";
 import Compare from "./tabs/Compare";
 import Settings from "./tabs/Settings";
+import { shouldShowTaxMaintenanceReminder } from "./taxMaintenance";
 
 /** Journey-ordered, grouped navigation: define your assumptions, build the plan
  *  across the money tabs, then read the verdict on Freedom. */
@@ -154,6 +155,40 @@ function ValidationBanner() {
   );
 }
 
+function TaxMaintenanceBanner() {
+  const {
+    enabled, dismissedYear, dismissTaxReminder, setTab,
+  } = useStore(useShallow((s) => ({
+    enabled: s.taxReminderEnabled,
+    dismissedYear: s.taxReminderDismissedYear,
+    dismissTaxReminder: s.dismissTaxReminder,
+    setTab: s.setTab,
+  })));
+  const now = useMemo(() => new Date(), []);
+  if (!shouldShowTaxMaintenanceReminder(now, enabled, dismissedYear)) return null;
+
+  const year = now.getFullYear();
+  const taxYear = year + 1;
+  return (
+    <div className="maintenance-banner" role="status">
+      <div className="maintenance-copy">
+        <div className="maintenance-title">Annual tax-data refresh</div>
+        <div className="maintenance-body">
+          Update the engine for tax year {taxYear}: refresh
+          <code>engine/fire_engine/data/tax_data.json</code> and
+          <code>engine/fire_engine/data/limits.json</code> from IRS/SSA releases,
+          adjust matching test expectations, then run
+          <code>python -m pytest engine/tests server</code> and <code>npm test</code>.
+        </div>
+      </div>
+      <div className="maintenance-actions">
+        <button className="ghost" onClick={() => setTab("settings")}>Reminder Settings</button>
+        <button onClick={() => dismissTaxReminder(year)}>Done for {year}</button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const { tab, setTab, init, engineUp, sidebarCollapsed, setSidebarCollapsed } = useStore(useShallow((s) => ({
     tab: s.tab, setTab: s.setTab, init: s.init, engineUp: s.engineUp,
@@ -226,6 +261,7 @@ export default function App() {
           <ScenarioBar />
         </div>
         <main>
+          <TaxMaintenanceBanner />
           <ValidationBanner />
           <ErrorBoundary key={tab}>
             {tab === "assumptions" && <Assumptions />}
