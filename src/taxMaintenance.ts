@@ -1,4 +1,5 @@
 export const TAX_MAINTENANCE_MONTH = 10; // November; Date months are zero-based.
+export const FIRST_TAX_MAINTENANCE_YEAR = 2026;
 export const TAX_REMINDER_ENABLED_KEY = "fire:taxReminderEnabled";
 export const TAX_REMINDER_DISMISSED_YEAR_KEY = "fire:taxReminderDismissedYear";
 
@@ -43,9 +44,16 @@ export function shouldShowTaxMaintenanceReminder(
   enabled: boolean,
   dismissedYear: number | null,
 ): boolean {
+  const cycleYear = taxMaintenanceCycleYear(now);
   return enabled
-    && now.getMonth() === TAX_MAINTENANCE_MONTH
-    && dismissedYear !== now.getFullYear();
+    && cycleYear >= FIRST_TAX_MAINTENANCE_YEAR
+    && dismissedYear !== cycleYear;
+}
+
+export function taxMaintenanceCycleYear(now: Date): number {
+  return now.getMonth() >= TAX_MAINTENANCE_MONTH
+    ? now.getFullYear()
+    : now.getFullYear() - 1;
 }
 
 export function nextTaxMaintenanceLabel(now: Date): string {

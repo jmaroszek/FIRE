@@ -2,7 +2,11 @@ import React from "react";
 import { useShallow } from "zustand/react/shallow";
 import { InfoTip, Section } from "../components/ui";
 import { useStore } from "../store";
-import { nextTaxMaintenanceLabel } from "../taxMaintenance";
+import {
+  FIRST_TAX_MAINTENANCE_YEAR,
+  nextTaxMaintenanceLabel,
+  taxMaintenanceCycleYear,
+} from "../taxMaintenance";
 
 export default function Settings() {
   const {
@@ -17,7 +21,13 @@ export default function Settings() {
     resetTaxReminderDismissal: s.resetTaxReminderDismissal,
   })));
   if (!scenario) return null;
-  const nextReminder = nextTaxMaintenanceLabel(new Date());
+  const now = new Date();
+  const cycleYear = taxMaintenanceCycleYear(now);
+  const hasActiveCycle = cycleYear >= FIRST_TAX_MAINTENANCE_YEAR
+    && taxReminderDismissedYear !== cycleYear;
+  const reminderStatus = hasActiveCycle
+    ? `Current reminder: November ${cycleYear}, shown until dismissed.`
+    : `Next reminder starts: ${nextTaxMaintenanceLabel(now)}.`;
 
   return (
     <div className="stack">
@@ -31,7 +41,7 @@ export default function Settings() {
             <span>Remind me each November</span>
           </label>
           <span className="hint">
-            Next reminder window: {nextReminder}.
+            {reminderStatus}
             {taxReminderDismissedYear
               ? ` Dismissed for ${taxReminderDismissedYear}.`
               : " Not dismissed for the current reminder year."}

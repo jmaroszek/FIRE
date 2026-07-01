@@ -12,7 +12,7 @@ import Taxes from "./tabs/Taxes";
 import Freedom from "./tabs/Freedom";
 import Compare from "./tabs/Compare";
 import Settings from "./tabs/Settings";
-import { shouldShowTaxMaintenanceReminder } from "./taxMaintenance";
+import { shouldShowTaxMaintenanceReminder, taxMaintenanceCycleYear } from "./taxMaintenance";
 
 /** Journey-ordered, grouped navigation: define your assumptions, build the plan
  *  across the money tabs, then read the verdict on Freedom. */
@@ -167,7 +167,7 @@ function TaxMaintenanceBanner() {
   const now = useMemo(() => new Date(), []);
   if (!shouldShowTaxMaintenanceReminder(now, enabled, dismissedYear)) return null;
 
-  const year = now.getFullYear();
+  const year = taxMaintenanceCycleYear(now);
   const taxYear = year + 1;
   return (
     <div className="maintenance-banner" role="status">
